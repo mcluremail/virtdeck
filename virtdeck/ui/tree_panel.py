@@ -1,6 +1,7 @@
 import json
 import re
 from collections import defaultdict
+from dataclasses import replace
 from datetime import timedelta
 
 from PySide6.QtCore import QByteArray, QMimeData, QSize, Qt, QTimer, Signal
@@ -23,11 +24,18 @@ from PySide6.QtWidgets import (
 
 from ..config import load_tree_notes, load_ui_state, save_tree_note, save_ui_state
 from ..domain import Node, NodeStatus, VmStatus, VmType
+from .action_registry import (
+    SCOPE_CT,
+    SCOPE_TEMPLATE,
+    SCOPE_VM,
+    ActionRegistry,
+    Selection,
+)
+from .action_specs import VM_ACTION_IDS, VM_BULK_ACTION_IDS, register_tree_actions
 from .i18n import tr
 from .icons import base_size, get_icon, init_icons, make_loading_icon
 from .theme import Color
 from .utils import build_cfg_index, status_text
-from .vm_actions import VM_ACTION_ICONS
 
 VM_KEY_ROLE = Qt.UserRole + 1
 ITEM_KEY_ROLE = Qt.UserRole + 2
@@ -180,6 +188,10 @@ class TreePanel(QWidget):
         self.all_vms = []
         self._vm_repo = None
         self.all_storages = []
+        # M2: реестр действий над объектами дерева — единый источник для
+        # контекст-меню и палитры (invoke эмитит сигналы ниже).
+        self.action_registry = ActionRegistry()
+        register_tree_actions(self.action_registry, self)
 
         self._building = False
         self._nav_timer = QTimer()
@@ -421,6 +433,69 @@ class TreePanel(QWidget):
             return
         menu.exec(self.tree.viewport().mapToGlobal(pos))
 
+    # ── M2: контекстные хелперы реестра ─────────────────────────────
+
+    def _cluster_members(self, cluster_name):
+        """Host-конфиги — члены кластера (для присутствия и invoke)."""
+        return [c for c in self.nodes_cfg if c.get("cluster") == cluster_name]
+
+    def _storage_api_host(self, key):
+        """API-host для storage-ключа: host → сам хост, cluster → первый
+        активный член. "" — разрешить не удалось."""
+        scope = key[3] if len(key) > 3 else ""
+        kind = key[2] if len(key) > 2 else ""
+        if kind == "host":
+            return scope
+        if kind == "cluster":
+            first = next((c for c in self.nodes_cfg
+                          if c.get("cluster") == scope
+                          and c.get("type") != "pbs" and not c.get("skip")), None)
+            return first.get("name", "") if first else ""
+        return ""
+
+    # Приёмники invoke из реестра (палитра/меню); контекстные кейсы.
+
+    def cluster_create_vm(self, cluster_name):
+        members = self._cluster_members(cluster_name)
+        if members:
+            self.vm_create_requested.emit(members[0].get("node", ""),
+                                          members[0].get("name", ""))
+
+    def cluster_create_storage(self, cluster_name):
+        members = self._cluster_members(cluster_name)
+        if members:
+            self.storage_create_requested.emit(members[0].get("name", ""))
+
+    def group_rename_request(self, group_name):
+        self._rename_group_dialog(group_name)
+
+    def storage_edit_request(self, key):
+        api_host = self._storage_api_host(key)
+        if api_host:
+            self.storage_edit_requested.emit(api_host, key[1])
+
+    def storage_delete_request(self, key):
+        api_host = self._storage_api_host(key)
+        if api_host:
+            self.storage_delete_requested.emit(api_host, key[1])
+
+    def _add_action_specs(self, menu, sel, action_ids):
+        """QAction'ы реестра в контекст-меню: подписи, иконки и правила
+        доступности — из ActionSpec. Выключенные действия показываются
+        (семантика меню), а не скрываются, как в палитре."""
+        by_id = {s.action_id: s for s in self.action_registry.all()}
+        for aid in action_ids:
+            spec = by_id[aid]
+            act = QAction(spec.label, self.tree)
+            if spec.icon:
+                act.setIcon(get_icon(spec.icon))
+            if spec.enabled is not None and not spec.enabled(sel):
+                act.setEnabled(False)
+            if spec.invoke is not None:
+                act.triggered.connect(
+                    lambda checked=False, sp=spec: sp.invoke(sel))
+            menu.addAction(act)
+
     def _build_context_menu(self, item):
         """Построить контекст-меню для элемента дерева; None — не строится.
 
@@ -437,106 +512,29 @@ class TreePanel(QWidget):
                 "QMenu::item { padding: 4px 12px; }"
                 f"QMenu::item:selected {{ background: {Color.BORDER}; }}"
             )
-            vm_status = vm.status_value if vm else ""
             is_template = bool(vm and vm.template)
             is_qemu = vm is not None and vm.vm_type is VmType.QEMU
-            selected_vm_keys = self.selected_vm_keys()
-            if len(selected_vm_keys) > 1:
-                for act_key, act_label in [("start", tr("Start all")),
-                                           ("shutdown", tr("Shutdown all")),
-                                           ("reboot", tr("Reboot all")),
-                                           ("stop", tr("Stop all"))]:
-                    act = QAction(act_label, self.tree)
-                    act.setIcon(get_icon(VM_ACTION_ICONS[act_key]))
-                    act.triggered.connect(
-                        lambda checked, keys=selected_vm_keys, a=act_key:
-                            self.bulk_vm_action_requested.emit(keys, a)
-                    )
-                    menu.addAction(act)
+            sel = self.selection_for_item(item)
+            # M2: подписи, иконки и доступность VM-действий — из реестра
+            # (тот же источник, что у палитры Ctrl+K).
+            if len(sel.vm_keys) > 1:
+                self._add_action_specs(menu, sel, VM_BULK_ACTION_IDS)
                 menu.addSeparator()
-            for act_key, act_label in [("start", tr("Start")), ("shutdown", tr("Shutdown")),
-                                       ("reboot", tr("Reboot")), ("stop", tr("Stop")),
-                                       ("reset", tr("Reset")), ("resume", tr("Resume"))]:
-                act = QAction(act_label, self.tree)
-                act.setIcon(get_icon(VM_ACTION_ICONS[act_key]))
-                act.triggered.connect(
-                    lambda checked, hn=host_name, nd=node, vid=vmid, a=act_key:
-                        self.vm_action_requested.emit(hn, nd, vid, a)
-                )
-                if is_template:
-                    act.setEnabled(False)
-                elif act_key in ("shutdown", "reboot", "stop", "reset") and vm_status != "running":
-                    act.setEnabled(False)
-                if act_key == "resume" and vm_status != "paused":
-                    act.setEnabled(False)
-                if act_key == "start" and vm_status == "running":
-                    act.setEnabled(False)
-                menu.addAction(act)
-            console_act = QAction(tr("Console"), self.tree)
-            console_act.setIcon(get_icon("console"))
-            console_act.triggered.connect(
-                lambda checked, hn=host_name, nd=node, vid=vmid:
-                    self.console_requested.emit(hn, nd, vid)
-            )
-            console_act.setEnabled(vm_status == "running" and not is_template)
-            menu.addAction(console_act)
-            novnc_act = QAction(tr("noVNC console"), self.tree)
-            novnc_act.setIcon(get_icon("console"))
-            novnc_act.triggered.connect(
-                lambda checked, hn=host_name, nd=node, vid=vmid:
-                    self.novnc_requested.emit(hn, nd, vid)
-            )
-            novnc_act.setEnabled(vm_status == "running" and not is_template)
-            menu.addAction(novnc_act)
+            # Одиночные действия в меню оцениваются по самому элементу,
+            # без учёта мульти-выделения (как раньше).
+            vm_sel = replace(sel, vm_keys=())
+            self._add_action_specs(menu, vm_sel, VM_ACTION_IDS)
+            self._add_action_specs(menu, vm_sel, ("vm.novnc",))
             menu.addSeparator()
-            migrate_act = QAction(tr("Migrate"), self.tree)
-            migrate_act.setIcon(get_icon("migrate"))
-            migrate_act.triggered.connect(
-                lambda checked, hn=host_name, nd=node, vid=vmid: self.vm_migrate_requested.emit(hn, nd, vid)
-            )
-            migrate_act.setEnabled(not is_template)
-            menu.addAction(migrate_act)
-            clone_act = QAction(tr("Clone"), self.tree)
-            clone_act.setIcon(get_icon("clone"))
-            clone_act.triggered.connect(
-                lambda checked, hn=host_name, nd=node, vid=vmid: self.vm_clone_requested.emit(hn, nd, vid)
-            )
-            menu.addAction(clone_act)
+            self._add_action_specs(menu, vm_sel, ("vm.migrate", "vm.clone"))
             if is_qemu:
                 menu.addSeparator()
-                if is_template:
-                    convert_act = QAction(tr("Convert to VM"), self.tree)
-                    convert_act.setIcon(get_icon("vm"))
-                    convert_act.triggered.connect(
-                        lambda checked, hn=host_name, nd=node, vid=vmid:
-                            self.vm_convert_requested.emit(hn, nd, vid, "to_vm")
-                    )
-                    menu.addAction(convert_act)
-                else:
-                    convert_act = QAction(tr("Convert to Template"), self.tree)
-                    convert_act.setIcon(get_icon("template"))
-                    convert_act.setEnabled(vm_status != "running")
-                    convert_act.triggered.connect(
-                        lambda checked, hn=host_name, nd=node, vid=vmid:
-                            self.vm_convert_requested.emit(hn, nd, vid, "to_template")
-                    )
-                    menu.addAction(convert_act)
+                self._add_action_specs(
+                    menu, vm_sel,
+                    ("vm.convert_to_vm",) if is_template
+                    else ("vm.convert_to_template",))
             menu.addSeparator()
-            ha_add_act = QAction(tr("Add to HA"), self.tree)
-            ha_add_act.setIcon(get_icon("ha"))
-            ha_add_act.triggered.connect(
-                lambda checked, hn=host_name, nd=node, vid=vmid:
-                    self.vm_ha_add_requested.emit(hn, nd, vid)
-            )
-            ha_add_act.setEnabled(not is_template)
-            menu.addAction(ha_add_act)
-            ha_remove_act = QAction(tr("Remove from HA"), self.tree)
-            ha_remove_act.setIcon(get_icon("ha"))
-            ha_remove_act.triggered.connect(
-                lambda checked, hn=host_name, nd=node, vid=vmid:
-                    self.vm_ha_remove_requested.emit(hn, nd, vid)
-            )
-            menu.addAction(ha_remove_act)
+            self._add_action_specs(menu, vm_sel, ("vm.ha_add", "vm.ha_remove"))
             menu.addSeparator()
             vm_note_act = QAction(tr("Edit note…"), self.tree)
             vm_note_act.triggered.connect(
@@ -544,11 +542,7 @@ class TreePanel(QWidget):
                     self._edit_note_dialog(it, ks)
             )
             menu.addAction(vm_note_act)
-            delete_action = QAction(tr("Delete VM"), self.tree)
-            delete_action.triggered.connect(
-                lambda checked, hn=host_name, nd=node, vid=vmid: self.vm_delete_requested.emit(hn, nd, vid)
-            )
-            menu.addAction(delete_action)
+            self._add_action_specs(menu, vm_sel, ("vm.delete",))
             return menu
 
         key = item.data(0, ITEM_KEY_ROLE)
@@ -570,50 +564,28 @@ class TreePanel(QWidget):
                 host = next((n for n in self.all_nodes if n.node == item_name), None)
                 host_name = host.host_name if host else ""
             if host_name:
-                create_vm_action = QAction(tr("Create VM"), self.tree)
-                create_vm_action.setIcon(get_icon("vm"))
-                create_vm_action.triggered.connect(
-                    lambda checked, nn=item_name, hn=host_name: self.vm_create_requested.emit(nn, hn)
-                )
-                menu.addAction(create_vm_action)
+                sel = self.selection_for_item(item)
+                # M2: подписи/иконки/доступность — из реестра; присутствие
+                # пунктов (режим дерева, шаблоны, тип хоста) — контекст меню.
+                host_ids = ["host.create_vm"]
                 if self._tree_mode == "storages":
-                    cs_act = QAction(tr("Create storage…"), self.tree)
-                    cs_act.triggered.connect(
-                        lambda checked, hn=host_name: self.storage_create_requested.emit(hn)
-                    )
-                    menu.addAction(cs_act)
+                    host_ids.append("host.create_storage")
                 templates = [vm for vm in self.all_vms
                              if vm.template and vm.host_name == host_name]
                 if templates:
-                    clone_from_tmpl = QAction(tr("Clone from Template"), self.tree)
-                    clone_from_tmpl.setIcon(get_icon("template"))
-                    clone_from_tmpl.triggered.connect(
-                        lambda checked, nn=item_name, hn=host_name:
-                            self.vm_clone_from_template_requested.emit(hn, nn)
-                    )
-                    menu.addAction(clone_from_tmpl)
+                    host_ids.append("host.clone_from_template")
+                self._add_action_specs(menu, sel, tuple(host_ids))
                 menu.addSeparator()
-                delete_action = QAction(tr("Delete host"), self.tree)
-                delete_action.triggered.connect(lambda: self.host_remove_requested.emit("host", host_name))
-                menu.addAction(delete_action)
-                refresh_action = QAction(tr("Refresh token"), self.tree)
-                refresh_action.setIcon(get_icon("refresh"))
-                refresh_action.triggered.connect(lambda: self.host_token_refresh_requested.emit(host_name))
-                menu.addAction(refresh_action)
+                self._add_action_specs(
+                    menu, sel, ("host.delete", "host.refresh_token"))
                 host_cfg = next(
                     (c for c in self.nodes_cfg if c.get("name") == host_name),
                     None)
                 if (host_cfg and not host_cfg.get("cluster")
                         and host_cfg.get("type") != "pbs"):
-                    cc_act = QAction(tr("Create cluster…"), self.tree)
-                    cc_act.triggered.connect(
-                        lambda checked=False, hn=host_name:
-                            self.cluster_create_requested.emit(hn)
-                    )
-                    menu.addAction(cc_act)
+                    self._add_action_specs(menu, sel, ("host.create_cluster",))
                 menu.addSeparator()
-                trust_cfg = next((c for c in self.nodes_cfg if c.get("name") == host_name), None)
-                trust_ssl_current = bool(trust_cfg.get("trust_ssl", True)) if trust_cfg else True
+                trust_ssl_current = bool(host_cfg.get("trust_ssl", True)) if host_cfg else True
                 if trust_ssl_current:
                     trust_action = QAction(tr("Trust SSL certificate") + " — " + tr("trusted"), self.tree)
                     trust_action.setIcon(get_icon("lock"))
@@ -634,35 +606,15 @@ class TreePanel(QWidget):
                 menu.addAction(note_act)
 
         elif item_type == "cluster":
-            cl_hosts = [c for c in self.nodes_cfg if c.get("cluster") == item_name]
-            if cl_hosts:
-                first = cl_hosts[0]
-                cl_node_name = first.get("node", "")
-                cl_host_name = first.get("name", "")
-                create_vm_action = QAction(tr("Create VM"), self.tree)
-                create_vm_action.setIcon(get_icon("vm"))
-                create_vm_action.triggered.connect(
-                    lambda checked, nn=cl_node_name, hn=cl_host_name:
-                        self.vm_create_requested.emit(nn, hn)
-                )
-                menu.addAction(create_vm_action)
+            sel = self.selection_for_item(item)
+            if self._cluster_members(item_name):
+                self._add_action_specs(menu, sel, ("cluster.create_vm",))
                 if self._tree_mode == "storages":
-                    cs_act = QAction(tr("Create storage…"), self.tree)
-                    cs_act.triggered.connect(
-                        lambda checked, hn=cl_host_name: self.storage_create_requested.emit(hn)
-                    )
-                    menu.addAction(cs_act)
+                    self._add_action_specs(menu, sel, ("cluster.create_storage",))
                 menu.addSeparator()
             if self._tree_mode == "hosts":
-                join_act = QAction(tr("Add node to cluster…"), self.tree)
-                join_act.triggered.connect(
-                    lambda checked=False, cl=item_name:
-                        self.cluster_join_requested.emit(cl)
-                )
-                menu.addAction(join_act)
-            delete_action = QAction(tr("Delete cluster"), self.tree)
-            delete_action.triggered.connect(lambda: self.host_remove_requested.emit("cluster", item_name))
-            menu.addAction(delete_action)
+                self._add_action_specs(menu, sel, ("cluster.add_node",))
+            self._add_action_specs(menu, sel, ("cluster.delete",))
             self._add_group_menu(menu, "cluster", item_name)
             note_act = QAction(tr("Edit note…"), self.tree)
             note_act.triggered.connect(
@@ -672,14 +624,8 @@ class TreePanel(QWidget):
             menu.addAction(note_act)
 
         elif item_type == "group":
-            rename_action = QAction(tr("Rename group…"), self.tree)
-            rename_action.triggered.connect(
-                lambda checked=False, g=item_name: self._rename_group_dialog(g))
-            menu.addAction(rename_action)
-            delete_action = QAction(tr("Delete group"), self.tree)
-            delete_action.triggered.connect(
-                lambda checked=False, g=item_name: self.group_delete_requested.emit(g))
-            menu.addAction(delete_action)
+            sel = self.selection_for_item(item)
+            self._add_action_specs(menu, sel, ("group.rename", "group.delete"))
             note_act = QAction(tr("Edit note…"), self.tree)
             note_act.triggered.connect(
                 lambda checked, it=item, ks=f"group:{item_name}":
@@ -688,29 +634,10 @@ class TreePanel(QWidget):
             menu.addAction(note_act)
 
         elif item_type == "storage":
+            sel = self.selection_for_item(item)
             scope = key[3] if len(key) > 3 else ""
-            kind = key[2] if len(key) > 2 else ""
-            api_host = ""
-            if kind == "host":
-                api_host = scope
-            elif kind == "cluster":
-                first = next((c for c in self.nodes_cfg
-                              if c.get("cluster") == scope
-                              and c.get("type") != "pbs" and not c.get("skip")), None)
-                api_host = first.get("name", "") if first else ""
-            if api_host:
-                edit_act = QAction(tr("Edit storage…"), self.tree)
-                edit_act.triggered.connect(
-                    lambda checked, hn=api_host, sn=item_name:
-                        self.storage_edit_requested.emit(hn, sn)
-                )
-                menu.addAction(edit_act)
-                del_act = QAction(tr("Delete storage"), self.tree)
-                del_act.triggered.connect(
-                    lambda checked, hn=api_host, sn=item_name:
-                        self.storage_delete_requested.emit(hn, sn)
-                )
-                menu.addAction(del_act)
+            if self._storage_api_host(key):
+                self._add_action_specs(menu, sel, ("storage.edit", "storage.delete"))
                 menu.addSeparator()
             note_act = QAction(tr("Edit note…"), self.tree)
             note_act.triggered.connect(
@@ -1494,6 +1421,42 @@ class TreePanel(QWidget):
             if vm_key is not None:
                 keys.append(vm_key)
         return keys
+
+    def selection_for_item(self, item):
+        """Selection-дескриптор произвольного элемента дерева
+        (палитра действий и контекст-меню, M2)."""
+        if item is None:
+            return Selection()
+        text = item.text(0)
+        vm_key = item.data(0, VM_KEY_ROLE)
+        if vm_key is not None:
+            host_name, vmid, node = vm_key
+            vm = self._vm_repo.get(host_name, vmid) if self._vm_repo else None
+            if vm is not None and vm.template:
+                kind = SCOPE_TEMPLATE
+            elif vm is not None and vm.vm_type is VmType.QEMU:
+                kind = SCOPE_VM
+            else:
+                kind = SCOPE_CT
+            return Selection(kind=kind, label=text, host_name=host_name,
+                             node=node, vmid=vmid, vm=vm, key=vm_key,
+                             vm_keys=tuple(self.selected_vm_keys()))
+        key = item.data(0, ITEM_KEY_ROLE)
+        if key is None:
+            return Selection()
+        kind = key[0]
+        node = ""
+        host_name = ""
+        if kind == "host" and len(key) >= 3:
+            node, host_name = key[1], key[2]
+        elif kind == "storage" and len(key) >= 4 and key[2] == "host":
+            host_name = key[3]
+        return Selection(kind=kind, label=text, host_name=host_name,
+                         node=node, key=tuple(key))
+
+    def current_selection(self):
+        """Selection-дескриптор текущего элемента (палитра действий)."""
+        return self.selection_for_item(self.tree.currentItem())
 
     def find_and_select(self, key_data):
         """Find a tree item by key tuple, expand parents, scroll to it, and select it."""

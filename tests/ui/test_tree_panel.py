@@ -1219,3 +1219,260 @@ class TestClusterCreateContextMenu:
         item = _collect_items(tp)[("host", "n1", "h1")]
         menu = _open_menu(qtbot, tp, item, monkeypatch)
         assert "Create cluster…" not in _menu_actions(menu)
+
+
+class TestCurrentSelection:
+    """M2: Selection-дескриптор текущего элемента для палитры действий."""
+
+    def _make(self, qtbot, make_node, make_vm, vms):
+        cfg = [{"name": "h1", "cluster": "", "skip": False}]
+        tp = TreePanel(cfg)
+        qtbot.addWidget(tp)
+        node_repo = NodeRepository()
+        node_repo.add(make_node(host_name="h1", node="pve01"))
+        vm_repo = VmRepository()
+        for vm in vms:
+            vm_repo.add(vm)
+        tp.update_data(node_repo.all(), vm_repo.all(), final=True,
+                       node_repo=node_repo, vm_repo=vm_repo)
+        tp._build_tree()
+        return tp
+
+    def _select(self, tp, key):
+        """Выбрать элемент по ключу: ВМ-элементы несут VM_KEY_ROLE,
+        остальные — ITEM_KEY_ROLE."""
+
+        def walk(item):
+            for role in (ITEM_KEY_ROLE, VM_KEY_ROLE):
+                if item.data(0, role) == key:
+                    return item
+            for i in range(item.childCount()):
+                found = walk(item.child(i))
+                if found is not None:
+                    return found
+            return None
+
+        for i in range(tp.tree.topLevelItemCount()):
+            found = walk(tp.tree.topLevelItem(i))
+            if found is not None:
+                tp.tree.setCurrentItem(found)
+                return
+        raise AssertionError(f"tree item not found: {key!r}")
+
+    def test_empty_when_nothing_selected(self, qtbot, make_node):
+
+        cfg = [{"name": "h1", "cluster": "", "skip": False}]
+        tp = TreePanel(cfg)
+        qtbot.addWidget(tp)
+        assert tp.current_selection().is_empty
+
+    def test_qemu_vm(self, qtbot, make_node, make_vm):
+        from virtdeck.domain.enums import VmType
+
+        vm = make_vm(vmid=100, name="alpha", host_name="h1", node="pve01",
+                     vm_type=VmType.QEMU)
+        tp = self._make(qtbot, make_node, make_vm, [vm])
+        self._select(tp, ("h1", 100, "pve01"))
+        sel = tp.current_selection()
+        assert sel.kind == "vm"
+        assert sel.vmid == 100
+        assert sel.host_name == "h1"
+        assert sel.node == "pve01"
+        assert sel.vm is vm
+        assert sel.key == ("h1", 100, "pve01")
+
+    def test_lxc_vm_kind_is_ct(self, qtbot, make_node, make_vm):
+        from virtdeck.domain.enums import VmType
+
+        vm = make_vm(vmid=200, name="ct1", host_name="h1", node="pve01",
+                     vm_type=VmType.LXC)
+        tp = self._make(qtbot, make_node, make_vm, [vm])
+        self._select(tp, ("h1", 200, "pve01"))
+        assert tp.current_selection().kind == "ct"
+
+    def test_template_kind(self, qtbot, make_node, make_vm):
+        vm = make_vm(vmid=300, name="tmpl", host_name="h1", node="pve01",
+                     template=True)
+        tp = self._make(qtbot, make_node, make_vm, [vm])
+        self._select(tp, ("h1", 300, "pve01"))
+        assert tp.current_selection().kind == "template"
+
+    def test_host_item(self, qtbot, make_node, make_vm):
+        tp = self._make(qtbot, make_node, make_vm, [])
+        self._select(tp, ("host", "pve01", "h1"))
+        sel = tp.current_selection()
+        assert sel.kind == "host"
+        assert sel.node == "pve01"
+        assert sel.host_name == "h1"
+
+    def test_storage_item_host_owner(self, qtbot, make_node, make_storage):
+        cfg = [{"name": "h1", "cluster": "", "skip": False}]
+        tp = TreePanel(cfg)
+        qtbot.addWidget(tp)
+        node_repo = NodeRepository()
+        node_repo.add(make_node(host_name="h1", node="pve01"))
+        storages = [make_storage(host_name="h1", node="pve01", storage="local")]
+        tp.update_data(node_repo.all(), [], storages, final=True,
+                       node_repo=node_repo, vm_repo=None)
+        tp.set_mode("storages")
+        self._select(tp, ("storage", "local", "host", "h1"))
+        sel = tp.current_selection()
+        assert sel.kind == "storage"
+        assert sel.host_name == "h1"
+
+
+class TestVMContextMenuRegistry:
+    """M2: VM-блок контекст-меню строится из реестра действий."""
+
+    def _make_panel(self, qtbot, make_node, make_vm, vms):
+        cfg = [{"name": "h1", "cluster": "", "skip": False}]
+        tp = TreePanel(cfg)
+        qtbot.addWidget(tp)
+        node_repo = NodeRepository()
+        node_repo.add(make_node(host_name="h1", node="pve01"))
+        vm_repo = VmRepository()
+        for vm in vms:
+            vm_repo.add(vm)
+        tp.update_data(node_repo.all(), vm_repo.all(), final=True,
+                       node_repo=node_repo, vm_repo=vm_repo)
+        tp._build_tree()
+        return tp
+
+    def _menu_for(self, qtbot, tp, item, monkeypatch):
+        return _open_menu(qtbot, tp, item, monkeypatch)
+
+    def _vm_item(self, tp, key):
+        """Элемент ВМ по VM_KEY_ROLE (ITEM_KEY_ROLE у ВМ отсутствует)."""
+
+        def walk(item):
+            if item.data(0, VM_KEY_ROLE) == key:
+                return item
+            for i in range(item.childCount()):
+                found = walk(item.child(i))
+                if found is not None:
+                    return found
+            return None
+
+        for i in range(tp.tree.topLevelItemCount()):
+            found = walk(tp.tree.topLevelItem(i))
+            if found is not None:
+                return found
+        raise AssertionError(f"vm item not found: {key!r}")
+
+    def _by_text(self, menu):
+        from PySide6.QtGui import QAction
+        return {a.text(): a for a in menu.actions()
+                if isinstance(a, QAction) and a.text()}
+
+    def test_stopped_vm_order_and_enabled(
+            self, qtbot, make_node, make_vm, monkeypatch):
+        vm = make_vm(vmid=100, name="alpha", host_name="h1", node="pve01",
+                     status=VmStatus.STOPPED)
+        tp = self._make_panel(qtbot, make_node, make_vm, [vm])
+        menu = self._menu_for(qtbot, tp, self._vm_item(tp, ("h1", 100, "pve01")),
+                              monkeypatch)
+        texts = _menu_actions(menu)
+        assert texts[:7] == ["Start", "Shutdown", "Reboot", "Stop",
+                             "Reset", "Resume", "Console"]
+        by_text = self._by_text(menu)
+        assert by_text["Start"].isEnabled()
+        for name in ("Shutdown", "Reboot", "Stop", "Reset", "Resume",
+                     "Console"):
+            assert not by_text[name].isEnabled(), name
+
+    def test_running_vm_enabled_block(
+            self, qtbot, make_node, make_vm, monkeypatch):
+        vm = make_vm(vmid=100, name="alpha", host_name="h1", node="pve01",
+                     status=VmStatus.RUNNING)
+        tp = self._make_panel(qtbot, make_node, make_vm, [vm])
+        menu = self._menu_for(qtbot, tp, self._vm_item(tp, ("h1", 100, "pve01")),
+                              monkeypatch)
+        by_text = self._by_text(menu)
+        assert not by_text["Start"].isEnabled()
+        for name in ("Shutdown", "Reboot", "Stop", "Reset", "Console"):
+            assert by_text[name].isEnabled(), name
+
+    def test_template_all_disabled(
+            self, qtbot, make_node, make_vm, monkeypatch):
+        vm = make_vm(vmid=100, name="tmpl", host_name="h1", node="pve01",
+                     template=True)
+        tp = self._make_panel(qtbot, make_node, make_vm, [vm])
+        menu = self._menu_for(qtbot, tp, self._vm_item(tp, ("h1", 100, "pve01")),
+                              monkeypatch)
+        by_text = self._by_text(menu)
+        for name in ("Start", "Shutdown", "Reboot", "Stop", "Reset",
+                     "Resume", "Console"):
+            assert not by_text[name].isEnabled(), name
+
+    def test_single_action_triggers_signal(
+            self, qtbot, make_node, make_vm, monkeypatch):
+        vm = make_vm(vmid=100, name="alpha", host_name="h1", node="pve01",
+                     status=VmStatus.STOPPED)
+        tp = self._make_panel(qtbot, make_node, make_vm, [vm])
+        menu = self._menu_for(qtbot, tp, self._vm_item(tp, ("h1", 100, "pve01")),
+                              monkeypatch)
+        got = []
+        tp.vm_action_requested.connect(
+            lambda hn, nd, vid, a: got.append((hn, nd, vid, a)))
+        self._by_text(menu)["Start"].trigger()
+        assert got == [("h1", "pve01", 100, "start")]
+
+    def test_multi_selection_bulk_block_and_signal(
+            self, qtbot, make_node, make_vm, monkeypatch):
+        vm1 = make_vm(vmid=100, name="alpha", host_name="h1", node="pve01",
+                      status=VmStatus.STOPPED)
+        vm2 = make_vm(vmid=101, name="beta", host_name="h1", node="pve01",
+                      status=VmStatus.RUNNING)
+        tp = self._make_panel(qtbot, make_node, make_vm, [vm1, vm2])
+        item100 = self._vm_item(tp, ("h1", 100, "pve01"))
+        item101 = self._vm_item(tp, ("h1", 101, "pve01"))
+        tp.tree.setCurrentItem(item100)
+        item101.setSelected(True)
+        menu = self._menu_for(qtbot, tp, item100, monkeypatch)
+        texts = _menu_actions(menu)
+        assert texts[:4] == ["Start all", "Shutdown all", "Reboot all",
+                             "Stop all"]
+        got = []
+        tp.bulk_vm_action_requested.connect(
+            lambda keys, a: got.append((list(keys), a)))
+        self._by_text(menu)["Stop all"].trigger()
+        assert got == [([("h1", 100, "pve01"), ("h1", 101, "pve01")], "stop")]
+
+    def test_host_menu_from_registry(
+            self, qtbot, make_node, make_vm, monkeypatch):
+        """M2: блок хоста — Create VM/Delete/Refresh token/Create cluster…"""
+        tp = self._make_panel(qtbot, make_node, make_vm, [])
+        menu = self._menu_for(qtbot, tp,
+                              _collect_items(tp)[("host", "pve01", "h1")],
+                              monkeypatch)
+        texts = _menu_actions(menu)
+        assert texts[0] == "Create VM"
+        assert "Delete host" in texts
+        assert "Refresh token" in texts
+        # standalone не-pbs хост → Create cluster… присутствует
+        assert "Create cluster…" in texts
+        got = []
+        tp.vm_create_requested.connect(lambda nn, hn: got.append((nn, hn)))
+        self._by_text(menu)["Create VM"].trigger()
+        assert got == [("pve01", "h1")]
+
+    def test_vm_menu_includes_tools(
+            self, qtbot, make_node, make_vm, monkeypatch):
+        """M2: noVNC/Migrate/Clone/HA/Delete VM в меню, из реестра."""
+        vm = make_vm(vmid=100, name="alpha", host_name="h1", node="pve01",
+                     status=VmStatus.RUNNING)
+        tp = self._make_panel(qtbot, make_node, make_vm, [vm])
+        menu = self._menu_for(qtbot, tp,
+                              self._vm_item(tp, ("h1", 100, "pve01")),
+                              monkeypatch)
+        by_text = self._by_text(menu)
+        for name in ("noVNC console", "Migrate", "Clone", "Add to HA",
+                     "Remove from HA", "Delete VM"):
+            assert name in by_text, name
+        assert by_text["Migrate"].isEnabled()
+        assert not by_text["Start"].isEnabled()
+        got = []
+        tp.vm_delete_requested.connect(
+            lambda hn, nd, vid: got.append((hn, nd, vid)))
+        by_text["Delete VM"].trigger()
+        assert got == [("h1", "pve01", 100)]

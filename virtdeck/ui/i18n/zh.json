@@ -1243,5 +1243,7 @@
   "{} results": "{} 条结果",
   "{}% used — {} of {}": "已使用 {}% — {} / {}",
   "— none —": "— 无 —",
-  "❌ {} is unavailable": "❌ {} 不可用"
+  "❌ {} is unavailable": "❌ {} 不可用",
+  "Type a command...": "输入命令…",
+  "No matching actions": "没有匹配的操作"
 }

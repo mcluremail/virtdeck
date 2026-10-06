@@ -107,10 +107,14 @@ class ActionRegistry:
         return tuple(self._specs)
 
     def actions_for(self, selection: Selection) -> list[ActionSpec]:
-        """Спеки, применимые к выделению: по scope и правилу enabled."""
+        """Спеки, применимые к выделению: по scope и правилу enabled.
+
+        Спеки с SCOPE_GLOBAL применимы всегда (в том числе при пустом
+        выделении); остальные — при совпадении типа объекта.
+        """
         out = []
         for spec in self._specs:
-            if selection.kind not in spec.scopes:
+            if SCOPE_GLOBAL not in spec.scopes and selection.kind not in spec.scopes:
                 continue
             if spec.enabled is not None and not spec.enabled(selection):
                 continue

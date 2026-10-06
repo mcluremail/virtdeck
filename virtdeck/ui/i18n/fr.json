@@ -1243,5 +1243,7 @@
   "{} results": "{} résultats",
   "{}% used — {} of {}": "{}% utilisé — {} sur {}",
   "— none —": "— aucun —",
-  "❌ {} is unavailable": "❌ {} est indisponible"
+  "❌ {} is unavailable": "❌ {} est indisponible",
+  "Type a command...": "Tapez une commande…",
+  "No matching actions": "Aucune action correspondante"
 }

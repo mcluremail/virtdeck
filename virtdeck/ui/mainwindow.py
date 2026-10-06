@@ -166,6 +166,7 @@ class MainWindow(QMainWindow):
         self.tree_panel.vm_delete_requested.connect(self._on_vm_delete_requested)
         self.tree_panel.vm_action_requested.connect(self._on_vm_action_from_tree)
         self.tree_panel.bulk_vm_action_requested.connect(self._on_bulk_vm_action)
+        self._palette = None   # M2: командная палитра, ленивая инициализация
         # M0.3: optimistic UI — мгновенный статус + откат по ошибке.
         self._optimistic = OptimisticVMs(
             self._vm_repo, on_change=self._on_optimistic_change
@@ -351,6 +352,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+N"), self, activated=lambda: self._on_add_server())
         QShortcut(QKeySequence("Del"), self, activated=self.tree_panel.request_delete_current)
         QShortcut(QKeySequence("Ctrl+F"), self, activated=self._open_global_search)
+        QShortcut(QKeySequence("Ctrl+K"), self, activated=self._open_command_palette)
 
         # Таймер автообновления основных данных
         self.refresh_timer = QTimer(self)
@@ -1392,6 +1394,16 @@ class MainWindow(QMainWindow):
         self.tree_panel.set_servers(self.nodes_cfg)
         self.refresh_data()
 
+    def _open_command_palette(self):
+        """M2: командная палитра (Ctrl+K) над реестром действий."""
+        if self._palette is None:
+            from .action_specs import build_registry
+            from .command_palette import CommandPalette
+            self._palette = CommandPalette(
+                build_registry(self), self.tree_panel.current_selection, self,
+            )
+        self._palette.open_for()
+
     def _open_global_search(self):
         """Open the global search dialog and jump to the chosen object."""
         dlg = GlobalSearchDialog(
@@ -2139,6 +2151,8 @@ class MainWindow(QMainWindow):
         self._update_tray_state()
         self.tree_panel.reapply_theme()
         self.detail_panel.reapply_theme()
+        if self._palette is not None:
+            self._palette.retheme()
 
     def _on_language_changed(self, idx):
         code = self._lang_combo.itemData(idx)

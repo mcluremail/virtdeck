@@ -8,6 +8,7 @@ from virtdeck.ui.detail_panel import DetailPanel
 from virtdeck.ui.detail_panel._constants import TabIndex
 from virtdeck.ui.detail_panel._storage_tabs import StorageTabs
 from virtdeck.ui.i18n import tr
+from virtdeck.ui.theme import Color
 
 PBS_ITEM = {
     "volid": "pbs1:backup/vm/100/2024-05-06T07:08:09Z",
@@ -80,4 +81,4 @@ def test_populate_marks_failed_verify_red(qtbot):
     storage_tabs.populate_storage_backups_table([item], "h1", "n1")
     table = panel.storage_backups_table
     assert table.item(0, 2).text() == "failed"
-    assert table.item(0, 2).foreground().color().name() == "#dc2626"
+    assert table.item(0, 2).foreground().color().name() == Color.DANGER

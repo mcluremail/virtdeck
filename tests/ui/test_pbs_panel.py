@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt
 from virtdeck.domain.pbs import PbsDatastore, PbsJob, PbsSnapshot
 from virtdeck.ui import pbs_panel as pbs_panel_mod
 from virtdeck.ui.pbs_panel import PbsPanel
+from virtdeck.ui.theme import Color
 
 _CFG = {
     "name": "pbs1", "type": "pbs", "host": "pbs.local",
@@ -129,10 +130,11 @@ class TestDatastoreView:
 
 class TestUsageColors:
     def test_usage_color_thresholds(self):
+        # токены, а не hex: значения меняются контрастным аудитом
         color = pbs_panel_mod._usage_color
-        assert color(0.5) == "#16a34a"
-        assert color(0.8) == "#d97706"
-        assert color(0.95) == "#dc2626"
+        assert color(0.5) == Color.SUCCESS
+        assert color(0.8) == Color.WARNING
+        assert color(0.95) == Color.DANGER
 
 
 class TestNsCombo:
