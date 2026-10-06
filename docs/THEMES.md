@@ -219,6 +219,20 @@ the template viewBox. The built-in Breeze/Breeze Dark themes ship an original
 24 px icon set covering the whole registry and set `icon_size = 24` —
 density is tuned through `extra_qss()`.
 
+**Contrast:** every built-in theme keeps WCAG legibility for text:
+`TEXT`/`TEXT_SEC`/`STATUS_*`/`DANGER` >= 4.5:1 and `TEXT_DIM`/`DISABLED` >= 3.0:1
+on every background token, `ON_ACCENT` >= 4.5:1 on `ACCENT`. Dark themes
+(Breeze Dark, Graphite, System-dark) use dark selection text on the light-blue
+accent; light themes use darkened status colors (KDE/Material hues that could
+not reach 4.5 on light backgrounds were darkened). Some derived tokens
+therefore deviate from the exact scheme values. Locked by
+`test_theme_text_contrast`.
+
+**Label backgrounds:** the global `QWidget {{ background: BG }}` rule paints
+every styled widget, so text widgets (`QLabel`, `QCheckBox`, `QRadioButton`,
+`QGroupBox`) are explicitly `background: transparent` — they must show their
+container's surface (card PANEL/RAISED), not the window background.
+
 ## 7. Built-in themes and ordering
 
 | id | Name | Notes |

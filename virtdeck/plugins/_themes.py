@@ -120,25 +120,25 @@ class BreezeTheme:
         "BORDER_LIGHT": "#d8dbde",  # derived
         "BORDER_STRONG": "#a7abaf",  # derived
         "TEXT": "#232629",          # Window foreground
-        "TEXT_SEC": "#707d8a",      # Window inactive
-        "TEXT_DIM": "#98a2ab",      # derived
-        "DISABLED": "#a7abaf",      # derived (ColorEffects:Disabled)
-        "ON_ACCENT": "#ffffff",     # Selection foreground
+        "TEXT_SEC": "#58656f",      # derived, контраст >=4.5 на светлых фонах
+        "TEXT_DIM": "#707880",      # derived, контраст >=3.0
+        "DISABLED": "#707880",      # derived, контраст >=3.0
+        "ON_ACCENT": "#1d2124",     # Selection foreground: тёмный на светло-голубом акценте
         "ACCENT": "#3daee9",        # DecorationFocus
         "ACCENT_HOVER": "#55b8ec",  # derived
         "ACCENT_LIGHT": "#a3d4fa",  # Button alternate (inactive selection)
         "ACCENT_PRESSED": "#2f96d3",  # derived
-        "SUCCESS": "#27ae60",       # Positive
+        "SUCCESS": "#166534",       # Positive, контраст >=4.5
         "SUCCESS_LIGHT": "#e2f6ea",  # derived
-        "WARNING": "#f67400",       # Neutral
-        "WARNING_TEXT": "#a95400",  # derived
-        "DANGER": "#da4453",        # Negative
+        "WARNING": "#87590a",       # Neutral, контраст >=4.5
+        "WARNING_TEXT": "#87590a",  # derived, контраст >=4.5
+        "DANGER": "#b02a37",        # Negative, контраст >=4.5
         "DANGER_SOLID": "#da4453",
         "DANGER_SOLID_HOVER": "#e36a76",  # derived
         "DANGER_SOLID_PRESSED": "#b03745",  # Selection negative
-        "STATUS_OK": "#27ae60",
-        "STATUS_WARN": "#f67400",
-        "STATUS_ERR": "#da4453",
+        "STATUS_OK": "#166534",     # derived, контраст >=4.5
+        "STATUS_WARN": "#87590a",   # derived, контраст >=4.5
+        "STATUS_ERR": "#b02a37",    # derived, контраст >=4.5
         "HOVER": "#e3e5e7",         # Window alternate
         "ROW_WARN": "#fdf1e3",      # derived (warning tint)
         "TOAST_BG": "#2a2e32",      # Complementary background
@@ -186,8 +186,8 @@ class BreezeDarkTheme(BreezeTheme):
         "TEXT": "#fcfcfc",          # Window foreground
         "TEXT_SEC": "#a1a9b1",      # Window inactive
         "TEXT_DIM": "#7d868e",      # derived
-        "DISABLED": "#6a7178",      # derived (ColorEffects:Disabled)
-        "ON_ACCENT": "#fcfcfc",     # Selection foreground
+        "DISABLED": "#757d84",      # derived, контраст >=3.0 на тёмных фонах
+        "ON_ACCENT": "#1d2124",     # Selection foreground: тёмный на светло-голубом акценте (>=4.5)
         "ACCENT": "#3daee9",        # DecorationFocus
         "ACCENT_HOVER": "#55b8ec",  # derived
         "ACCENT_LIGHT": "#1e5774",  # Button alternate (inactive selection)
@@ -196,13 +196,13 @@ class BreezeDarkTheme(BreezeTheme):
         "SUCCESS_LIGHT": "#1c3827",  # derived
         "WARNING": "#f67400",
         "WARNING_TEXT": "#f89b47",  # derived
-        "DANGER": "#da4453",
+        "DANGER": "#e97e8a",        # derived, контраст >=4.5 на тёмных фонах
         "DANGER_SOLID": "#da4453",
         "DANGER_SOLID_HOVER": "#e36a76",  # derived
         "DANGER_SOLID_PRESSED": "#b03745",  # Selection negative
         "STATUS_OK": "#27ae60",
         "STATUS_WARN": "#f67400",
-        "STATUS_ERR": "#da4453",
+        "STATUS_ERR": "#e97e8a",    # derived, контраст >=4.5 на тёмных фонах
         "HOVER": "#34383d",         # derived
         "ROW_WARN": "#44331a",      # derived (warning tint)
         "TOAST_BG": "#17191c",      # derived (darker than BG)
@@ -235,25 +235,25 @@ class OxygenTheme:
         "BORDER_LIGHT": "#c0bdbb",  # derived
         "BORDER_STRONG": "#8f8c8a",  # derived
         "TEXT": "#1f1c1b",          # View foreground
-        "TEXT_SEC": "#898887",      # Window inactive
-        "TEXT_DIM": "#9c9a99",      # derived
-        "DISABLED": "#b0aeac",      # derived
-        "ON_ACCENT": "#ffffff",     # Selection foreground
+        "TEXT_SEC": "#55524f",      # derived, контраст >=4.5 на светлых фонах
+        "TEXT_DIM": "#6b6865",      # derived, контраст >=3.0
+        "DISABLED": "#6b6865",      # derived, контраст >=3.0
+        "ON_ACCENT": "#1d2124",     # Selection foreground: тёмный на голубом акценте
         "ACCENT": "#3aa7dd",        # DecorationFocus
         "ACCENT_HOVER": "#6ed6ff",  # DecorationHover
         "ACCENT_LIGHT": "#cbe9f9",  # derived
         "ACCENT_PRESSED": "#3e8acc",  # Selection alternate
-        "SUCCESS": "#006e28",       # Positive
+        "SUCCESS": "#0f5c2e",       # Positive, контраст >=4.5
         "SUCCESS_LIGHT": "#ddf0e2",  # derived
-        "WARNING": "#b08000",       # Neutral
-        "WARNING_TEXT": "#8a6600",  # derived
-        "DANGER": "#bf0303",        # Negative
+        "WARNING": "#6e4a08",       # Neutral, контраст >=4.5
+        "WARNING_TEXT": "#6e4a08",  # derived, контраст >=4.5
+        "DANGER": "#97251b",        # Negative, контраст >=4.5
         "DANGER_SOLID": "#bf0303",
         "DANGER_SOLID_HOVER": "#d63c3c",  # derived
         "DANGER_SOLID_PRESSED": "#9c0e0e",  # Selection negative
-        "STATUS_OK": "#006e28",
-        "STATUS_WARN": "#b08000",
-        "STATUS_ERR": "#bf0303",
+        "STATUS_OK": "#0f5c2e",     # derived, контраст >=4.5
+        "STATUS_WARN": "#6e4a08",   # derived, контраст >=4.5
+        "STATUS_ERR": "#97251b",    # derived, контраст >=4.5
         "HOVER": "#dad9d8",         # Window alternate
         "ROW_WARN": "#f5ecd9",      # derived (warning tint)
         "TOAST_BG": "#181513",      # Tooltip background
@@ -301,7 +301,7 @@ class GraphiteTheme:
         "TEXT": "#e8eaec",
         "TEXT_SEC": "#a9adb1",
         "TEXT_DIM": "#7e8286",
-        "DISABLED": "#6f7377",
+        "DISABLED": "#84888c",      # derived, контраст >=3.0 на тёмных фонах
         "ON_ACCENT": "#1d1f21",
         "ACCENT": "#8fa6bb",        # светлая сталь
         "ACCENT_HOVER": "#a1b5c7",
@@ -311,13 +311,13 @@ class GraphiteTheme:
         "SUCCESS_LIGHT": "#2c3a2f",
         "WARNING": "#d9a05b",
         "WARNING_TEXT": "#e0b077",
-        "DANGER": "#d97379",
+        "DANGER": "#e9949a",        # derived, контраст >=4.5 на тёмных фонах
         "DANGER_SOLID": "#b8555c",
         "DANGER_SOLID_HOVER": "#c6676e",
         "DANGER_SOLID_PRESSED": "#9c454c",
         "STATUS_OK": "#7fbf8e",
         "STATUS_WARN": "#d9a05b",
-        "STATUS_ERR": "#d97379",
+        "STATUS_ERR": "#e9949a",    # derived, контраст >=4.5 на тёмных фонах
         "HOVER": "#383b3e",
         "ROW_WARN": "#3d3527",
         "TOAST_BG": "#1e2022",

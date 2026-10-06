@@ -255,7 +255,8 @@ class TestBuiltinThemePlugins:
         assert tokens["ACCENT_HOVER"] == "#6ed6ff"
         assert tokens["TOAST_BG"] == "#181513"
         assert tokens["DANGER_SOLID_PRESSED"] == "#9c0e0e"
-        assert tokens["WARNING"] == "#b08000"
+        # WARNING затемнён относительно схемы Oxygen: контраст текста >=4.5
+        assert tokens["WARNING"] == "#6e4a08"
 
     def test_breeze_activates_24px_with_overrides(self, qtbot):
         from PySide6.QtCore import QSize
@@ -348,6 +349,50 @@ class TestBuiltinThemePlugins:
             assert curve.opts["pen"].color().name().lower() == Color.STATUS_WARN.lower()
         finally:
             load_theme("light", persist=False)
+
+    def test_theme_text_contrast(self):
+        """WCAG-контраст надписей во всех темах: текст >=4.5, dim >=3.0."""
+        from virtdeck.plugins import _themes as bt
+
+        def _ratio(fg, bg):
+            def lin(c):
+                c /= 255.0
+                return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+            def lum(h):
+                h = h.lstrip("#")
+                r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+                return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+
+            a, b = lum(fg), lum(bg)
+            return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+        themes = {
+            "light": bt.LightTheme().tokens(),
+            "breeze": bt.BreezeTheme().tokens(),
+            "oxygen": bt.OxygenTheme().tokens(),
+            "graphite": bt.GraphiteTheme().tokens(),
+        }
+        bt.set_scheme_resolver(lambda: "dark")
+        try:
+            themes["system_dark"] = bt.SystemTheme().tokens()
+        finally:
+            bt.set_scheme_resolver(lambda: "light")
+            try:
+                themes["system_light"] = bt.SystemTheme().tokens()
+            finally:
+                bt.set_scheme_resolver(None)
+        bgs = ("BG", "PANEL", "RAISED", "TRACK", "ALT_ROW")
+        strong = ("TEXT", "TEXT_SEC", "STATUS_OK", "STATUS_WARN",
+                  "STATUS_ERR", "DANGER")
+        weak = ("TEXT_DIM", "DISABLED")
+        for tname, t in themes.items():
+            for bg in bgs:
+                for fg in strong:
+                    assert _ratio(t[fg], t[bg]) >= 4.5, (tname, fg, bg)
+                for fg in weak:
+                    assert _ratio(t[fg], t[bg]) >= 3.0, (tname, fg, bg)
+            assert _ratio(t["ON_ACCENT"], t["ACCENT"]) >= 4.5, (tname, "ON_ACCENT")
 
     def test_system_follows_resolver(self, monkeypatch):
         from virtdeck.plugins import _themes as bt

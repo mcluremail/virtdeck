@@ -1,9 +1,35 @@
+import weakref
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QSizePolicy, QVBoxLayout
 
-from ..theme import Color
+from ..theme import TOKENS, Color
 from .spinner import SpinnerWidget
+
+# Живые карточки: инлайн-стили запекаются при создании, поэтому при смене
+# темы их нужно перестилизовать (см. retheme_metric_cards).
+_LIVE_CARDS: weakref.WeakSet | None = None
+
+
+def retheme_metric_cards():
+    """Перекраска всех живых MetricCard под активную тему."""
+    global _LIVE_CARDS
+    if _LIVE_CARDS is None:
+        return
+    for card in list(_LIVE_CARDS):
+        try:
+            card.retheme()
+        except RuntimeError:
+            _LIVE_CARDS.discard(card)  # C++-объект уже удалён
+
+
+def _token_for(color):
+    """Имя канонического токена по значению (для перекраски при смене темы)."""
+    for name in TOKENS:
+        if getattr(Color, name, None) == color:
+            return name
+    return None
 
 
 class MetricCard(QFrame):
@@ -11,6 +37,8 @@ class MetricCard(QFrame):
         super().__init__(parent)
         self._show_progress = show_progress
         self._progress = 0
+        self._bar_color = None        # кастомный цвет чанка (hex)
+        self._value_color_token = None
         self.setObjectName("metricCard")
 
         layout = QVBoxLayout(self)
@@ -18,21 +46,15 @@ class MetricCard(QFrame):
         layout.setSpacing(2)
 
         self._title_label = QLabel(title)
-        self._title_label.setStyleSheet(
-            f"color: {Color.TEXT_DIM}; font-size: 11px; font-weight: 600;"
-            " text-transform: uppercase; letter-spacing: 0.05em;"
-        )
         layout.addWidget(self._title_label)
 
         layout.addSpacing(4)
 
         self._value_label = QLabel(value)
-        f = QFont()
-        f.setPointSize(18)
-        f.setBold(True)
-        f.setLetterSpacing(QFont.AbsoluteSpacing, -0.5)
-        self._value_label.setFont(f)
-        self._value_label.setStyleSheet(f"color: {Color.TEXT};")
+        self._value_font = QFont()
+        self._value_font.setPointSize(18)
+        self._value_font.setBold(True)
+        self._value_font.setLetterSpacing(QFont.AbsoluteSpacing, -0.5)
 
         value_row = QHBoxLayout()
         value_row.setContentsMargins(0, 0, 0, 0)
@@ -46,7 +68,6 @@ class MetricCard(QFrame):
         layout.addLayout(value_row)
 
         self._subtitle_label = QLabel(subtitle)
-        self._subtitle_label.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
         if subtitle:
             self._subtitle_label.show()
         else:
@@ -58,17 +79,59 @@ class MetricCard(QFrame):
             self._bar.setRange(0, 100)
             self._bar.setFixedHeight(6)
             self._bar.setTextVisible(False)
-            self._bar.setStyleSheet(
-                f"QProgressBar {{ background: {Color.TRACK}; border: none; border-radius: 3px; }}"
-                f"QProgressBar::chunk {{ background: {Color.ACCENT}; border-radius: 3px; }}"
-            )
             layout.addSpacing(8)
             layout.addWidget(self._bar)
         else:
             self._bar = None
 
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setFixedHeight(84)
+        # Высота по содержимому: фиксированная высота резала значения
+        # (18pt-цифры не влезали). В grid-раскладке карточки одной строки
+        # всё равно выравниваются по самой высокой (Minimum).
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+        self._restyle()
+
+        global _LIVE_CARDS
+        if _LIVE_CARDS is None:
+            _LIVE_CARDS = weakref.WeakSet()
+        _LIVE_CARDS.add(self)
+
+    def _restyle(self):
+        """Инлайн-стили по текущим токенам (создание + смена темы)."""
+        self._title_label.setStyleSheet(
+            f"color: {Color.TEXT_DIM}; font-size: 11px; font-weight: 600;"
+            " text-transform: uppercase; letter-spacing: 0.05em;"
+        )
+        value_color = Color.TEXT
+        extra = ""
+        if self._value_color_token:
+            value_color = getattr(Color, self._value_color_token)
+            extra = " font-weight: 600;"
+        self._value_label.setFont(self._value_font)
+        self._value_label.setStyleSheet(f"color: {value_color};{extra}")
+        self._subtitle_label.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
+        self._apply_bar_style()
+
+    def retheme(self):
+        """Перекраска при смене темы: свежие токены в инлайн-стилях."""
+        self._restyle()
+
+    def _apply_bar_style(self):
+        if self._bar is None:
+            return
+        pct = self._progress
+        if self._bar_color:
+            bar_color = self._bar_color
+        elif pct >= 80:
+            bar_color = Color.STATUS_ERR
+        elif pct >= 50:
+            bar_color = Color.STATUS_WARN
+        else:
+            bar_color = Color.ACCENT
+        self._bar.setStyleSheet(
+            f"QProgressBar {{ background: {Color.TRACK}; border: none; border-radius: 3px; }}"
+            f"QProgressBar::chunk {{ background: {bar_color}; border-radius: 3px; }}"
+        )
 
     def set_title(self, title):
         self._title_label.setText(title)
@@ -96,24 +159,10 @@ class MetricCard(QFrame):
         if not self._bar:
             return
         self._progress = max(0, min(100, int(pct)))
+        self._bar_color = color
         self._bar.setValue(self._progress)
-        if color:
-            self._bar.setStyleSheet(
-                f"QProgressBar {{ background: {Color.TRACK}; border: none; border-radius: 3px; }}"
-                f"QProgressBar::chunk {{ background: {color}; border-radius: 3px; }}"
-            )
-        else:
-            pct = self._progress
-            if pct >= 80:
-                bar_color = Color.STATUS_ERR
-            elif pct >= 50:
-                bar_color = Color.STATUS_WARN
-            else:
-                bar_color = Color.ACCENT
-            self._bar.setStyleSheet(
-                f"QProgressBar {{ background: {Color.TRACK}; border: none; border-radius: 3px; }}"
-                f"QProgressBar::chunk {{ background: {bar_color}; border-radius: 3px; }}"
-            )
+        self._apply_bar_style()
 
     def set_value_color(self, color):
+        self._value_color_token = _token_for(color)
         self._value_label.setStyleSheet(f"color: {color}; font-weight: 600;")

@@ -46,9 +46,9 @@ class Color:
 
     # Текст
     TEXT        = "#181c26"
-    TEXT_SEC    = "#6b7280"
-    TEXT_DIM    = "#9ca3af"
-    DISABLED    = "#b0b8c4"
+    TEXT_SEC    = "#5f6774"
+    TEXT_DIM    = "#868a8f"
+    DISABLED    = "#868a8f"
     ON_ACCENT   = "#ffffff"   # текст/штрих поверх насыщенного цвета
 
     # Акцент
@@ -58,18 +58,18 @@ class Color:
     ACCENT_PRESSED  = "#c6dafc"   # зажатый контрол (spin-стрелки)
 
     # Статусы
-    SUCCESS     = "#16a34a"
+    SUCCESS     = "#15803d"  # контраст >=4.5 на светлых фонах
     SUCCESS_LIGHT = "#bbf7d0"  # светлый зелёный на тёмных поверхностях (тост)
-    WARNING     = "#d97706"
-    WARNING_TEXT = "#b45309"  # тёмный янтарный текст-подсказка
-    DANGER      = "#dc2626"   # error-акцент в тексте/рамках
+    WARNING     = "#92600a"  # контраст >=4.5 на светлых фонах
+    WARNING_TEXT = "#92600a"  # тёмный янтарный текст-подсказка (контраст >=4.5)
+    DANGER      = "#b91c1c"   # error-акцент в тексте/рамках (контраст >=4.5)
     DANGER_SOLID         = "#c0392b"   # насыщенный красный: строгий текст, кнопка
     DANGER_SOLID_HOVER   = "#e74c3c"
     DANGER_SOLID_PRESSED = "#a93226"
 
-    STATUS_OK    = "#22c55e"   # индикаторы (иконки/точки)
-    STATUS_WARN  = "#f59e0b"
-    STATUS_ERR   = "#ef4444"
+    STATUS_OK    = "#15803d"   # индикаторы/текст статуса (контраст >=4.5)
+    STATUS_WARN  = "#92600a"
+    STATUS_ERR   = "#b91c1c"
 
     # Ряды и поверхности
     HOVER       = "#e8edf4"   # подсветка строки/ячейки
@@ -215,6 +215,12 @@ def _build_qss() -> str:
        в тёмных темах ── */
     QWidget {{
         background: {Color.BG};
+    }}
+
+    /* ── Текстовые виджеты поверх карточек/панелей: их подложка должна
+       совпадать с подложкой контейнера, а не с общим фоном окна ── */
+    QLabel, QCheckBox, QRadioButton, QGroupBox {{
+        background: transparent;
     }}
 
     /* ── Header bar ── */
@@ -970,6 +976,8 @@ def load_theme(theme_id: str, registry=None, persist: bool = True) -> str:
     set_base_size(getattr(plugin, "icon_size", 16))
     reset_icons()
     retheme_plots()
+    from .widgets.metric_card import retheme_metric_cards
+    retheme_metric_cards()
     _install_scheme_listener()
     if persist:
         save_ui_state("theme", theme_id)
