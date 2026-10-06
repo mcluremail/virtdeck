@@ -211,3 +211,18 @@ class TestCommandPalette:
         assert "Refresh token" in labels
         assert "Create cluster…" in labels
         assert "Start" not in labels            # VM-действия скрыты
+
+    def test_retheme_updates_icon_size(self, qtbot):
+        """E2 (аудит 2026-10-06): смена темы с другим icon_size (Breeze 24px)
+        обновляет размер иконок списка палитры, созданной ранее."""
+        from virtdeck.ui import icons as icons_mod
+
+        pal = CommandPalette(ActionRegistry(), lambda: Selection())
+        qtbot.addWidget(pal)
+        old = icons_mod.base_size()
+        try:
+            icons_mod.set_base_size(24)
+            pal.retheme()
+            assert pal._list.iconSize().height() == 24
+        finally:
+            icons_mod.set_base_size(old)

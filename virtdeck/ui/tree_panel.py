@@ -1451,6 +1451,10 @@ class TreePanel(QWidget):
             node, host_name = key[1], key[2]
         elif kind == "storage" and len(key) >= 4 and key[2] == "host":
             host_name = key[3]
+        if kind == "host" and not host_name:
+            # Скелетон первичной загрузки («host», имя, без node/host_name):
+            # паритет с контекст-меню — действий нет (аудит 2026-10-06, E1).
+            return Selection()
         return Selection(kind=kind, label=text, host_name=host_name,
                          node=node, key=tuple(key))
 

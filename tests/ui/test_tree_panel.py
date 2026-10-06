@@ -1266,6 +1266,33 @@ class TestCurrentSelection:
         qtbot.addWidget(tp)
         assert tp.current_selection().is_empty
 
+    def test_skeleton_host_key_yields_empty_selection(
+            self, qtbot, make_node, make_vm):
+        """E1 (аудит 2026-10-06): 2-элементный host-ключ скелетона первичной
+        загрузки не даёт Selection — палитра не предлагает host-действия с
+        пустым host_name (паритет с контекст-меню, которое на скелетоне
+        не строится)."""
+        from virtdeck.ui.tree_panel import ITEM_KEY_ROLE
+
+        vm = make_vm(vmid=100, name="alpha", host_name="h1", node="pve01")
+        tp = self._make(qtbot, make_node, make_vm, [vm])
+        from PySide6.QtWidgets import QTreeWidgetItem
+
+        skeleton = QTreeWidgetItem(tp.tree)
+        skeleton.setText(0, "hv02")
+        skeleton.setData(0, ITEM_KEY_ROLE, ("host", "hv02"))
+        sel = tp.selection_for_item(skeleton)
+        assert sel.is_empty
+        # Полноценный 3-элементный ключ по-прежнему резолвится.
+        real = QTreeWidgetItem(tp.tree)
+        real.setText(0, "pve01")
+        real.setData(0, ITEM_KEY_ROLE, ("host", "pve01", "h1"))
+        sel2 = tp.selection_for_item(real)
+        assert not sel2.is_empty
+        assert sel2.kind == "host"
+        assert sel2.host_name == "h1"
+        assert sel2.node == "pve01"
+
     def test_qemu_vm(self, qtbot, make_node, make_vm):
         from virtdeck.domain.enums import VmType
 

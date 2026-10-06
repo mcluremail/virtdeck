@@ -18,6 +18,7 @@
 - PVE API tokens created on servers by new host additions are named `virtdeck-*` (previously `pvecenter-*`); tokens of existing hosts keep working unchanged
 
 **Internal**
+- Incremental audit per `docs/AUDIT_PROCESS.md` (`docs/AUDIT_2026-10-06.md`, tag `audit/2026-10-06`): delta v2.13.0 → M2 (23 commits) — theme engine, rename migrations, brand, first-run, M0/M1/M2; fixed palette offering host actions on the initial-load skeleton placeholder with an empty host name (E1) and a stale palette icon size after theme switch (E2); 5 observations recorded
 - 1009 tests (M0 contracts, optimistic UI, perf smoke, compat matrix, theme plugins incl. full Breeze icon registry coverage + exact-24px sizing + live chart retheme, brand assets/tray states incl. tray-available startup, add-server dialog, keyring and config-dir legacy migration; M2 action registry + command palette incl. menu parity and bulk-selection), ruff clean
 
 ## v2.13.0 — cluster create/join via UI, storage management, stabilization (last 2.x)

@@ -107,6 +107,7 @@ class CommandPalette(QDialog):
     def retheme(self):
         """Перестилизация при смене темы (каркас; содержимое пересобирается
         при следующем открытии из свежих токенов)."""
+        self._list.setIconSize(QSize(base_size(), base_size()))
         self._frame.setStyleSheet(
             f"QFrame#paletteFrame {{ background: {Color.RAISED};"
             f" border: 1px solid {Color.BORDER_STRONG}; border-radius: 10px; }}"
