@@ -210,6 +210,13 @@ def _build_qss() -> str:
         color: {Color.TEXT};
     }}
 
+    /* ── Базовый фон: без этого правила «голые» QWidget-контейнеры
+       (центральная панель, шапка задач) светятся системной палитрой
+       в тёмных темах ── */
+    QWidget {{
+        background: {Color.BG};
+    }}
+
     /* ── Header bar ── */
     QToolBar {{
         background: {Color.PANEL};
@@ -937,7 +944,7 @@ def load_theme(theme_id: str, registry=None, persist: bool = True) -> str:
     from ..config import save_ui_state
     from ..plugins import _themes as _builtin_themes
     from ..plugins import get_registry
-    from .detail_panel._constants import apply_chart_colors, pg_loaded
+    from .detail_panel._constants import retheme_plots
     from .icons import reset_icons, set_base_size, set_theme_icons
 
     reg = registry if registry is not None else get_registry()
@@ -962,9 +969,7 @@ def load_theme(theme_id: str, registry=None, persist: bool = True) -> str:
     _apply_qss()
     set_base_size(getattr(plugin, "icon_size", 16))
     reset_icons()
-    pg = pg_loaded()
-    if pg is not None:
-        apply_chart_colors(pg)
+    retheme_plots()
     _install_scheme_listener()
     if persist:
         save_ui_state("theme", theme_id)

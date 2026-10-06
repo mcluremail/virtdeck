@@ -267,13 +267,87 @@ class TestBuiltinThemePlugins:
             assert icons._BASE_SIZE == 24
             assert {"vm", "host", "cluster", "pool", "storage",
                     "backup", "refresh", "search"} <= set(icons._THEME_ICONS)
+            # все иконки рендерятся ровно в базовом размере, без уменьшения
             assert QSize(24, 24) in icons.get_icon("vm").availableSizes()
-            assert QSize(21, 21) in icons.get_icon("refresh").availableSizes()
+            assert QSize(24, 24) in icons.get_icon("refresh").availableSizes()
         finally:
             load_theme("light", persist=False)
         assert icons._BASE_SIZE == 16
         assert not icons._THEME_ICONS
         assert QSize(16, 16) in icons.get_icon("vm").availableSizes()
+
+    def test_breeze_icons_cover_full_registry(self):
+        """Breeze перекрывает весь реестр иконок, кроме брендового 'app'."""
+        from virtdeck.plugins._themes import BREEZE_ICONS
+        from virtdeck.ui import icons
+
+        missing = set(icons._BUILTINS) - {"app"} - set(BREEZE_ICONS)
+        assert not missing, missing
+        assert "app" not in BREEZE_ICONS
+        for name, svg in BREEZE_ICONS.items():
+            assert 'viewBox="0 0 24 24"' in svg, name
+            # шаблон с токенами темы ИЛИ осознанно фиксированные цвета (filled-стиль)
+            assert "{c}" in svg or 'fill="#' in svg or 'stroke="#' in svg, name
+
+    def test_breeze_icons_apply_to_all_names(self, qtbot):
+        """Оверрайды применяются ко всему кэшу init_icons (не только 7 имён)."""
+        from PySide6.QtCore import QSize
+
+        from virtdeck.ui import icons
+
+        try:
+            load_theme("breeze", persist=False)
+            assert set(icons._THEME_ICONS) == set(icons._BUILTINS) - {"app"}
+            for name in icons._BUILTINS:
+                icon = icons.get_icon(name)
+                assert icon is not None and not icon.isNull(), name
+            # регрессия: search раньше игнорировал оверрайд в кэше
+            assert QSize(24, 24) in icons.get_icon("search").availableSizes()
+        finally:
+            load_theme("light", persist=False)
+
+    def test_charts_retheme_live(self, qtbot):
+        """Уже построенный график перекрашивается при смене темы."""
+        pytest.importorskip("pyqtgraph")
+
+        from virtdeck.ui.theme import Color
+        from virtdeck.ui.widgets.vm_metrics_widget import VmMetricsWidget
+
+        try:
+            load_theme("breeze", persist=False)
+            w = VmMetricsWidget()
+            qtbot.addWidget(w)
+            w.ensure_plot()
+            assert w._has_plot
+            w.update_curves({"cpu": [{"time": 1, "value": 1},
+                                     {"time": 2, "value": 2}]})
+            load_theme("light", persist=False)
+            assert w.plot.backgroundBrush().color().name().lower() == Color.BG.lower()
+            assert w.curve.opts["pen"].color().name().lower() == Color.ACCENT.lower()
+        finally:
+            load_theme("light", persist=False)
+
+    def test_retheme_plots_registry(self, qtbot):
+        """Реестр перекрашивает чужой PlotWidget по _vd_token."""
+        pytest.importorskip("pyqtgraph")
+
+        import pyqtgraph as pg
+
+        from virtdeck.ui.detail_panel._constants import register_plot
+        from virtdeck.ui.theme import Color
+
+        try:
+            load_theme("breeze", persist=False)
+            w = pg.PlotWidget()
+            qtbot.addWidget(w)
+            curve = w.plot([], [], pen=pg.mkPen("#000000", width=2))
+            curve._vd_token = "STATUS_WARN"
+            register_plot(w)
+            load_theme("light", persist=False)
+            assert w.backgroundBrush().color().name().lower() == Color.BG.lower()
+            assert curve.opts["pen"].color().name().lower() == Color.STATUS_WARN.lower()
+        finally:
+            load_theme("light", persist=False)
 
     def test_system_follows_resolver(self, monkeypatch):
         from virtdeck.plugins import _themes as bt

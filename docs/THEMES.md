@@ -206,16 +206,18 @@ ignored by consumers — overrides only take effect for names the app requests.
 placeholders filled with `ICON_FG`, `ICON_FG_DIM`, `STATUS_OK`, `STATUS_ERR`,
 `BORDER`. A foreign SVG **without** placeholders is used as-is (verbatim), so
 a theme has full control over its own artwork. Inline SVG only — no external
-files are loaded.
+files are loaded. The Breeze override ships a **filled fixed-color set**
+(approved 2026-09-15) — its SVGs carry literal hex colors and render
+identically in light and dark, by design.
 
-**Sizing:** every icon is rendered at `icon_size` × a per-name scale
-(`app` 1.5×; `refresh`/`upload`/`download`/`export`/`import`/`about`/`lock`/
-`unlock`/`migrate`/`clone`/`search` 0.875×; `expand`/`collapse`/`add`/
-`remove` 0.75×; minimum 10 px). The status dot overlaid by
-`get_icon(name, status)` scales from the template viewBox. The built-in
-Breeze/Breeze Dark themes ship an original 24 px icon set (`vm`, `host`,
-`cluster`, `pool`, `storage`, `backup`, `refresh`, `search`) and set
-`icon_size = 24` — density is tuned through `extra_qss()`.
+**Sizing:** every icon is rendered at exactly `icon_size` px — no per-name
+down-scaling (owner decision 2026-09-15: "все иконки в 24px, ВСЕ"). The only
+exception is the branded `app` mark at 1.5×. All icon slots (tree, toolbar,
+toggle buttons) take their size from `icons.base_size()` and follow the
+active theme. The status dot overlaid by `get_icon(name, status)` scales from
+the template viewBox. The built-in Breeze/Breeze Dark themes ship an original
+24 px icon set covering the whole registry and set `icon_size = 24` —
+density is tuned through `extra_qss()`.
 
 ## 7. Built-in themes and ordering
 

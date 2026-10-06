@@ -192,6 +192,7 @@ class MainWindow(QMainWindow):
         self._tray = None
         self._tray_state = "ok"
         self._tray_minimize_to_tray = True
+        self._soft_had_errors = False
         if QSystemTrayIcon.isSystemTrayAvailable():
             self._init_tray()
 
@@ -272,9 +273,9 @@ class MainWindow(QMainWindow):
         self._events = EventBus()
 
         # Переменные для мягкого обновления
+        # (_soft_had_errors инициализируется раньше — до _init_tray, см. выше)
         self.last_refresh_ts = 0
         self.refresh_interval = 5
-        self._soft_had_errors = False
 
         # Восстанавливаем состояние окна: геометрия, maximized, последний выбранный элемент
         self._restore_window_state()
@@ -284,9 +285,9 @@ class MainWindow(QMainWindow):
 
         self._toolbar = QToolBar()
         self._toolbar.setMovable(False)
-        from .icons import _BASE_SIZE
+        from .icons import base_size
 
-        _tb = max(18, round(_BASE_SIZE * 1.125))
+        _tb = base_size()
         self._toolbar.setIconSize(QSize(_tb, _tb))
         self._toolbar.setToolButtonStyle(Qt.ToolButtonIconOnly)
 
@@ -294,16 +295,19 @@ class MainWindow(QMainWindow):
         add_action.setToolTip(tr("Add server") + " (Ctrl+N)")
         add_action.triggered.connect(lambda: self._on_add_server())
         self._toolbar.addAction(add_action)
+        self._toolbar_icon_actions = [(add_action, "add")]
 
         refresh_action = QAction(get_icon("refresh"), tr("Refresh"), self)
         refresh_action.setToolTip(tr("Refresh data") + " (Ctrl+R)")
         refresh_action.triggered.connect(self.refresh_data)
         self._toolbar.addAction(refresh_action)
+        self._toolbar_icon_actions.append((refresh_action, "refresh"))
 
         search_action = QAction(get_icon("search"), tr("Global search"), self)
         search_action.setToolTip(tr("Global search") + " (Ctrl+F)")
         search_action.triggered.connect(self._open_global_search)
         self._toolbar.addAction(search_action)
+        self._toolbar_icon_actions.append((search_action, "search"))
 
         self._toolbar.addSeparator()
 
@@ -311,11 +315,13 @@ class MainWindow(QMainWindow):
         export_action.setToolTip(tr("Export configuration"))
         export_action.triggered.connect(self._on_export_config)
         self._toolbar.addAction(export_action)
+        self._toolbar_icon_actions.append((export_action, "export"))
 
         import_action = QAction(get_icon("import"), tr("Import configuration"), self)
         import_action.setToolTip(tr("Import configuration"))
         import_action.triggered.connect(self._on_import_config)
         self._toolbar.addAction(import_action)
+        self._toolbar_icon_actions.append((import_action, "import"))
 
         self._toolbar.addSeparator()
 
@@ -323,6 +329,7 @@ class MainWindow(QMainWindow):
         about_action.setToolTip(tr("About"))
         about_action.triggered.connect(self._on_about)
         self._toolbar.addAction(about_action)
+        self._toolbar_icon_actions.append((about_action, "about"))
 
         quit_action = QAction(tr("Quit"), self)
         quit_action.setToolTip(tr("Quit") + " (Ctrl+Q)")
@@ -2119,16 +2126,19 @@ class MainWindow(QMainWindow):
 
     def _on_theme_applied(self):
         """Реакция UI на применённую тему: инлайн-стили + дерево + тулбар."""
-        from .icons import _BASE_SIZE, init_icons
+        from .icons import base_size, init_icons
 
         for combo in (self._lang_combo, self._theme_combo):
             combo.setStyleSheet(self._status_combo_style())
         init_icons()
-        size = max(18, round(_BASE_SIZE * 1.125))
+        for act, icon_name in self._toolbar_icon_actions:
+            act.setIcon(get_icon(icon_name))
+        size = base_size()
         self._toolbar.setIconSize(QSize(size, size))
         self._brand.restyle()
         self._update_tray_state()
         self.tree_panel.reapply_theme()
+        self.detail_panel.reapply_theme()
 
     def _on_language_changed(self, idx):
         code = self._lang_combo.itemData(idx)

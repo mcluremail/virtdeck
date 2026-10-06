@@ -14,6 +14,11 @@ def set_base_size(size):
     _BASE_SIZE = int(size)
 
 
+def base_size():
+    """Текущий базовый размер иконок (24 у Breeze, 16 у остальных тем)."""
+    return _BASE_SIZE
+
+
 def reset_icons():
     """Сброс кэша иконок — после смены темы (перерисовка новыми цветами)."""
     global _icons
@@ -31,12 +36,7 @@ def set_theme_icons(overrides):
 
 # Относительные размеры мелких/крупных иконок от базового размера.
 _SCALES = {
-    "app": 1.5,
-    "refresh": 0.875, "upload": 0.875, "download": 0.875,
-    "export": 0.875, "import": 0.875, "about": 0.875,
-    "lock": 0.875, "unlock": 0.875, "migrate": 0.875, "clone": 0.875,
-    "search": 0.875,
-    "expand": 0.75, "collapse": 0.75, "add": 0.75, "remove": 0.75,
+    "app": 1.5,  # брендовый знак — единственное исключение
 }
 
 
@@ -478,7 +478,7 @@ _SEARCH = """<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" shape-r
 </svg>"""
 
 def get_icon(name, status=None):
-    tmpl = _THEME_ICONS.get(name) or _SVG_TEMPLATES.get(name)
+    tmpl = _THEME_ICONS.get(name) or _BUILTINS.get(name)
     if status and tmpl is not None:
         return _make_icon_with_dot(tmpl, status)
     if _icons is None:
@@ -486,61 +486,66 @@ def get_icon(name, status=None):
     return _icons.get(name)
 
 
+_BUILTINS = {
+    "host": _HOST,
+    "vm": _VM,
+    "cluster": _CLUSTER,
+    "pool": _POOL,
+    "folder": _FOLDER,
+    "storage": _STORAGE,
+    "backup": _BACKUP,
+    "restore": _RESTORE,
+    "iso": _ISO,
+    "template": _TEMPLATE,
+    "tpm": _TPM,
+    "network": _NETWORK,
+    "services": _SERVICES,
+    "snapshot": _SNAPSHOT,
+    "monitor": _MONITOR,
+    "hardware": _HARDWARE,
+    "options": _OPTIONS,
+    "history": _HISTORY,
+    "disk": _DISK,
+    "start": _START,
+    "shutdown": _SHUTDOWN,
+    "reboot": _REBOOT,
+    "reset": _RESET,
+    "stop": _STOP,
+    "console": _CONSOLE,
+    "resume": _RESUME,
+    "ha": _HA,
+    "usb": _USB,
+    "pci": _PCI,
+    "serial": _SERIAL,
+    "user": _USER,
+    "token": _TOKEN,
+    "group": _GROUP,
+    "role": _ROLE,
+    "acl": _ACL,
+    "search": _SEARCH,
+    "refresh": _REFRESH,
+    "expand": _EXPAND,
+    "collapse": _COLLAPSE,
+    "add": _ADD,
+    "remove": _REMOVE,
+    "upload": _UPLOAD,
+    "download": _DOWNLOAD,
+    "export": _EXPORT,
+    "import": _IMPORT,
+    "about": _ABOUT,
+    "lock": _LOCK,
+    "unlock": _UNLOCK,
+    "migrate": _MIGRATE,
+    "clone": _CLONE,
+    "app": _APP,
+}
+
+
 def init_icons():
     global _icons
     if _icons is not None:
         return
     _icons = {}
-    for name, tmpl in _SVG_TEMPLATES.items():
+    for name, tmpl in _BUILTINS.items():
         svg = _THEME_ICONS.get(name) or tmpl
         _icons[name] = _make_icon(_fmt(svg), _sized(_SCALES.get(name, 1.0)))
-    _icons.update({
-        "folder": _make_icon(_fmt(_FOLDER)),
-        "storage": _make_icon(_fmt(_THEME_ICONS.get("storage") or _STORAGE)),
-        "backup": _make_icon(_fmt(_THEME_ICONS.get("backup") or _BACKUP)),
-        "restore": _make_icon(_fmt(_RESTORE)),
-        "iso": _make_icon(_fmt(_ISO)),
-        "template": _make_icon(_fmt(_TEMPLATE)),
-        "tpm": _make_icon(_fmt(_TPM)),
-        "network": _make_icon(_fmt(_NETWORK)),
-        "services": _make_icon(_fmt(_SERVICES)),
-        "snapshot": _make_icon(_fmt(_SNAPSHOT)),
-        "monitor": _make_icon(_fmt(_MONITOR)),
-        "hardware": _make_icon(_fmt(_HARDWARE)),
-        "options": _make_icon(_fmt(_OPTIONS)),
-        "history": _make_icon(_fmt(_HISTORY)),
-        "disk": _make_icon(_fmt(_DISK)),
-        "start": _make_icon(_fmt(_START)),
-        "shutdown": _make_icon(_fmt(_SHUTDOWN)),
-        "reboot": _make_icon(_fmt(_REBOOT)),
-        "reset": _make_icon(_fmt(_RESET)),
-        "stop": _make_icon(_fmt(_STOP)),
-        "console": _make_icon(_fmt(_CONSOLE)),
-        "resume": _make_icon(_fmt(_RESUME)),
-        "ha": _make_icon(_fmt(_HA)),
-        "usb": _make_icon(_fmt(_USB)),
-        "pci": _make_icon(_fmt(_PCI)),
-        "serial": _make_icon(_fmt(_SERIAL)),
-        "user": _make_icon(_fmt(_USER)),
-        "token": _make_icon(_fmt(_TOKEN)),
-        "group": _make_icon(_fmt(_GROUP)),
-        "role": _make_icon(_fmt(_ROLE)),
-        "acl": _make_icon(_fmt(_ACL)),
-        "search": _make_icon(_fmt(_SEARCH), _sized(_SCALES["search"])),
-        "refresh": _make_icon(_fmt(_THEME_ICONS.get("refresh") or _REFRESH),
-                              _sized(_SCALES["refresh"])),
-        "expand": _make_icon(_fmt(_EXPAND), _sized(0.75)),
-        "collapse": _make_icon(_fmt(_COLLAPSE), _sized(0.75)),
-        "add": _make_icon(_fmt(_ADD), _sized(0.75)),
-        "remove": _make_icon(_fmt(_REMOVE), _sized(0.75)),
-        "upload": _make_icon(_fmt(_UPLOAD), _sized(0.875)),
-        "download": _make_icon(_fmt(_DOWNLOAD), _sized(0.875)),
-        "export": _make_icon(_fmt(_EXPORT), _sized(0.875)),
-        "import": _make_icon(_fmt(_IMPORT), _sized(0.875)),
-        "about": _make_icon(_fmt(_ABOUT), _sized(0.875)),
-        "lock": _make_icon(_fmt(_LOCK), _sized(0.875)),
-        "unlock": _make_icon(_fmt(_UNLOCK), _sized(0.875)),
-        "migrate": _make_icon(_fmt(_MIGRATE), _sized(0.875)),
-        "clone": _make_icon(_fmt(_CLONE), _sized(0.875)),
-        "app": _make_icon(_fmt(_APP), _sized(1.5)),
-    })

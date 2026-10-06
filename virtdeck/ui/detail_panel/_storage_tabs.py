@@ -37,7 +37,14 @@ from ..widgets.time_range import (
     filter_series,
     write_metrics_csv,
 )
-from ._constants import _HAS_PG, TabIndex, _progress_style, ensure_pg, pg_loaded
+from ._constants import (
+    _HAS_PG,
+    TabIndex,
+    _progress_style,
+    ensure_pg,
+    pg_loaded,
+    register_plot,
+)
 from ._table_utils import (
     format_volsize,
     loading_label,
@@ -278,6 +285,8 @@ class StorageTabs:
                 [], [], pen=pg.mkPen(Color.STATUS_WARN, width=2),
                 fillLevel=0, fillBrush=pg.mkBrush(Color.STATUS_WARN + "33")
             )
+            panel.storage_plot_curve._vd_token = "STATUS_WARN"
+            register_plot(panel.storage_plot_widget)
             sd_plot_layout.addWidget(panel.storage_plot_widget)
             panel._storage_plot_deferred = False
         elif _HAS_PG:
@@ -881,6 +890,8 @@ class StorageTabs:
             [], [], pen=pg.mkPen(Color.STATUS_WARN, width=2),
             fillLevel=0, fillBrush=pg.mkBrush(Color.STATUS_WARN + "33")
         )
+        panel.storage_plot_curve._vd_token = "STATUS_WARN"
+        register_plot(panel.storage_plot_widget)
         panel.storage_detail_plot.layout().addWidget(panel.storage_plot_widget)
 
     def on_storage_metrics_fetched(self, timeframe, node_name, metrics_dict, sid=None, rng=None):

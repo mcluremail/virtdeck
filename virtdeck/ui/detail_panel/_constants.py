@@ -1,3 +1,4 @@
+import weakref
 from enum import IntEnum
 from importlib.util import find_spec
 
@@ -11,6 +12,8 @@ _MAX_WORKERS_DP = 12
 _HAS_PG = find_spec("pyqtgraph") is not None
 _pg_module = None
 
+_LIVE_PLOTS: weakref.WeakSet | None = None
+
 
 def pg_loaded():
     """Return pyqtgraph if already imported, else None (never imports)."""
@@ -21,6 +24,46 @@ def apply_chart_colors(pg_mod):
     """Ре-применение цветовой темы к графикам (load + каждая смена темы)."""
     pg_mod.setConfigOption('background', Color.BG)
     pg_mod.setConfigOption('foreground', Color.TEXT_SEC)
+
+
+def register_plot(widget):
+    """Регистрация живого PlotWidget для перекраски при смене темы."""
+    global _LIVE_PLOTS
+    if _LIVE_PLOTS is None:
+        _LIVE_PLOTS = weakref.WeakSet()
+    _LIVE_PLOTS.add(widget)
+
+
+def retheme_plots():
+    """Живая перекраска уже построенных графиков под активную тему.
+
+    Кривые помечаются атрибутом `_vd_token` (имя цветового токена из Color)
+    в месте создания; фон, оси, заголовок и перья перекрашиваются здесь.
+    """
+    pg_mod = pg_loaded()
+    if pg_mod is None:
+        return
+    apply_chart_colors(pg_mod)
+    if _LIVE_PLOTS is None:
+        return
+    for w in list(_LIVE_PLOTS):
+        try:
+            w.setBackground(Color.BG)
+            for ax in ("left", "bottom"):
+                a = w.getAxis(ax)
+                a.setPen(pg_mod.mkPen(Color.TEXT_SEC))
+                a.setTextPen(Color.TEXT_SEC)
+            title = getattr(w.plotItem.titleLabel, "text", "")
+            if title:
+                w.setTitle(title)
+            for di in w.plotItem.listDataItems():
+                token = getattr(di, "_vd_token", None)
+                if token:
+                    color = getattr(Color, token)
+                    di.setPen(pg_mod.mkPen(color, width=2))
+                    di.setFillBrush(pg_mod.mkBrush(color + "33"))
+        except (RuntimeError, AttributeError):
+            _LIVE_PLOTS.discard(w)  # C++-объект уже удалён или разобран
 
 
 def ensure_pg():

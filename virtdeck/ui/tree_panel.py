@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 from ..config import load_tree_notes, load_ui_state, save_tree_note, save_ui_state
 from ..domain import Node, NodeStatus, VmStatus, VmType
 from .i18n import tr
-from .icons import get_icon, init_icons, make_loading_icon
+from .icons import base_size, get_icon, init_icons, make_loading_icon
 from .theme import Color
 from .utils import build_cfg_index, status_text
 from .vm_actions import VM_ACTION_ICONS
@@ -226,8 +226,8 @@ class TreePanel(QWidget):
 
         self._toggle_btn = QToolButton()
         self._toggle_btn.setIcon(get_icon("expand"))
-        self._toggle_btn.setFixedSize(22, 22)
-        self._toggle_btn.setIconSize(QSize(14, 14))
+        self._toggle_btn.setFixedSize(30, 30)
+        self._toggle_btn.setIconSize(QSize(base_size(), base_size()))
         self._toggle_btn.setToolTip(tr("Expand all"))
         self._toggle_btn.setAutoRaise(True)
         self._toggled = False
@@ -264,7 +264,7 @@ class TreePanel(QWidget):
         self.tree.setAlternatingRowColors(True)
         self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.tree.setIndentation(20)
-        self.tree.setIconSize(QSize(22, 22))
+        self.tree.setIconSize(QSize(base_size(), base_size()))
         self.tree.setRootIsDecorated(True)
         self.tree.setAnimated(True)
         self.tree.itemClicked.connect(self._on_item_clicked)
@@ -806,6 +806,8 @@ class TreePanel(QWidget):
         """Перестройка дерева новыми цветами (движок тем, смена темы)."""
         if getattr(self, "all_nodes", None) is None:
             return
+        self.tree.setIconSize(QSize(base_size(), base_size()))
+        self._toggle_btn.setIconSize(QSize(base_size(), base_size()))
         self._do_rebuild()
 
     def start_loading(self):

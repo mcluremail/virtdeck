@@ -141,6 +141,7 @@ class DetailPanel(QWidget):
 
         self.tabs = QTabWidget()
         self._tabs_built = False
+        self._tab_icon_keys: list[str] = []
         self._tab_queue = None
         self._tab_build_t0 = time.perf_counter()
         self.tabs.hide()
@@ -256,6 +257,7 @@ class DetailPanel(QWidget):
         builder, icon_key, title, hide = self._tab_queue.pop(0)
         t0 = time.perf_counter()
         idx = self.tabs.addTab(builder(), get_icon(icon_key), title)
+        self._tab_icon_keys.append(icon_key)
         dt = time.perf_counter() - t0
         if dt > 0.2:
             logger.info("tab '%s' built in %.2fs", title, dt)
@@ -329,6 +331,16 @@ class DetailPanel(QWidget):
     def update_nodes_cfg(self, nodes_cfg):
         self.nodes_cfg = nodes_cfg
         self._cfg_by_name = build_cfg_index(self.nodes_cfg)
+
+    def reapply_theme(self):
+        """Переприсвоить иконки персистентных кнопок после смены темы."""
+        for key, btn in self._action_buttons.items():
+            btn.setIcon(get_icon(VM_ACTION_ICONS[key]))
+        for key, btn in self._extra_action_buttons.items():
+            btn.setIcon(get_icon(VM_EXTRA_ACTION_ICONS[key]))
+        self._console_btn.setIcon(get_icon("console"))
+        for idx, key in enumerate(self._tab_icon_keys):
+            self.tabs.setTabIcon(idx, get_icon(key))
 
     def show_details(self, obj_type, obj_name, data):
         self._ensure_tabs()

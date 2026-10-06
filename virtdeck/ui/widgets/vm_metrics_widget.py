@@ -98,6 +98,8 @@ class VmMetricsWidget(QWidget):
         # the chart is created on first data (see ensure_plot).
 
     def _build_plot(self, pg):
+        from ..detail_panel._constants import register_plot
+
         date_axis = pg.DateAxisItem(orientation='bottom')
         self.plot = pg.PlotWidget(axisItems={'bottom': date_axis}, title=tr("CPU, %"))
         self.plot.setLabel('left', '%')
@@ -105,6 +107,8 @@ class VmMetricsWidget(QWidget):
         self.plot.enableAutoRange(axis='y')
         self.curve = self.plot.plot([], [], pen=pg.mkPen(Color.ACCENT, width=2),
                                     fillLevel=0, fillBrush=pg.mkBrush(Color.ACCENT + "33"))
+        self.curve._vd_token = "ACCENT"
+        register_plot(self.plot)
         self.plot.setMouseEnabled(x=False, y=False)
         self._legend = self.plot.addLegend()
         self._layout.addWidget(self.plot, 1)
@@ -223,6 +227,7 @@ class VmMetricsWidget(QWidget):
             self.plot.clear()
             self.curve = self.plot.plot([], [], pen=pg.mkPen(Color.ACCENT, width=2),
                                         fillLevel=0, fillBrush=pg.mkBrush(Color.ACCENT + "33"))
+            self.curve._vd_token = "ACCENT"
 
     def update_curves(self, metrics_dict):
         self._cached_data = metrics_dict
@@ -243,6 +248,7 @@ class VmMetricsWidget(QWidget):
             self._legend.clear()
         self.curve = self.plot.plot([], [], pen=pg.mkPen(Color.ACCENT, width=2),
                                     fillLevel=0, fillBrush=pg.mkBrush(Color.ACCENT + "33"))
+        self.curve._vd_token = "ACCENT"
 
         if metric == "cpu":
             cpu = data.get('cpu', [])
@@ -290,10 +296,12 @@ class VmMetricsWidget(QWidget):
 
         label_in = tr("In") if title == tr("Network traffic") else tr("Read")
         label_out = tr("Out") if title == tr("Network traffic") else tr("Write")
-        self.plot.plot([d['time'] for d in data1], [d['value'] / div for d in data1],
-                       pen=pg.mkPen(Color.ACCENT, width=2), name=label_in,
-                       fillLevel=0, fillBrush=pg.mkBrush(Color.ACCENT + "33"))
-        self.plot.plot([d['time'] for d in data2], [d['value'] / div for d in data2],
-                       pen=pg.mkPen(Color.TEXT_DIM, width=2), name=label_out,
-                       fillLevel=0, fillBrush=pg.mkBrush(Color.TEXT_DIM + "33"))
+        c_in = self.plot.plot([d['time'] for d in data1], [d['value'] / div for d in data1],
+                              pen=pg.mkPen(Color.ACCENT, width=2), name=label_in,
+                              fillLevel=0, fillBrush=pg.mkBrush(Color.ACCENT + "33"))
+        c_in._vd_token = "ACCENT"
+        c_out = self.plot.plot([d['time'] for d in data2], [d['value'] / div for d in data2],
+                               pen=pg.mkPen(Color.TEXT_DIM, width=2), name=label_out,
+                               fillLevel=0, fillBrush=pg.mkBrush(Color.TEXT_DIM + "33"))
+        c_out._vd_token = "TEXT_DIM"
         self.plot.setLabel('left', unit)
