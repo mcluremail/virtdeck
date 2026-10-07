@@ -23,6 +23,11 @@ class TaskAPI:
             self._s.proxmox.nodes(_q(node)).tasks.get, limit=limit, **params
         )
 
+    def list_cluster(self, limit: int = 100, **params) -> list[dict]:
+        """GET /cluster/tasks — недавние задачи кластера (Fleet Health)."""
+        return self._s.call(self._s.proxmox.cluster.tasks.get,
+                            limit=limit, **params)
+
     def list_for_vm(self, node: str, vmid: int, limit: int = 50) -> list[dict]:
         """GET /nodes/{node}/tasks?vmid={vmid}."""
         return self._s.call(

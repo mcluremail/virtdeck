@@ -34,7 +34,8 @@ def _q(value) -> str:
 class PbsClient:
     """Ticket-authenticated PBS API client (login on demand)."""
 
-    def __init__(self, cfg: dict, timeout: float = 15):
+    def __init__(self, cfg: dict, timeout: float = 15,
+                 http: requests.Session | None = None):
         self._host = cfg.get("host", "")
         self._port = int(cfg.get("port", PBS_PORT) or PBS_PORT)
         self._user = cfg.get("user", "root@pam")
@@ -43,7 +44,8 @@ class PbsClient:
         self._base = f"https://{self._host}:{self._port}/api2/json"
         self._ticket: str = ""
         self._csrf: str = ""
-        self._http = requests.Session()
+        # http — DI-шов тестового харнесса (M4.0): подмена транспорта.
+        self._http = http if http is not None else requests.Session()
         if cfg.get("trust_ssl", False):
             self._http.verify = False
             try:

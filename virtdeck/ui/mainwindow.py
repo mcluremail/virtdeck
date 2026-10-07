@@ -37,6 +37,7 @@ from ..backend import (
     delete_host_token,
 )
 from ..backend.events import Event, EventBus
+from ..backend.fleet import build_fleet_targets
 from ..backend.refresh import RefreshCoordinator
 from ..config import (
     export_config,
@@ -74,6 +75,7 @@ from ..domain import (
 from ..domain.bulk import plan_bulk_action
 from . import brand, theme
 from .detail_panel import DetailPanel
+from .fleet_health import FleetHealthDialog
 from .i18n import get_language, supported_languages, tr
 from .icons import get_icon
 from .notification import NotificationManager
@@ -310,6 +312,13 @@ class MainWindow(QMainWindow):
         self._toolbar.addAction(search_action)
         self._toolbar_icon_actions.append((search_action, "search"))
 
+        fleet_action = QAction(get_icon("monitor"), tr("Fleet Health"), self)
+        fleet_action.setToolTip(
+            tr("Fleet Health report across all clusters") + " (Ctrl+Shift+F)")
+        fleet_action.triggered.connect(self._open_fleet_health)
+        self._toolbar.addAction(fleet_action)
+        self._toolbar_icon_actions.append((fleet_action, "monitor"))
+
         self._toolbar.addSeparator()
 
         export_action = QAction(get_icon("export"), tr("Export configuration"), self)
@@ -352,6 +361,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+N"), self, activated=lambda: self._on_add_server())
         QShortcut(QKeySequence("Del"), self, activated=self.tree_panel.request_delete_current)
         QShortcut(QKeySequence("Ctrl+F"), self, activated=self._open_global_search)
+        QShortcut(QKeySequence("Ctrl+Shift+F"), self, activated=self._open_fleet_health)
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self._open_command_palette)
 
         # Таймер автообновления основных данных
@@ -1413,6 +1423,12 @@ class MainWindow(QMainWindow):
         dlg.object_selected.connect(self.tree_panel.reveal_key)
         dlg.exec()
 
+    def _open_fleet_health(self):
+        """Fleet Health: сводный отчёт по всем кластерам парка (M4)."""
+        dlg = FleetHealthDialog(build_fleet_targets(self.nodes_cfg), self)
+        dlg.object_selected.connect(self.tree_panel.reveal_key)
+        dlg.exec()
+
     def refresh_data(self):
         # Отменяем все pending soft_refresh — их результаты устарели
         self._refresh.reset_soft()
@@ -2196,6 +2212,8 @@ class MainWindow(QMainWindow):
         show_act.triggered.connect(self._tray_show)
         refresh_act = menu.addAction(tr("Refresh"))
         refresh_act.triggered.connect(self.refresh_data)
+        fleet_act = menu.addAction(tr("Fleet Health"))
+        fleet_act.triggered.connect(self._open_fleet_health)
         menu.addSeparator()
         quit_act = menu.addAction(tr("Quit"))
         quit_act.triggered.connect(self._tray_quit)
