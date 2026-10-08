@@ -66,10 +66,10 @@ _RE_CONN = re.compile(
     re.IGNORECASE,
 )
 
-# Псевдо-статусы 595-599 — соглашение AnyEvent::HTTP. proxmoxer приходит их
-# как обычные ответы, но на самом деле это отчёт pveproxy: веб-служба PVE
-# сама не смогла отработать запрос (апстрим/TLS/тело ответа). Это проблема
-# СЕРВЕРА, а не клиента или его прокси.
+# Pseudo-statuses 595-599 — AnyEvent::HTTP convention. proxmoxer delivers
+# them as regular responses, but they are actually pveproxy reports: the
+# PVE web service itself failed to handle the request (upstream/TLS/response
+# body). This is a SERVER problem, not the client's or its proxy's.
 ANYEVENT_HINTS = {
     595: "pveproxy could not reach the PVE API backend (pvedaemon)",
     596: "pveproxy TLS failure — check node certificates (pveproxy)",

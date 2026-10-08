@@ -1,6 +1,6 @@
-"""Регресс аудита 2026-09-09: воркер, отклонённый _run_worker (пул
-переполнен), не должен учитываться в ожиданиях refresh-циклов — иначе
-hard-финализация блокируется навсегда, soft-цикл висит до тайм-аута."""
+"""Regression from the 2026-09-09 audit: a worker rejected by _run_worker
+(pool exhausted) must not count toward refresh-cycle expectations —
+otherwise hard finalization blocks forever and the soft loop hangs until timeout."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -46,8 +46,8 @@ def test_run_worker_accepts_with_free_slot(main_window):
 
 
 def test_rejected_fetchworker_not_tracked_hard(main_window, monkeypatch):
-    """track_hard после успешного старта: отклонённый FetchWorker не
-    попадает в hard_pending → финализация не блокируется навсегда."""
+    """track_hard after a successful start: a rejected FetchWorker never
+    lands in hard_pending → finalization is not blocked forever."""
     mw = main_window
     created = []
 
@@ -65,14 +65,14 @@ def test_rejected_fetchworker_not_tracked_hard(main_window, monkeypatch):
 
     mw.refresh_data()
 
-    assert len(created) == 1          # воркер создан...
-    assert created[0] not in mw._workers  # ...отклонён пулом
-    assert mw._refresh.hard_pending_count == 0  # и НЕ трекнут в hard
+    assert len(created) == 1          # worker created...
+    assert created[0] not in mw._workers  # ...rejected by the pool
+    assert mw._refresh.hard_pending_count == 0  # and NOT tracked as hard
 
 
 def test_soft_cycle_skips_overflow_hosts(main_window, monkeypatch):
-    """begin_soft должна считать только фактически запускаемые воркеры,
-    иначе цикл ждёт результаты, которые никогда не придут (до тайм-аута)."""
+    """begin_soft must count only workers actually started, otherwise the
+    loop waits for results that never arrive (until timeout)."""
     mw = main_window
     created = []
 
@@ -87,9 +87,9 @@ def test_soft_cycle_skips_overflow_hosts(main_window, monkeypatch):
     mw.nodes_cfg = [{"name": f"h{i}", "host": f"10.0.0.{i}", "user": "u@pam",
                      "token_name": "t", "token_value": "s"} for i in range(3)]
     _fill_pool(mw)
-    mw.last_refresh_ts = 0.0  # разрешить soft_refresh
+    mw.last_refresh_ts = 0.0  # allow soft_refresh
 
     mw.soft_refresh()
 
-    assert created == []                      # пула нет — никто не стартует
-    assert mw._refresh.soft_running is False  # цикл не висит до тайм-аута
+    assert created == []                      # no pool — nobody starts
+    assert mw._refresh.soft_running is False  # loop does not hang until timeout

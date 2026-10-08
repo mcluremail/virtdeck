@@ -3,7 +3,7 @@ servers live in the dedicated 'pbs' tree view only)."""
 import pytest
 
 from tests.ui.test_tree_panel import _collect_items
-from virtdeck.ui.tree_panel import TreePanel
+from virtdeck.ui.tree_panel import INFO_ROLE, TreePanel
 
 
 @pytest.fixture(autouse=True)
@@ -57,7 +57,7 @@ class TestPbsItems:
         tp.update_data([], [], [], final=True,
                        node_repo=tp._node_repo, vm_repo=tp._vm_repo)
         items = _collect_items(tp)
-        assert items[("pbs", "pbs1")].text(1) == "pbs.local"
+        assert items[("pbs", "pbs1")].data(0, INFO_ROLE) == "pbs.local"
         assert not [k for k in items if k[0] == "host" and "pbs1" in k]
 
     def test_set_pbs_datastores(self, qtbot):
@@ -70,7 +70,7 @@ class TestPbsItems:
         assert ("pbs_datastore", "pbs1", "alt") in items
         assert ("pbs_datastore", "pbs1", "main") in items
         ds_item = items[("pbs_datastore", "pbs1", "main")]
-        assert ds_item.text(1) == "50%"
+        assert ds_item.data(0, INFO_ROLE) == "50%"
         assert ds_item.parent() is items[("pbs", "pbs1")]
 
     def test_set_pbs_datastores_unknown_server_noop(self, qtbot):

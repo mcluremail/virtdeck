@@ -275,8 +275,8 @@ class DetailPanel(QWidget):
         try:
             self._build_tab_chunk_impl()
         except RuntimeError:
-            # singleShot стреляет после deleteLater панели (окно закрыто,
-            # очередь табов не опустела) — C++ объект уже удалён.
+            # singleShot fired after the panel's deleteLater (window closed,
+            # tab queue not drained) — the C++ object is already gone.
             pass
 
     def _build_tab_chunk_impl(self):
@@ -333,7 +333,7 @@ class DetailPanel(QWidget):
         self._cfg_by_name = build_cfg_index(self.nodes_cfg)
 
     def reapply_theme(self):
-        """Переприсвоить иконки персистентных кнопок после смены темы."""
+        """Reassign icons of persistent buttons after a theme change."""
         for key, btn in self._action_buttons.items():
             btn.setIcon(get_icon(VM_ACTION_ICONS[key]))
         for key, btn in self._extra_action_buttons.items():

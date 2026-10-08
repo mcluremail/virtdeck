@@ -1,1 +1,1 @@
-"""Встроенная noVNC-консоль: websocket-мост + окно на QWebEngineView."""
+"""Built-in noVNC console: websocket bridge + window on QWebEngineView."""

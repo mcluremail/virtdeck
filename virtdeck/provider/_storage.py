@@ -18,7 +18,7 @@ class StorageAPI:
         self._s = session
 
     def list_node_storage(self, node: str) -> list[dict]:
-        """GET /nodes/{node}/storage — usage по хранилищам ноды (Fleet Health)."""
+        """GET /nodes/{node}/storage — usage per node storage (Fleet Health)."""
         return self._s.call(self._s.proxmox.nodes(_q(node)).storage.get)
 
     def list_content(self, node: str, storage: str, content: str | None = None) -> list[dict]:

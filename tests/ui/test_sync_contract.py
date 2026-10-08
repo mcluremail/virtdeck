@@ -1,15 +1,15 @@
-"""M0.1: статический контракт «sync-клиент не живёт в UI» (ROADMAP v3.0).
+"""M0.1: static contract "no sync client in the UI" (ROADMAP v3.0).
 
-AST-скан virtdeck/ui/**: UI-модули не импортируют и не вызывают
-sync-клиент (proxmoxer, provider-фасад, create_provider, requests) —
-весь сетевой I/O идёт через QRunnable-воркеры backend/ и ui/api/.
-Регресс «sync-вызов в UI» = падение этого теста.
+AST scan of virtdeck/ui/**: UI modules must not import or call the
+sync client (proxmoxer, provider facade, create_provider, requests) —
+all network I/O goes through QRunnable workers in backend/ and ui/api/.
+A "sync call in the UI" regression = this test fails.
 
-Allowlist швов:
-- virtdeck/ui/api/** — QRunnable-воркеры (metrics): вызовы
-  create_provider легитимны только внутри run() в потоке пула;
-- старт воркеров через QThreadPool.start (mainwindow, WorkerManager) —
-  не sync-клиент и правилами не запрещается.
+Allowlisted seams:
+- virtdeck/ui/api/** — QRunnable workers (metrics): create_provider
+  calls are legitimate only inside run() on a pool thread;
+- starting workers via QThreadPool.start (mainwindow, WorkerManager) —
+  not a sync client and not forbidden by the rules.
 """
 
 import ast
@@ -22,16 +22,17 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 UI_DIR = REPO / "virtdeck" / "ui"
 
-# QRunnable-воркеры слоя ui/api — единственный шов, где provider-фасад
-# легитимен (использование только внутри run() в потоке пула).
+# QRunnable workers of the ui/api layer — the only seam where the
+# provider facade is legitimate (used only inside run() on a pool thread).
 ALLOWLIST_PREFIXES = ("virtdeck.ui.api",)
 
-# Импорт sync-клиента/транспорта в UI запрещён вне allowlist:
-# - proxmoxer — sync-клиент напрямую;
-# - requests — HTTP-транспорт вне воркеров;
-# - (virtdeck.)backend.pve — legacy-путь sync-клиента (защита от
-#   рецидивов после возможных рефакторингов);
-# - (virtdeck.)provider — фасад PVE API (ProxmoxProvider, VmAPI, ...).
+# Importing the sync client / transport in the UI is forbidden outside
+# the allowlist:
+# - proxmoxer — the sync client itself;
+# - requests — HTTP transport outside workers;
+# - (virtdeck.)backend.pve — legacy sync-client path (guards against
+#   relapses after possible refactors);
+# - (virtdeck.)provider — PVE API facade (ProxmoxProvider, VmAPI, ...).
 FORBIDDEN_IMPORT_PREFIXES = (
     "proxmoxer",
     "requests",
@@ -41,7 +42,7 @@ FORBIDDEN_IMPORT_PREFIXES = (
     "virtdeck.provider",
 )
 
-# Прямые вызовы sync-клиента по имени (вне allowlist).
+# Direct sync-client calls by name (outside the allowlist).
 FORBIDDEN_CALLS = frozenset({"ProxmoxAPI", "PVE", "create_provider"})
 
 
@@ -54,7 +55,7 @@ def _is_allowed(modpath):
 
 
 def _resolve_import(module, level, modpath):
-    """Абсолютное имя модуля для ImportFrom (учёт относительных точек)."""
+    """Absolute module name for ImportFrom (accounts for relative dots)."""
     if not level:
         return module
     parts = modpath.split(".")
@@ -65,7 +66,7 @@ def _resolve_import(module, level, modpath):
 
 
 def _scan_source(source, modpath):
-    """Вернуть [(lineno, message)] нарушений контракта в исходнике."""
+    """Return [(lineno, message)] contract violations found in the source."""
     issues = []
     allowed = _is_allowed(modpath)
     tree = ast.parse(source)
@@ -74,7 +75,7 @@ def _scan_source(source, modpath):
             for alias in node.names:
                 if not allowed and _matches(alias.name, FORBIDDEN_IMPORT_PREFIXES):
                     issues.append(
-                        (node.lineno, f"импорт sync-клиента «{alias.name}» в UI")
+                        (node.lineno, f"sync client import '{alias.name}' in the UI")
                     )
         elif isinstance(node, ast.ImportFrom):
             resolved = _resolve_import(node.module, node.level, modpath) or ""
@@ -91,7 +92,7 @@ def _scan_source(source, modpath):
                     )
                 ):
                     issues.append(
-                        (node.lineno, f"импорт sync-клиента «{full}» в UI")
+                        (node.lineno, f"sync client import '{full}' in the UI")
                     )
         elif isinstance(node, ast.Call):
             func = node.func
@@ -102,7 +103,7 @@ def _scan_source(source, modpath):
             else:
                 name = None
             if name in FORBIDDEN_CALLS and not allowed:
-                issues.append((node.lineno, f"вызов sync-клиента «{name}()» в UI"))
+                issues.append((node.lineno, f"sync client call '{name}()' in the UI"))
     return issues
 
 
@@ -121,7 +122,8 @@ def _scan_engine(code, modpath="virtdeck.ui.tabs"):
 
 
 class TestScannerEngine:
-    """Движок сканера ловит все способы протащить sync-клиент в UI."""
+    """The scanner engine catches every way to smuggle a sync client
+    into the UI."""
 
     def test_proxmoxer_import_detected(self):
         issues = _scan_engine("import proxmoxer")
@@ -210,20 +212,21 @@ class TestScannerEngine:
 
 
 class TestUITree:
-    """Реальное дерево virtdeck/ui/** чисто."""
+    """The real virtdeck/ui/** tree is clean."""
 
     def test_ui_tree_has_no_sync_client(self):
         issues = []
         for path, modpath, source in _iter_ui_modules():
             for lineno, message in _scan_source(source, modpath):
                 issues.append(f"{path}:{lineno}: {message}")
-        assert not issues, "Контракт «sync-клиент не живёт в UI» нарушен:\n" + "\n".join(
+        assert not issues, "Contract 'no sync client in the UI' violated:\n" + "\n".join(
             issues
         )
 
     def test_allowlist_modules_are_workers(self):
-        """Шов ui/api/** остаётся allowlist'ом, только пока состоит из
-        QRunnable-воркеров; появление там Qt-виджетов — повод пересмотреть."""
+        """The ui/api/** seam stays on the allowlist only while it is
+        made of QRunnable workers; a Qt widget showing up there is a
+        reason to revisit it."""
         api_dir = UI_DIR / "api"
         for path in sorted(api_dir.rglob("*.py")):
             if "__pycache__" in path.parts:
@@ -238,8 +241,8 @@ class TestUITree:
                 and base.id in {"QWidget", "QDialog", "QMainWindow"}
             ]
             assert not widget_bases, (
-                f"{path}: Qt-виджет в allowlist-модуле воркеров ui/api — "
-                "sync-клиент стал доступен виджету напрямую"
+                f"{path}: Qt widget in the ui/api worker allowlist module — "
+                "the sync client became directly reachable from a widget"
             )
 
 

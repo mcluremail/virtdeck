@@ -44,7 +44,7 @@ class PbsClient:
         self._base = f"https://{self._host}:{self._port}/api2/json"
         self._ticket: str = ""
         self._csrf: str = ""
-        # http — DI-шов тестового харнесса (M4.0): подмена транспорта.
+        # http — DI seam of the test harness (M4.0): transport substitution.
         self._http = http if http is not None else requests.Session()
         if cfg.get("trust_ssl", False):
             self._http.verify = False
@@ -55,7 +55,7 @@ class PbsClient:
                 pass
         proxy = str(cfg.get("proxy") or "").strip()
         if proxy:
-            # Явный прокси: env-прокси не должен перебивать session-level.
+            # Explicit proxy: env proxies must not override session-level.
             self._http.trust_env = False
             self._http.proxies.update({"http": proxy, "https": proxy})
 

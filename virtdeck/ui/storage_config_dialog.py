@@ -113,9 +113,9 @@ class StorageConfigDialog(QDialog):
         # Type-specific fields
         self._type_form = QFormLayout()
         self._type_form.setSpacing(8)
-        # общая форма и поля типа — в скролле: у rbd/ceph форм столько
-        # полей, что в низких окнах и локалях с длинными подписями контент
-        # не влезает (кнопки остаются снаружи, всегда видимы)
+        # Common form and type-specific fields go into a scroll area: rbd/ceph
+        # forms have so many fields that in short windows and locales with long
+        # labels the content does not fit (buttons stay outside, always visible)
         body = QWidget(self)
         body_lay = QVBoxLayout(body)
         body_lay.setContentsMargins(0, 0, 0, 0)

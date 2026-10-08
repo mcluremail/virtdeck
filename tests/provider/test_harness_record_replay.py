@@ -1,10 +1,10 @@
-"""M4.0: record/replay — фиксстуры-контракты PVE API.
+"""M4.0: record/replay — PVE API contract fixtures.
 
-Запись: реальные ответы (в CI — сцена FakePveApi, на машине с кластером —
-RecordingAdapter) сохраняются в JSON-фикстуру. Replay: тот же
-ProxmoxProvider обслуживается из фиксстуры — контракт живого API
-замораживается в репозитории. Совпадение entry — по (method, path,
-params): параметры входят в ключ.
+Record: real responses (the FakePveApi scene in CI, RecordingAdapter on
+a machine with a cluster) are saved to a JSON fixture. Replay: the same
+ProxmoxProvider is served from the fixture — the live API contract is
+frozen into the repository. Entries match on (method, path, params):
+parameters are part of the key.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from virtdeck.provider import ProxmoxError, ProxmoxProvider
 
 
 def _drive(provider) -> tuple:
-    """Дороги, которые Fleet Health (M4.1–M4.3) будет фиксировать."""
+    """The paths Fleet Health (M4.1–M4.3) will pin down."""
     return (
         provider.cluster.list_backup_jobs(),
         provider.nodes.get_version("pve01"),
@@ -64,7 +64,7 @@ def test_replay_miss_on_unknown_path(monkeypatch):
 
 
 def test_replay_is_param_sensitive(monkeypatch):
-    """rrddata с другим timeframe — другой ключ entry, а не чужой ответ."""
+    """rrddata with another timeframe — different entry key, not a foreign answer."""
     entries = [{"method": "GET", "path": "/nodes/pve01/rrddata",
                 "params": {"timeframe": "hour", "cf": "AVERAGE"},
                 "status": 200, "data": []}]

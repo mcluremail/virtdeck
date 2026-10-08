@@ -1,4 +1,4 @@
-"""M0.5: supports(feature) в провайдере — версии нод из фетча → матрица."""
+"""M0.5: supports(feature) in the provider — fetched node versions → matrix."""
 
 import pytest
 
@@ -33,8 +33,8 @@ class TestProviderCompat:
         assert provider.supports("rrddata", "pve02") is True
 
     def test_supports_cluster_requires_all_nodes(self, provider):
-        """node=None → фича считается поддержанной, только если её
-        поддерживают ВСЕ известные ноды (минимум по кластеру)."""
+        """node=None → a feature counts as supported only if ALL known nodes
+        support it (the cluster minimum)."""
         provider.report_version("pve01", "pve-manager/8.2.0/abc")
         assert provider.supports("guest_tags") is True
         provider.report_version("pve02", "pve-manager/7.4.1/def")

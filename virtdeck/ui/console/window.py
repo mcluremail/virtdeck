@@ -1,4 +1,4 @@
-"""Окно встроенной noVNC-консоли (QWebEngineView + WsBridge)."""
+"""Window of the built-in noVNC console (QWebEngineView + WsBridge)."""
 
 import json
 from pathlib import Path
@@ -14,7 +14,7 @@ from .page import build_console_html, sticky_key_js
 try:
     from PySide6.QtWebEngineWidgets import QWebEngineView
     _WEBENGINE_OK = True
-except ImportError:  # pragma: no cover — минимальная сборка без WebEngine
+except ImportError:  # pragma: no cover — minimal build without WebEngine
     _WEBENGINE_OK = False
 
 _NOVNC_DIR = Path(__file__).resolve().parent / "novnc"
@@ -24,9 +24,9 @@ _XK_SHIFT_L = 0xFFE1
 _XK_ALT_L = 0xFFE9
 _XK_SUPER_L = 0xFFEB
 
-# Залипающие модификаторы: (подпись, keysym, XtScancode). Нажатие кнопки
-# шлёт key-down в гостя, повторное — key-up; остальное пользователь
-# набирает в консоли (Ctrl+Alt+Del = залипли Ctrl+Alt, нажали Del).
+# Sticky modifiers: (label, keysym, XtScancode). Pressing the button sends
+# key-down to the guest, pressing again — key-up; the rest of the combo is
+# typed by the user in the console (Ctrl+Alt+Del = sticky Ctrl+Alt, then Del).
 _MODIFIERS = (
     ("Shift", _XK_SHIFT_L, "ShiftLeft"),
     ("Ctrl", _XK_CONTROL_L, "ControlLeft"),
@@ -38,14 +38,14 @@ _windows = set()
 
 
 class NoVncWindow(QMainWindow):
-    """Отдельное окно с RFB-экраном гостя через встроенный websocket-мост."""
+    """Standalone window with the guest RFB screen via the built-in websocket bridge."""
 
     def __init__(self, host_cfg, node, vmid, vm_type, ws_url, ticket,
                  parent=None):
         super().__init__(parent)
-        # Окно должно разрушаться при закрытии: без этого C++-объект
-        # (QMainWindow + QWebEngineView с рендер-процессом) остаётся
-        # скрытым ребёнком mainwindow на каждое открытие консоли.
+        # The window must be destroyed on close: otherwise the C++ object
+        # (QMainWindow + QWebEngineView with its render process) remains
+        # a hidden child of mainwindow on every console opening.
         self.setAttribute(Qt.WA_DeleteOnClose)
         self._host_cfg = host_cfg
         self._ticket = ticket
@@ -64,8 +64,8 @@ class NoVncWindow(QMainWindow):
         for label, keysym, code in _MODIFIERS:
             action = QAction(label, self)
             action.setCheckable(True)
-            # До загрузки страницы rfb ещё нет: залипание «до загрузки»
-            # молча потерялось бы и рассинхронизировало состояние кнопок
+            # Page not loaded yet, rfb does not exist: a sticky press "before
+            # load" would be silently lost and desync button state
             action.setEnabled(False)
             action.toggled.connect(
                 lambda checked=False, k=keysym, c=code:
@@ -107,7 +107,7 @@ class NoVncWindow(QMainWindow):
 
     def _show_error(self, msg):
         self.statusBar().showMessage(msg, 10000)
-        # Дублируем ошибку в статус-строку самой страницы — она видна всегда
+        # Mirror the error into the page's own status string — always visible
         try:
             self.view.page().runJavaScript(
                 "var el = document.getElementById('status');"
@@ -124,7 +124,7 @@ class NoVncWindow(QMainWindow):
     @classmethod
     def open_console(cls, host_cfg, node, vmid, vm_type, ws_url, ticket,
                      parent=None):
-        """Создаёт окно и держит ссылку, пока оно не закрыто."""
+        """Create the window and keep a reference until it is closed."""
         if not _WEBENGINE_OK:
             raise RuntimeError(
                 tr("PySide6 WebEngine is not available (install full PySide6)"))

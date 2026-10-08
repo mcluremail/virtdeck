@@ -5,22 +5,22 @@ from PySide6.QtSvg import QSvgRenderer
 from .theme import Color
 
 ICON_SIZE = 24
-_BASE_SIZE = ICON_SIZE  # базовый размер; движок тем меняет через set_base_size()
+_BASE_SIZE = ICON_SIZE  # base size; the theme engine changes it via set_base_size()
 
 
 def set_base_size(size):
-    """Базовый размер иконок (движок тем применяет theme.icon_size)."""
+    """Base icon size (the theme engine applies theme.icon_size)."""
     global _BASE_SIZE
     _BASE_SIZE = int(size)
 
 
 def base_size():
-    """Текущий базовый размер иконок (24 px во всех темах)."""
+    """Current base icon size (24 px in all themes)."""
     return _BASE_SIZE
 
 
 def reset_icons():
-    """Сброс кэша иконок — после смены темы (перерисовка новыми цветами)."""
+    """Reset the icon cache — after a theme change (redraw with new colors)."""
     global _icons
     _icons = None
 
@@ -29,14 +29,14 @@ _THEME_ICONS: dict = {}
 
 
 def set_theme_icons(overrides):
-    """SVG-оверрайды активной темы (частичные; фоллбэк — встроенные)."""
+    """SVG overrides of the active theme (partial; fallback to built-ins)."""
     global _THEME_ICONS
     _THEME_ICONS = overrides or {}
 
 
-# Относительные размеры мелких/крупных иконок от базового размера.
+# Relative sizes of small/large icons vs the base size.
 _SCALES = {
-    "app": 1.5,  # брендовый знак — единственное исключение
+    "app": 1.5,  # brand mark — the only exception
 }
 
 
@@ -45,7 +45,7 @@ def _sized(scale):
 
 
 def _fmt(tmpl):
-    """Форматирование шаблона токенами; чужой SVG без плейсхолдеров — as-is."""
+    """Format the template with tokens; a foreign SVG without placeholders — as-is."""
     try:
         return tmpl.format(c=Color.ICON_FG, c2=Color.ICON_FG_DIM,
                            ok=Color.STATUS_OK, err=Color.STATUS_ERR,
@@ -311,7 +311,7 @@ _LOADING = """<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" shape-
 
 
 def _dot_geometry(tmpl):
-    """Геометрия статус-точки из viewBox шаблона (16 → r3.5 @ 12.5)."""
+    """Status-dot geometry from the template viewBox (16 -> r3.5 @ 12.5)."""
     import re as _re
 
     m = _re.search(r'viewBox="0 0 (\d+)[\d. ]*"', tmpl)

@@ -1,9 +1,10 @@
-"""Локальный WebSocket-мост для noVNC-консоли.
+"""Local WebSocket bridge for the noVNC console.
 
-Туннель: noVNC (ws://127.0.0.1:{порт}) → PVE (wss://host:8006/.../vncwebsocket).
-Авторизация — Authorization-заголовок с API-токеном; TLS-проверка по trust_ssl.
-Соединение держится websocket-ping'ами (ping_interval) — сервер PVE отвечает
-pong (PVE::APIServer::AnyEvent, opcode 9). Фреймы relay'ятся без изменений.
+Tunnel: noVNC (ws://127.0.0.1:{port}) -> PVE (wss://host:8006/.../vncwebsocket).
+Auth: Authorization header with an API token; TLS verification per trust_ssl.
+The connection is kept alive by websocket pings (ping_interval) — the PVE
+server replies pong (PVE::APIServer::AnyEvent, opcode 9). Frames are relayed
+unchanged.
 """
 
 import asyncio
@@ -13,7 +14,7 @@ import threading
 
 try:
     import websockets
-except ImportError:  # минимальная сборка без websockets — noVNC недоступен
+except ImportError:  # minimal build without websockets — noVNC unavailable
     websockets = None
 from PySide6.QtCore import QObject, Signal
 
@@ -21,9 +22,9 @@ logger = logging.getLogger(__name__)
 
 
 class WsBridge(QObject):
-    """Асинхронный мост в отдельном потоке со своим asyncio-циклом."""
+    """Async bridge in a dedicated thread with its own asyncio loop."""
 
-    port_ready = Signal(int)  # локальный порт моста
+    port_ready = Signal(int)  # local bridge port
     error = Signal(str)
     stopped = Signal()
 
@@ -47,9 +48,9 @@ class WsBridge(QObject):
         self._thread.start()
 
     def stop(self):
-        # Флаг обязателен: stop() может прийти ДО назначения self._loop
-        # в потоке (гонка при быстром закрытии окна) — без флага запрос
-        # теряется и поток утекает вместе с сервером.
+        # The flag is required: stop() may arrive BEFORE self._loop is
+        # assigned in the thread (race on quick window close) — without it
+        # the request is lost and the thread leaks along with the server.
         self._stop_requested = True
         if self._loop is None:
             return
@@ -76,8 +77,8 @@ class WsBridge(QObject):
                 self._loop.run_until_complete(self._serve())
                 self._loop.run_forever()
         except asyncio.CancelledError:
-            # остановка до завершения _serve: teardown отменяет serve-задачу —
-            # штатный сценарий, а не ошибка (CancelledError — BaseException)
+            # stop before _serve completes: teardown cancels the serve task —
+            # normal path, not an error (CancelledError is a BaseException)
             pass
         except Exception as e:
             if self._stop_requested:
@@ -137,17 +138,19 @@ class WsBridge(QObject):
 
     def _shutdown(self):
         async def _close():
-            # Порядок важен: wait_closed() ждёт завершения conn_handler,
-            # а тот ждёт закрытия апстрима — закрывать апстрим ДО ожидания.
+            # Order matters: wait_closed() waits for conn_handler to finish,
+            # which waits for the upstream to close — close the upstream
+            # BEFORE waiting.
             if self._server is not None:
                 self._server.close()
             if self._upstream is not None:
                 await self._upstream.close()
             if self._server is not None:
                 await self._server.wait_closed()
-            # Гасим оставшиеся задачи (conn_handler, keepalive) ДО остановки
-            # цикла: иначе close() ловит "Task was destroyed", а корутины —
-            # GeneratorExit с записью в уже закрытый fd (EBADF).
+            # Cancel remaining tasks (conn_handler, keepalive) BEFORE
+            # stopping the loop: otherwise close() raises "Task was
+            # destroyed" and coroutines get GeneratorExit writing to an
+            # already-closed fd (EBADF).
             tasks = [t for t in asyncio.all_tasks()
                      if t is not asyncio.current_task()]
             for t in tasks:
@@ -161,7 +164,7 @@ class WsBridge(QObject):
             self._loop.stop()
 
         try:
-            # Останавливаем цикл только после завершения teardown.
+            # Stop the loop only after teardown completes.
             asyncio.ensure_future(_close()).add_done_callback(_finalize)
         except RuntimeError:
             pass

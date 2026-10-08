@@ -1,7 +1,8 @@
-"""Fleet Health (веха M4): сводный отчёт по всем независимым кластерам.
+"""Fleet Health (milestone M4): summary report across all independent clusters.
 
-Слой между доменом и UI: сбор данных по кластеру через провайдер
-(`collector`) с изоляцией источников. Транспорт подменяется тестовым
-харнессом (tests/harness) — сокетов в тестах нет. Конкурентный фан-аут
-по кластерам и подписки — забота UI-воркера (M4.5).
+Layer between the domain and the UI: cluster data collection via the
+provider (`collector`) with source isolation. The transport is swapped
+out by the test harness (tests/harness) — no sockets in tests.
+Concurrent fan-out over clusters and subscriptions are the UI worker's
+concern (M4.5).
 """

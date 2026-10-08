@@ -1,7 +1,7 @@
-"""M4.2: чистая агрегация Fleet Health — таблицы и инварианты.
+"""M4.2: pure Fleet Health aggregation — tables and invariants.
 
-Источники: task history (vzdump-таски) и опционально PBS-маппинг.
-Partial failure: упавший источник (None) не порождает ложный coverage.
+Sources: task history (vzdump tasks) and optional PBS mapping.
+Partial failure: a failed source (None) must not fake coverage.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ class TestBackupStatesFromTasks:
               "status": "OK"}],
             [guest(101)], {})
         s = state_of(states, 101)
-        assert s.task_last_ok == 60          # hex-слот UPID
+        assert s.task_last_ok == 60          # hex slot of the UPID
         assert s.task_last_attempt == 60
         assert s.task_last_failed is None
         assert s.last_successful == 60
@@ -65,7 +65,7 @@ class TestBackupStatesFromTasks:
              "status": "stopped: exit code 1", "starttime": 1727913600},
         ]
         s = state_of(build_backup_states(tasks, [guest(101)], {}), 101)
-        assert s.task_last_ok == 1727827200      # поле строки — int
+        assert s.task_last_ok == 1727827200      # row field is an int
         assert s.task_last_failed == 1727913600
         assert s.task_last_attempt == 1727913600
         assert s.last_successful == 1727827200
@@ -93,7 +93,7 @@ class TestBackupStatesFromTasks:
         assert states == {}
 
     def test_orphan_task_vmid_kept(self):
-        """Гость удалён между запусками, таски остались — состояние живёт."""
+        """Guest removed between runs, tasks remain — state persists."""
         states = build_backup_states(
             [{"upid": upid(101, "00000064"), "type": "vzdump",
               "status": "OK"}], [], {})
@@ -182,14 +182,14 @@ class TestBuildClusterReport:
         assert report.storage_usage[0]["storage"] == "local"
 
     def test_failed_resources_no_false_coverage(self):
-        """resources упал → coverage нет вовсе (не ложный отчёт)."""
+        """resources failed → no coverage at all (no false report)."""
         report = make_cluster_report(resources=None,
                                      errors=(CollectError(
                                          "alpha", "resources", "boom"),))
         assert not report.complete
         assert report.coverage is None
         assert report.guests == ()
-        # задачи всё равно агрегированы: источник независим
+        # tasks aggregated anyway: sources are independent
         assert 101 in report.backup_states
 
     def test_failed_jobs_no_false_coverage(self):
@@ -197,7 +197,7 @@ class TestBuildClusterReport:
             backup_jobs=None,
             errors=(CollectError("alpha", "backup_jobs", "boom"),))
         assert report.coverage is None
-        assert report.guests  # гости при этом собраны
+        assert report.guests  # guests still collected
 
 
 class TestMergeFleetReports:
@@ -207,7 +207,7 @@ class TestMergeFleetReports:
             "beta", generated_at=1727827100,
             errors=(CollectError("beta", "tasks", "boom"),))
         fleet = merge_fleet_reports([alpha, beta])
-        assert fleet.generated_at == 1727827100  # честное «данные от»
+        assert fleet.generated_at == 1727827100  # honest "data as of"
         assert not fleet.complete
         assert fleet.errors == beta.errors
         assert [c.cluster for c in fleet.clusters] == ["alpha", "beta"]

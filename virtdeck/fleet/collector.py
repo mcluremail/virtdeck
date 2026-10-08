@@ -1,9 +1,9 @@
-"""M4.2: сбор отчёта Fleet Health по одному кластеру через провайдер.
+"""M4.2: collect the Fleet Health report for one cluster via the provider.
 
-Фан-аут по read-only источникам; каждый источник изолирован: ошибка
-одного не рушит остальные — частичный сбор попадает в errors, отчёт
-остаётся полезным. Версии нод и storage usage собираются per-node
-(ошибка одной ноды не валит кластер).
+Fan-out over read-only sources; each source is isolated: one failure
+does not break the others — a partial collection lands in errors and
+the report stays useful. Node versions and storage usage are collected
+per-node (one node's failure does not sink the cluster).
 """
 
 from __future__ import annotations
@@ -19,10 +19,10 @@ from ..domain.fleet import (
 
 
 def _node_version(provider, node: str) -> str:
-    """pveversion ноды: из статуса ноды, фолбэк — /nodes/{node}/version.
+    """Node pveversion: from the node status, fallback /nodes/{node}/version.
 
-    Основной FetchWorker берёт pveversion из /status (fetch.py); на части
-    версий PVE /version не отдаёт pveversion — повторяем его путь.
+    The main FetchWorker takes pveversion from /status (fetch.py); on some
+    PVE versions /version does not return pveversion — repeat its path.
     """
     try:
         st = provider.nodes.get_status(node) or {}
@@ -42,11 +42,11 @@ def collect_cluster(
     pbs_last_backups: Mapping[tuple[str, str], int] | None = None,
     now: int | None = None,
 ) -> ClusterFleetReport:
-    """Собрать ClusterFleetReport по одному провайдеру (кластеру).
+    """Collect a ClusterFleetReport for one provider (cluster).
 
-    ``pbs_last_backups`` — готовый маппинг ``{(backup-type, backup-id): ts}``
-    (из PBS-клиента через ``last_pbs_backup_times``); сбор по PBS-конфигам
-    выполняет вызывающая сторона.
+    ``pbs_last_backups`` is a ready ``{(backup-type, backup-id): ts}``
+    mapping (from the PBS client via ``last_pbs_backup_times``); iterating
+    over PBS configs is the caller's job.
     """
     generated_at = int(time.time()) if now is None else now
     errors: list[CollectError] = []
@@ -54,7 +54,7 @@ def collect_cluster(
     def guarded(source: str, fn):
         try:
             return fn(), None
-        except Exception as exc:  # частичный сбой источника — не фатален
+        except Exception as exc:  # partial source failure — not fatal
             return None, CollectError(cluster=name, source=source,
                                       message=str(exc))
 
@@ -81,8 +81,9 @@ def collect_cluster(
         if err:
             errors.append(err)
         else:
-            # пустая строка тоже фиксируется: узел с неизвестной версией
-            # должен быть виден в drift («Version unknown»), не пропадать
+            # an empty string is recorded too: a node with an unknown
+            # version must stay visible in drift ("Version unknown"),
+            # not disappear
             node_versions[node] = str(ver or "")
         rows, err = guarded(
             f"storage:{node}",
@@ -109,7 +110,7 @@ def collect_fleet(providers: Mapping[str, object],
                   pbs_last_backups: Mapping[tuple[str, str], int]
                   | None = None,
                   now: int | None = None) -> Sequence[ClusterFleetReport]:
-    """Собрать отчёты по всем кластерам (последовательно; M4.5 распараллелит)."""
+    """Collect reports for all clusters (sequentially; M4.5 parallelizes)."""
     return [
         collect_cluster(provider, name=name, pbs_last_backups=pbs_last_backups,
                         now=now)

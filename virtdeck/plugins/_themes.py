@@ -1,10 +1,11 @@
 """Built-in themes (ThemePlugin v1).
 
-Точечные значения палитр взяты из схем KDE: breeze (colors/BreezeLight.
-colors, BreezeDark.colors) и oxygen (color-schemes/Oxygen.colors).
-Значения с комментарием «derived» в схемах отсутствуют — выведены из
-базовых цветов схем (Breeze рисует disabled через ColorEffects, бордеров
-в схемах нет). Graphite — собственная нейтральная тема.
+Exact palette values are taken from the KDE schemes: breeze
+(colors/BreezeLight.colors, BreezeDark.colors) and oxygen
+(color-schemes/Oxygen.colors). Values commented "derived" are absent
+from the schemes — derived from their base colors (Breeze renders
+disabled via ColorEffects and the schemes have no borders). Graphite
+is our own neutral theme.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from .base import ThemePlugin
 
 
 class LightTheme:
-    """Светлая тема — встроенный плагин поверх дефолтной палитры."""
+    """Light theme — built-in plugin over the default palette."""
 
     _tokens: dict[str, str] | None = None
 
@@ -27,9 +28,9 @@ class LightTheme:
         return "Light"
 
     def tokens(self) -> dict[str, str]:
-        # Снимок делается лениво при первом tokens(): к этому моменту
-        # Color ещё держит дефолтную (светлую) палитру, а повторные
-        # активации не должны наследовать значения чужих тем.
+        # The snapshot is taken lazily on the first tokens(): at that
+        # point Color still holds the default (light) palette, and
+        # re-activations must not inherit values from other themes.
         if LightTheme._tokens is None:
             LightTheme._tokens = dict(LIGHT_TOKENS)
         return dict(LightTheme._tokens)
@@ -45,7 +46,7 @@ class LightTheme:
         return 24
 
 
-# ── Breeze — фирменный filled-цветной набор (фиксированные цвета, как бренд) ──
+# ── Breeze — signature filled-color set (fixed colors, treated as brand) ──
 
 BREEZE_ICONS = {
     'about': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6" fill="#3D8BFD"/><circle cx="12" cy="7.7" r="1.35" fill="#FFFFFF"/><path d="M12 10.8v5.6" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" /></svg>',
@@ -101,14 +102,14 @@ BREEZE_ICONS = {
 }
 
 _BREEZE_DENSITY_QSS = """
-/* Плотность под иконки 24px (Breeze) */
-QTreeWidget::item, QTreeView::item { padding: 3px 2px; }
+/* Row density for 24px icons (Breeze) — compact tree rows */
+QTreeWidget::item, QTreeView::item { padding: 1px 2px; min-height: 20px; }
 QToolBar QToolButton { padding: 3px; margin: 1px; }
 """
 
 
 class BreezeTheme:
-    """Breeze Light — светлая тема KDE Plasma (иконки 24px)."""
+    """Breeze Light — KDE Plasma light theme (24px icons)."""
 
     _TOKENS: dict[str, str] = {
         "BG": "#eff0f1",            # Window
@@ -120,25 +121,25 @@ class BreezeTheme:
         "BORDER_LIGHT": "#d8dbde",  # derived
         "BORDER_STRONG": "#a7abaf",  # derived
         "TEXT": "#232629",          # Window foreground
-        "TEXT_SEC": "#58656f",      # derived, контраст >=4.5 на светлых фонах
-        "TEXT_DIM": "#707880",      # derived, контраст >=3.0
-        "DISABLED": "#707880",      # derived, контраст >=3.0
-        "ON_ACCENT": "#1d2124",     # Selection foreground: тёмный на светло-голубом акценте
+        "TEXT_SEC": "#58656f",      # derived, contrast >=4.5 on light backgrounds
+        "TEXT_DIM": "#707880",      # derived, contrast >=3.0
+        "DISABLED": "#707880",      # derived, contrast >=3.0
+        "ON_ACCENT": "#1d2124",     # Selection foreground: dark on light-blue accent
         "ACCENT": "#3daee9",        # DecorationFocus
         "ACCENT_HOVER": "#55b8ec",  # derived
         "ACCENT_LIGHT": "#a3d4fa",  # Button alternate (inactive selection)
         "ACCENT_PRESSED": "#2f96d3",  # derived
-        "SUCCESS": "#166534",       # Positive, контраст >=4.5
+        "SUCCESS": "#166534",       # Positive, contrast >=4.5
         "SUCCESS_LIGHT": "#e2f6ea",  # derived
-        "WARNING": "#87590a",       # Neutral, контраст >=4.5
-        "WARNING_TEXT": "#87590a",  # derived, контраст >=4.5
-        "DANGER": "#b02a37",        # Negative, контраст >=4.5
+        "WARNING": "#87590a",       # Neutral, contrast >=4.5
+        "WARNING_TEXT": "#87590a",  # derived, contrast >=4.5
+        "DANGER": "#b02a37",        # Negative, contrast >=4.5
         "DANGER_SOLID": "#da4453",
         "DANGER_SOLID_HOVER": "#e36a76",  # derived
         "DANGER_SOLID_PRESSED": "#b03745",  # Selection negative
-        "STATUS_OK": "#166534",     # derived, контраст >=4.5
-        "STATUS_WARN": "#87590a",   # derived, контраст >=4.5
-        "STATUS_ERR": "#b02a37",    # derived, контраст >=4.5
+        "STATUS_OK": "#166534",     # derived, contrast >=4.5
+        "STATUS_WARN": "#87590a",   # derived, contrast >=4.5
+        "STATUS_ERR": "#b02a37",    # derived, contrast >=4.5
         "HOVER": "#e3e5e7",         # Window alternate
         "ROW_WARN": "#fdf1e3",      # derived (warning tint)
         "TOAST_BG": "#2a2e32",      # Complementary background
@@ -172,7 +173,7 @@ class BreezeTheme:
 
 
 class BreezeDarkTheme(BreezeTheme):
-    """Breeze Dark — тёмная тема KDE Plasma (иконки 24px)."""
+    """Breeze Dark — KDE Plasma dark theme (24px icons)."""
 
     _TOKENS: dict[str, str] = {
         "BG": "#202326",            # Window
@@ -186,8 +187,8 @@ class BreezeDarkTheme(BreezeTheme):
         "TEXT": "#fcfcfc",          # Window foreground
         "TEXT_SEC": "#a1a9b1",      # Window inactive
         "TEXT_DIM": "#7d868e",      # derived
-        "DISABLED": "#757d84",      # derived, контраст >=3.0 на тёмных фонах
-        "ON_ACCENT": "#1d2124",     # Selection foreground: тёмный на светло-голубом акценте (>=4.5)
+        "DISABLED": "#757d84",      # derived, contrast >=3.0 on dark backgrounds
+        "ON_ACCENT": "#1d2124",     # Selection foreground: dark on light-blue accent
         "ACCENT": "#3daee9",        # DecorationFocus
         "ACCENT_HOVER": "#55b8ec",  # derived
         "ACCENT_LIGHT": "#1e5774",  # Button alternate (inactive selection)
@@ -196,13 +197,13 @@ class BreezeDarkTheme(BreezeTheme):
         "SUCCESS_LIGHT": "#1c3827",  # derived
         "WARNING": "#f67400",
         "WARNING_TEXT": "#f89b47",  # derived
-        "DANGER": "#e97e8a",        # derived, контраст >=4.5 на тёмных фонах
+        "DANGER": "#e97e8a",        # derived, contrast >=4.5 on dark backgrounds
         "DANGER_SOLID": "#da4453",
         "DANGER_SOLID_HOVER": "#e36a76",  # derived
         "DANGER_SOLID_PRESSED": "#b03745",  # Selection negative
         "STATUS_OK": "#27ae60",
         "STATUS_WARN": "#f67400",
-        "STATUS_ERR": "#e97e8a",    # derived, контраст >=4.5 на тёмных фонах
+        "STATUS_ERR": "#e97e8a",    # derived, contrast >=4.5 on dark backgrounds
         "HOVER": "#34383d",         # derived
         "ROW_WARN": "#44331a",      # derived (warning tint)
         "TOAST_BG": "#17191c",      # derived (darker than BG)
@@ -223,7 +224,7 @@ class BreezeDarkTheme(BreezeTheme):
 
 
 class OxygenTheme:
-    """Oxygen — классическая тема KDE 4 (иконки 16px)."""
+    """Oxygen — classic KDE 4 theme (16px icons)."""
 
     _TOKENS: dict[str, str] = {
         "BG": "#d6d2d0",            # Window
@@ -235,25 +236,25 @@ class OxygenTheme:
         "BORDER_LIGHT": "#c0bdbb",  # derived
         "BORDER_STRONG": "#8f8c8a",  # derived
         "TEXT": "#1f1c1b",          # View foreground
-        "TEXT_SEC": "#55524f",      # derived, контраст >=4.5 на светлых фонах
-        "TEXT_DIM": "#6b6865",      # derived, контраст >=3.0
-        "DISABLED": "#6b6865",      # derived, контраст >=3.0
-        "ON_ACCENT": "#1d2124",     # Selection foreground: тёмный на голубом акценте
+        "TEXT_SEC": "#55524f",      # derived, contrast >=4.5 on light backgrounds
+        "TEXT_DIM": "#6b6865",      # derived, contrast >=3.0
+        "DISABLED": "#6b6865",      # derived, contrast >=3.0
+        "ON_ACCENT": "#1d2124",     # Selection foreground: dark on blue accent
         "ACCENT": "#3aa7dd",        # DecorationFocus
         "ACCENT_HOVER": "#6ed6ff",  # DecorationHover
         "ACCENT_LIGHT": "#cbe9f9",  # derived
         "ACCENT_PRESSED": "#3e8acc",  # Selection alternate
-        "SUCCESS": "#0f5c2e",       # Positive, контраст >=4.5
+        "SUCCESS": "#0f5c2e",       # Positive, contrast >=4.5
         "SUCCESS_LIGHT": "#ddf0e2",  # derived
-        "WARNING": "#6e4a08",       # Neutral, контраст >=4.5
-        "WARNING_TEXT": "#6e4a08",  # derived, контраст >=4.5
-        "DANGER": "#97251b",        # Negative, контраст >=4.5
+        "WARNING": "#6e4a08",       # Neutral, contrast >=4.5
+        "WARNING_TEXT": "#6e4a08",  # derived, contrast >=4.5
+        "DANGER": "#97251b",        # Negative, contrast >=4.5
         "DANGER_SOLID": "#bf0303",
         "DANGER_SOLID_HOVER": "#d63c3c",  # derived
         "DANGER_SOLID_PRESSED": "#9c0e0e",  # Selection negative
-        "STATUS_OK": "#0f5c2e",     # derived, контраст >=4.5
-        "STATUS_WARN": "#6e4a08",   # derived, контраст >=4.5
-        "STATUS_ERR": "#97251b",    # derived, контраст >=4.5
+        "STATUS_OK": "#0f5c2e",     # derived, contrast >=4.5
+        "STATUS_WARN": "#6e4a08",   # derived, contrast >=4.5
+        "STATUS_ERR": "#97251b",    # derived, contrast >=4.5
         "HOVER": "#dad9d8",         # Window alternate
         "ROW_WARN": "#f5ecd9",      # derived (warning tint)
         "TOAST_BG": "#181513",      # Tooltip background
@@ -287,7 +288,7 @@ class OxygenTheme:
 
 
 class GraphiteTheme:
-    """Graphite — собственная нейтральная тёмная тема (иконки 16px)."""
+    """Graphite — our own neutral dark theme (16px icons)."""
 
     _TOKENS: dict[str, str] = {
         "BG": "#2b2d2f",
@@ -301,9 +302,9 @@ class GraphiteTheme:
         "TEXT": "#e8eaec",
         "TEXT_SEC": "#a9adb1",
         "TEXT_DIM": "#7e8286",
-        "DISABLED": "#84888c",      # derived, контраст >=3.0 на тёмных фонах
+        "DISABLED": "#84888c",      # derived, contrast >=3.0 on dark backgrounds
         "ON_ACCENT": "#1d1f21",
-        "ACCENT": "#8fa6bb",        # светлая сталь
+        "ACCENT": "#8fa6bb",        # light steel
         "ACCENT_HOVER": "#a1b5c7",
         "ACCENT_LIGHT": "#37424c",
         "ACCENT_PRESSED": "#7d94a9",
@@ -311,13 +312,13 @@ class GraphiteTheme:
         "SUCCESS_LIGHT": "#2c3a2f",
         "WARNING": "#d9a05b",
         "WARNING_TEXT": "#e0b077",
-        "DANGER": "#e9949a",        # derived, контраст >=4.5 на тёмных фонах
+        "DANGER": "#e9949a",        # derived, contrast >=4.5 on dark backgrounds
         "DANGER_SOLID": "#b8555c",
         "DANGER_SOLID_HOVER": "#c6676e",
         "DANGER_SOLID_PRESSED": "#9c454c",
         "STATUS_OK": "#7fbf8e",
         "STATUS_WARN": "#d9a05b",
-        "STATUS_ERR": "#e9949a",    # derived, контраст >=4.5 на тёмных фонах
+        "STATUS_ERR": "#e9949a",    # derived, contrast >=4.5 on dark backgrounds
         "HOVER": "#383b3e",
         "ROW_WARN": "#3d3527",
         "TOAST_BG": "#1e2022",
@@ -350,13 +351,13 @@ class GraphiteTheme:
         return 24
 
 
-# ── System (следует схеме ОС) ───────────────────────────────────────
+# ── System (follows the OS scheme) ───────────────────────────────────
 
 _scheme_resolver = None
 
 
 def set_scheme_resolver(fn) -> None:
-    """Хук движка: fn() -> "light" | "dark" (текущая схема ОС)."""
+    """Engine hook: fn() -> "light" | "dark" (current OS scheme)."""
     global _scheme_resolver
     _scheme_resolver = fn
 
@@ -367,7 +368,7 @@ def _resolved_breeze():
 
 
 class SystemTheme:
-    """Системная тема: Breeze Light/Dark по colorScheme окружения."""
+    """System theme: Breeze Light/Dark based on the environment colorScheme."""
 
     @property
     def id(self) -> str:
@@ -391,7 +392,7 @@ class SystemTheme:
         return _resolved_breeze().icon_size
 
 
-# Явная проверка контракта при импорте модуля.
+# Explicit contract check at module import.
 assert isinstance(LightTheme(), ThemePlugin)
 for _plugin in (BreezeTheme(), BreezeDarkTheme(), OxygenTheme(),
                 GraphiteTheme(), SystemTheme()):

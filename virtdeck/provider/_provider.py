@@ -83,8 +83,8 @@ class ProxmoxProvider:
     # -- M0.5: feature detection / PVE compat matrix ----------------
 
     def report_version(self, node: str, raw: str | None) -> None:
-        """Запомнить версию ноды (вызывается из фетч-воркера при
-        подключении; raw — pveversion из node status)."""
+        """Remember the node version (called from the fetch worker on
+        connect; raw is pveversion from node status)."""
         version = parse_pve_version(raw)
         if version is not None:
             self._node_versions[node] = version
@@ -93,8 +93,8 @@ class ProxmoxProvider:
         return self._node_versions.get(node)
 
     def supports(self, feature: str, node: str | None = None) -> bool:
-        """Поддерживает ли нода (или все известные, если node=None)
-        фичу из compat-матрицы. Неизвестное → False (консервативно)."""
+        """Whether a node (or all known ones if node=None) supports a
+        feature from the compat matrix. Unknown -> False (conservative)."""
         if node is not None:
             return supports(self._node_versions.get(node), feature)
         known = list(self._node_versions.values())

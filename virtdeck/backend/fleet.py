@@ -1,9 +1,10 @@
-"""Fleet Health workers (M4.5): параллельный сбор отчёта по кластерам.
+"""Fleet Health workers (M4.5): parallel report collection across clusters.
 
-Шаблон как у ClusterTasksWorker: QObject с сигналами + threading.Thread
-(не QRunnable). Кластеры собираются параллельно — каждый в своём потоке;
-внутри кластера источники изолированы (partial failure — в отчёте).
-rrddata для runway добирается тем же потоком кластера.
+Same pattern as ClusterTasksWorker: QObject with signals +
+threading.Thread (not QRunnable). Clusters are collected in parallel —
+each in its own thread; within a cluster, sources are isolated
+(partial failure lands in the report). rrddata for runway is fetched
+by the same cluster thread.
 """
 
 from __future__ import annotations
@@ -21,16 +22,16 @@ from ..plugins import create_provider
 
 logger = logging.getLogger(__name__)
 
-RUNWAY_TIMEFRAME = "month"  # rrddata: помесячное окно, часовые точки
+RUNWAY_TIMEFRAME = "month"  # rrddata: monthly window, hourly points
 
 
 @dataclass(frozen=True)
 class FleetTarget:
-    """Таргет Fleet Health: один эндпоинт = один кластер/хост.
+    """Fleet Health target: one endpoint = one cluster/host.
 
-    ``name`` — имя конфига-эндпоинта (совпадает с tree host_name у ВМ —
-    от него зависят ключи перехода); ``display`` — подпись в отчёте
-    (имя кластера для PVE-кластеров, имя хоста для одиночных).
+    ``name`` — the endpoint config name (matches the VM's tree host_name —
+    navigation keys depend on it); ``display`` — the label in the report
+    (cluster name for PVE clusters, host name for standalone).
     """
 
     name: str
@@ -39,14 +40,15 @@ class FleetTarget:
 
 
 def build_fleet_targets(nodes_cfg: list[dict]) -> list[FleetTarget]:
-    """Сгруппировать конфиги хостов в таргеты Fleet Health.
+    """Group host configs into Fleet Health targets.
 
-    Семантика как у дерева (tree_panel): члены одного PVE-кластера
-    (cfg["cluster"], не False/None/"Standalone") — один таргет; эндпоинт —
-    представитель кластера (cluster_rep, т.е. создатель; именно он тянет
-    cluster-wide данные в FetchWorker) или первый член; подпись — имя
-    кластера. Одиночные хосты — по одному таргету со своим именем.
-    PBS-серверы и skip-конфиги исключаются.
+    Same semantics as the tree (tree_panel): members of one PVE cluster
+    (cfg["cluster"], not False/None/"Standalone") form one target; the
+    endpoint is the cluster representative (cluster_rep, i.e. the
+    creator; it is the one that pulls cluster-wide data in the
+    FetchWorker) or the first member; the label is the cluster name.
+    Standalone hosts get one target each, named after themselves.
+    PBS servers and skip configs are excluded.
     """
     clusters: dict[str, list[dict]] = {}
     standalone: list[dict] = []
@@ -72,12 +74,12 @@ def build_fleet_targets(nodes_cfg: list[dict]) -> list[FleetTarget]:
 
 @dataclass(frozen=True)
 class ClusterBundle:
-    """Отчёт кластера + runway-прогнозы его хранилищ."""
+    """Cluster report + runway forecasts for its storages."""
 
     report: ClusterFleetReport
     runway: tuple[RunwayEstimate, ...]
     display: str = ""
-    """Подпись в UI (имя кластера); пусто — брать report.cluster."""
+    """Label in the UI (cluster name); empty — fall back to report.cluster."""
 
 
 class FleetHealthSignals(QObject):
@@ -86,7 +88,7 @@ class FleetHealthSignals(QObject):
 
 
 class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
-    """Собирает Fleet Health по всем таргетам параллельно."""
+    """Collects Fleet Health across all targets in parallel."""
 
     def __init__(self, targets: list[FleetTarget]):
         super().__init__()
@@ -123,7 +125,7 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
             with create_provider(target.cfg) as provider:
                 report = collect_cluster(provider, name=name)
                 runway = self._runway(provider, report)
-        except Exception as e:  # создание провайдера — тоже источник
+        except Exception as e:  # provider creation is a source too
             logger.warning("Fleet Health: %s failed: %s", name, e)
             from ..domain.fleet import CollectError, build_cluster_report
             report = build_cluster_report(
@@ -139,7 +141,7 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
         estimates: list[RunwayEstimate] = []
         for row in report.storage_usage:
             if not row.get("active"):
-                continue  # неактивное хранилище не прогнозируем
+                continue  # inactive storage is not forecast
             node, storage = str(row.get("node")), str(row.get("storage"))
             try:
                 series = provider.rrd.get_storage_rrddata(

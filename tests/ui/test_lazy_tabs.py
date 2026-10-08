@@ -70,9 +70,9 @@ def test_ensure_tabs_finishes_partial_chunked_build(qtbot):
 
 
 def test_all_tabs_built_emitted_on_drain(qtbot):
-    """Регресс FREEZE-фриза старта: по опустошении очереди чанковой стройки
-    панель сигналит all_tabs_built — MainWindow по нему выполняет отложенный
-    первый выбор вместо синхронного _ensure_tabs() в потоке воркера."""
+    """Regression of the FREEZE startup hang: when the chunked-build queue
+    drains, the panel emits all_tabs_built — MainWindow then runs the deferred
+    first selection instead of a synchronous _ensure_tabs() on the worker thread."""
     panel = DetailPanel([])
     qtbot.addWidget(panel)
     fired = []
@@ -85,8 +85,8 @@ def test_all_tabs_built_emitted_on_drain(qtbot):
 
 
 def test_do_first_selection_deferred_until_tabs_built(qtbot, monkeypatch, tmp_path):
-    """Первый выбор при недостроенных табах откладывается (pending), а не
-    достраивает все табы синхронно; _on_all_tabs_built выполняет его."""
+    """First selection with tabs half-built is deferred (pending), not
+    built out synchronously; _on_all_tabs_built performs it."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     from virtdeck.domain.node import Node as DomainNode
     from virtdeck.domain.repositories import NodeRepository

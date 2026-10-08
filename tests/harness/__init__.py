@@ -1,25 +1,26 @@
-"""M4.0: тестовый харнесс — фейковые PVE/PBS API и record/replay.
+"""M4.0: test harness — fake PVE/PBS APIs and record/replay.
 
-Fleet Health фан-аутится по всем кластерам сразу — живыми кластерами не
-тестируем. Харнесс подменяет транспорт на уровне `requests`: реальный
-провайдер (proxmoxer, PBS-клиент) работает против in-memory сценария или
-replay-фикстуры, записанной с живого кластера. Сетевых сокетов в тестах
-нет — адаптер перехватывает запросы до TLS.
+Fleet Health fans out across all clusters at once — live clusters are
+not tested. The harness swaps the transport at the `requests` level:
+the real provider (proxmoxer, PBS client) runs against an in-memory
+scenario or a replay fixture recorded from a live cluster. No network
+sockets in tests — the adapter intercepts requests before TLS.
 
-Компоненты:
-- `fake_pve.FakePveApi` — in-memory состояние кластера (ноды/гости/джобы/
-  хранилища/rrddata/снапшоты/таски) + fluent-сценарии;
-- `fake_pbs.FakePbsApi` — минимальный PBS (ticket + datastores/snapshots);
-- `adapter.FakeApiAdapter` — requests-адаптер над обработчиком фейка;
-- `adapter.ReplayAdapter` / `save_fixture` / `load_fixture` — record/replay
-  по JSON-фикстурам (формат см. FIXTURE_FORMAT).
+Components:
+- `fake_pve.FakePveApi` — in-memory cluster state (nodes/guests/jobs/
+  storages/rrddata/snapshots/tasks) + fluent scenarios;
+- `fake_pbs.FakePbsApi` — minimal PBS (ticket + datastores/snapshots);
+- `adapter.FakeApiAdapter` — requests adapter over the fake's handler;
+- `adapter.ReplayAdapter` / `save_fixture` / `load_fixture` — record/
+  replay over JSON fixtures (format: see FIXTURE_FORMAT).
 
-Швы монтирования:
-- PVE: `install_fake_pve(monkeypatch, api)` — патчит `ProxmoxAPI` в
-  `provider._session` (реальный объект proxmoxer, fake-адаптер на его
-  внутренней `requests.Session` из `_store["session"]`; token-auth сетевого
-  round-trip'а не делает — адаптер получает и «аутентификацию»);
-- PBS: `PbsClient(cfg, http=session)` — опциональная сессия с адаптером.
+Mounting seams:
+- PVE: `install_fake_pve(monkeypatch, api)` — patches `ProxmoxAPI` in
+  `provider._session` (a real proxmoxer object, a fake adapter on its
+  internal `requests.Session` from `_store["session"]`; token-auth does
+  no network round-trip — the adapter sees even the "authentication");
+- PBS: `PbsClient(cfg, http=session)` — an optional session with an
+  adapter.
 """
 
 from .adapter import load_fixture, save_fixture

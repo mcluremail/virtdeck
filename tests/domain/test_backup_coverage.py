@@ -1,10 +1,10 @@
-"""M4.1: table-driven тесты matching-движка backup compliance.
+"""M4.1: table-driven tests for the backup compliance matching engine.
 
-Движок — самое коварное место Fleet Health (B24): false positive/negative
-подрывают доверие с первого запуска. Каждый кейс фиксирует одно правило
-семантики vzdump (см. докмодуль ``backup_coverage``): all>pool>vmid,
-exclude только при all, шаблоны вне отчёта, disabled-джоб никого не
-покрывает, пересечения джобов допустимы, дубль vmid — первый выигрывает.
+The engine is the trickiest part of Fleet Health (B24): false
+positives/negatives break trust from the first run. Each case pins one
+vzdump semantics rule (see the ``backup_coverage`` docmodule):
+all>pool>vmid, exclude only with all, templates outside the report,
+a disabled job covers nobody, job overlaps allowed, duplicate vmid — first wins.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def j(job_id: str, *, enabled: bool = True, all_vms: bool = False,
                      pool=pool, schedule=schedule, storage=storage)
 
 
-# Сцена: 2 ноды, qemu+lxc, шаблон, два пула.
+# Scene: 2 nodes, qemu+lxc, a template, two pools.
 SCENE = [
     g(101, pool="prod"),
     g(102),
@@ -40,7 +40,7 @@ SCENE = [
     g(301, pool="prod", vm_type="lxc", node="n2"),
 ]
 
-# (имя кейса, джобы, covered, uncovered, exempt)
+# (case name, jobs, covered, uncovered, exempt)
 COVERAGE_CASES = [
     ("no_jobs_all_uncovered", [],
      set(), {101, 102, 301}, {201}),
@@ -88,8 +88,8 @@ def test_coverage_table(jobs, covered, uncovered, exempt):
 
 
 def test_pool_migration_recomputed_fresh():
-    """ВМ мигрировала между пулами между запусками — движок stateless,
-    прогон по свежему resources даёт актуальный ответ (B24)."""
+    """The VM moved between pools between runs — the engine is stateless,
+    a run over fresh resources gives the current answer (B24)."""
     migrated = [g(101, pool="staging")]
     cov = compute_coverage([j("bz-pool", pool="prod")], migrated)
     assert cov.uncovered == frozenset({101})
@@ -140,7 +140,7 @@ def test_empty_scene():
 
 
 class TestBackupJobFromRaw:
-    """Парсинг GET /cluster/backup: типы PVE (0/1, строки-списки)."""
+    """Parsing GET /cluster/backup: PVE types (0/1, string lists)."""
 
     def test_full_raw(self):
         job = BackupJob.from_raw({"id": "bz-1", "enabled": 1, "all": 1,
@@ -166,7 +166,7 @@ class TestBackupJobFromRaw:
 
 
 class TestGuestFromRaw:
-    """Парсинг /cluster/resources: не-гости и битые vmid → None."""
+    """Parsing /cluster/resources: non-guests and broken vmids → None."""
 
     def test_from_resources_row(self):
         guest = Guest.from_raw({"type": "qemu", "vmid": 101, "name": "web",

@@ -215,7 +215,7 @@ class TestCreateAdminToken:
         assert "not working" in result["error"]
 
     def test_cluster_detected(self, ticket_ok, monkeypatch):
-        """cluster/status с записью type=cluster — cluster_info в результате."""
+        """cluster/status with a type=cluster entry — cluster_info in the result."""
         fake = FakeSession([_resp(200, {"data": {"value": "UUID"}})])
         monkeypatch.setattr(requests, "Session", lambda: fake)
 

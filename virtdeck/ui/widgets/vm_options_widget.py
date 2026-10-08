@@ -34,7 +34,7 @@ class VmOptionsWidget(QWidget):
         self.table.setColumnCount(2)
         self.table.setHorizontalHeaderLabels([tr("Parameter"), tr("Value")])
         enable_table_autofit(self.table, [0])
-        # Value — заполнитель (Interactive + stretchLastSection: тянется мышью).
+        # Value is a filler (Interactive + stretchLastSection: resizable by mouse).
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         enable_column_reorder(self.table.horizontalHeader())

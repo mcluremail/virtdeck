@@ -10,7 +10,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
+    QWidget,
 )
 
 from ..backend import TokenCreationWorker
@@ -40,7 +42,11 @@ class AddServerDialog(QDialog):
         self._context = context
         title_suffix = {"cluster": tr(" to cluster"), "standalone": tr(" as standalone host")}.get(context, "")
         self.setWindowTitle(tr("Add Server") + title_suffix)
-        self.setMinimumSize(520, 660)
+        # height by content, but no higher than a soft minimum: on screens
+        # with 660px scaling the minimum was not enough, the layout shrank
+        # below layout-minimum and widgets overlapped; body is in a scroll
+        # area now
+        self.setMinimumSize(520, 480)
         self._token_data = None
         self._cluster_info = None
         self._active_workers = set()
@@ -60,9 +66,16 @@ class AddServerDialog(QDialog):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(16)
+        layout.setSpacing(12)
 
-        layout.addWidget(_section_title(tr("Connection")))
+        # body in a scroll area: three sections do not fit in short windows
+        # and locales with long labels (2026-10-08 audit, user report)
+        body = QWidget(self)
+        body_lay = QVBoxLayout(body)
+        body_lay.setContentsMargins(0, 0, 0, 0)
+        body_lay.setSpacing(16)
+
+        body_lay.addWidget(_section_title(tr("Connection")))
 
         conn_grid = QGridLayout()
         conn_grid.setHorizontalSpacing(12)
@@ -130,11 +143,11 @@ class AddServerDialog(QDialog):
         self.auth_btn.clicked.connect(self._on_auth)
 
         conn_grid.setColumnStretch(1, 1)
-        layout.addLayout(conn_grid)
-        layout.addWidget(_section_sep())
+        body_lay.addLayout(conn_grid)
+        body_lay.addWidget(_section_sep())
 
         token_title = _section_title(tr("Token"))
-        layout.addWidget(token_title)
+        body_lay.addWidget(token_title)
         self._token_title = token_title
 
         token_grid = QGridLayout()
@@ -167,11 +180,11 @@ class AddServerDialog(QDialog):
         token_grid.addWidget(self.status_label, 2, 0, 1, 2)
 
         token_grid.setColumnStretch(1, 1)
-        layout.addLayout(token_grid)
+        body_lay.addLayout(token_grid)
         self._token_grid = token_grid
-        layout.addWidget(_section_sep())
+        body_lay.addWidget(_section_sep())
 
-        layout.addWidget(_section_title(tr("Node settings")))
+        body_lay.addWidget(_section_title(tr("Node settings")))
 
         node_grid = QGridLayout()
         node_grid.setHorizontalSpacing(12)
@@ -192,14 +205,19 @@ class AddServerDialog(QDialog):
         node_grid.addWidget(self.cluster_input, 1, 1)
 
         node_grid.setColumnStretch(1, 1)
-        layout.addLayout(node_grid)
+        body_lay.addLayout(node_grid)
+        body_lay.addStretch(1)
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setWidget(body)
+        layout.addWidget(scroll, 1)
 
         # PVE-only widgets hidden in PBS mode (token flow + cluster row)
         self._pve_only_labels = [info_label, tn_lbl, tv_lbl, cl_lbl]
         self._pve_only_widgets = [self.token_name_label, self.token_value_label,
                                   self._token_show_btn]
-
-        layout.addStretch()
 
         btn_layout = QHBoxLayout()
         self.add_btn = QPushButton(tr("Add"))
@@ -227,8 +245,8 @@ class AddServerDialog(QDialog):
 
     def _on_type_changed(self):
         pbs = self._is_pbs()
-        # Порт виден всегда: дефолт 8006 (PVE) ↔ 8007 (PBS). Пользовательский
-        # порт (не один из дефолтов) не перетирается при смене типа.
+        # Port is always visible: default 8006 (PVE) <-> 8007 (PBS). A custom
+        # port (not one of the defaults) is not overwritten on type switch.
         current = self.port_input.text().strip()
         if current in ("", "8006", "8007"):
             self.port_input.setText("8007" if pbs else "8006")
@@ -380,7 +398,7 @@ class AddServerDialog(QDialog):
 
         cluster = self._cluster_info or {}
         if cluster.get("nodes", 0) > 1:
-            # Кластер распознан автоматически по /cluster/status.
+            # Cluster detected automatically via /cluster/status.
             cfg["cluster_rep"] = True
             cfg["cluster"] = cluster_text or cluster.get("name") or name
         else:

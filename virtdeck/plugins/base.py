@@ -86,7 +86,7 @@ class PluginRegistry:
         self._plugins[pid] = plugin
 
     def unregister(self, plugin_id: str) -> None:
-        """Снятие плагина (импорт сторонних тем с заменой и т.п.)."""
+        """Unregister a plugin (e.g. importing third-party themes as a replacement)."""
         if plugin_id in self._themes:
             del self._themes[plugin_id]
             return
@@ -103,10 +103,10 @@ class PluginRegistry:
     def ids(self) -> list[str]:
         return sorted(self._plugins)
 
-    # ── Темы ──
+    # -- Themes --
 
     def register_theme(self, plugin: ThemePlugin) -> None:
-        """Регистрация темы с валидацией контрактных методов."""
+        """Register a theme with contract-method validation."""
         for attr in ("tokens", "extra_qss", "icons"):
             if not callable(getattr(plugin, attr, None)):
                 raise PluginError(
@@ -117,7 +117,7 @@ class PluginRegistry:
         self._themes[tid] = plugin
 
     def theme_ids(self) -> list[str]:
-        """Id всех зарегистрированных тем."""
+        """Ids of all registered themes."""
         return sorted(self._themes)
 
     def get_theme(self, theme_id: str) -> ThemePlugin:

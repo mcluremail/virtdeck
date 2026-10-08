@@ -1,4 +1,4 @@
-"""Регрессии трей-иконки состояния (brand.tray_icon + _update_tray_state)."""
+"""Tray state icon regressions (brand.tray_icon + _update_tray_state)."""
 
 import pytest
 
@@ -21,12 +21,12 @@ def offline(monkeypatch):
 
 @pytest.fixture()
 def tray_window(qtbot, monkeypatch, tmp_path, offline):
-    """MainWindow с принудительно «доступным» системным треем.
+    """MainWindow with the system tray forced "available".
 
-    Regression #6: в __init__ _init_tray() вызывается до инициализации
-    _soft_had_errors — на машине с реальным треем падал AttributeError.
-    В offscreen-тестах isSystemTrayAvailable() всегда False, поэтому
-    путь не покрывался; здесь он включается принудительно.
+    Regression #6: in __init__ _init_tray() runs before _soft_had_errors
+    is initialized — AttributeError on a machine with a real tray.
+    In offscreen tests isSystemTrayAvailable() is always False, so the
+    path went uncovered; here it is forced on.
     """
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     from PySide6.QtWidgets import QSystemTrayIcon
@@ -47,11 +47,11 @@ def test_init_tray_with_tray_available_does_not_crash(tray_window):
 
 
 def test_update_tray_state_reflects_soft_errors(tray_window):
-    # пустой конфиг → offline даже при ошибках soft-цикла
+    # empty config → offline even with soft-cycle errors
     tray_window._soft_had_errors = True
     tray_window._update_tray_state()
     assert tray_window._tray_state == "offline"
-    # есть хосты → error виден
+    # hosts present → error shown
     tray_window.nodes_cfg = [{"name": "pve01", "host": "h",
                               "user": "u", "token_value": "t"}]
     tray_window._update_tray_state()

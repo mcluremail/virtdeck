@@ -1,6 +1,6 @@
-"""Регресс аудита 2026-09-09: raw-воркеры UI должны строить requests-
-сессию через build_requests_session — иначе per-host прокси из cfg
-игнорируется и в proxy-only окружении все raw-запросы падают по тайм-ауту."""
+"""Regression from the 2026-09-09 audit: UI raw workers must build their
+requests session via build_requests_session — otherwise per-host proxies
+from cfg are ignored and in a proxy-only environment raw requests time out."""
 from __future__ import annotations
 
 from virtdeck.provider._session import build_requests_session
@@ -35,8 +35,8 @@ def test_missing_proxy_key_keeps_env_behaviour():
 
 
 def test_metrics_workers_use_factory(monkeypatch):
-    """Все raw-воркеры metrics.py обязаны строить сессию фабрикой,
-    а не голым requests.Session()."""
+    """All metrics.py raw workers must build the session via the factory,
+    not a bare requests.Session()."""
     from virtdeck.ui.api import metrics as m
 
     calls = []

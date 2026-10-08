@@ -1,11 +1,11 @@
-"""M4.0: FakePveApi — in-memory PVE-кластер для тестов Fleet Health.
+"""M4.0: FakePveApi — in-memory PVE cluster for Fleet Health tests.
 
-Состояние кластера собирается fluent-методами (сценарий), запросы
-обслуживает `handle(method, path, params)` — PVE API2 JSON-конверт
-(`{"data": ...}`). Пути — без префикса `/api2/json`. `api.calls` пишет
-каждый запрос (для утверждений о fan-out). `api.fail` имитирует частичный
-сбой (path-префикс → (status, message)) — фундамент семантики partial
-failure («данные от HH:MM»).
+Cluster state is assembled by fluent methods (a scenario); requests are
+served by `handle(method, path, params)` — the PVE API2 JSON envelope
+(`{"data": ...}`). Paths — without the `/api2/json` prefix. `api.calls`
+records every request (for fan-out assertions). `api.fail` simulates a
+partial failure (path prefix → (status, message)) — the foundation of
+partial failure semantics ("data as of HH:MM").
 """
 
 from __future__ import annotations
@@ -16,12 +16,12 @@ def _pve_manager_version(major: int, minor: int, patch: int) -> str:
 
 
 class FakePveApi:
-    """Сценарий одного независимого PVE-кластера."""
+    """Scenario of a single independent PVE cluster."""
 
     def __init__(self, name: str = "fake1"):
         self.name = name
         self.calls: list[tuple[str, str, dict]] = []
-        # path-префикс → (status, message): имитация частичного сбоя.
+        # path prefix → (status, message): partial failure simulation.
         self.fail: dict[str, tuple[int, str]] = {}
 
         self.nodes: dict[str, dict] = {}          # node → {version, status}
@@ -37,7 +37,7 @@ class FakePveApi:
         self._resources: list[dict] | None = None  # override /cluster/resources
         self._job_seq = 0
 
-    # ── Сценарий ────────────────────────────────────────────────────
+    # ── Scenario ────────────────────────────────────────────────────
 
     def add_node(self, node: str, major: int = 8, minor: int = 2,
                  patch: int = 4, status: dict | None = None) -> FakePveApi:
@@ -78,7 +78,7 @@ class FakePveApi:
                        all_vms: bool = False, vmid: str = "",
                        exclude: str = "", pool: str = "",
                        mailnotification: str = "always") -> FakePveApi:
-        """Джоб из GET /cluster/backup: all:1 / vmid[] / pool / exclude."""
+        """Job from GET /cluster/backup: all:1 / vmid[] / pool / exclude."""
         self._job_seq += 1
         job = {"id": job_id or f"job-{self._job_seq:03d}",
                "enabled": enabled, "schedule": schedule, "storage": storage,
@@ -140,11 +140,12 @@ class FakePveApi:
         return self
 
     def override_resources(self, entries: list[dict]) -> FakePveApi:
-        """Жёсткий override /cluster/resources (иначе выводится из сцены)."""
+        """Hard override of /cluster/resources (otherwise derived from
+        the scenario)."""
         self._resources = entries
         return self
 
-    # ── Обслуживание запросов ───────────────────────────────────────
+    # ── Request handling ────────────────────────────────────────────
 
     def _derived_resources(self) -> list[dict]:
         rows: list[dict] = []
@@ -163,7 +164,8 @@ class FakePveApi:
 
     def handle(self, method: str, path: str,
                params: dict | None = None) -> tuple[int, object]:
-        """(method, path, params) → (status, data). path без /api2/json."""
+        """(method, path, params) → (status, data). path without
+        /api2/json."""
         params = dict(params or {})
         self.calls.append((method, path, params))
 

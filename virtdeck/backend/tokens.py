@@ -56,7 +56,7 @@ def create_admin_token(host, user, password, trust_ssl=False, proxy=None):
         sess = rq.Session()
         sess.verify = verify
         if proxy:
-            # Явный прокси: env-прокси не должен перебивать session-level.
+            # Explicit proxy: env proxies must not override session-level.
             sess.trust_env = False
             sess.proxies.update(_proxies(proxy))
         sess.headers.update({
@@ -105,9 +105,10 @@ def create_admin_token(host, user, password, trust_ssl=False, proxy=None):
         except Exception as ve:
             logger.warning("verify exception: %s", ve)
 
-        # Автоопределение кластера: /cluster/status на участнике кластера
-        # возвращает запись type=cluster (имя) и список нод; на standalone —
-        # только одну ноду. Ошибка запроса не фейлит создание токена.
+        # Cluster auto-detection: on a cluster member /cluster/status
+        # returns a type=cluster entry (name) and the node list; on
+        # standalone it returns a single node. A request failure does not
+        # fail token creation.
         cluster_info = None
         try:
             cr = rq.get(
@@ -157,7 +158,7 @@ class TokenCreationSignals(QObject):
     token_error = Signal(str)
     finished = Signal()
 class TokenCreationWorker(QRunnable):
-    """Создаёт API-токен в фоновом потоке, не блокируя UI."""
+    """Creates the API token in a background thread without blocking the UI."""
     def __init__(self, host, user, password, trust_ssl=False, proxy=None):
         super().__init__()
         self.host = host
@@ -195,8 +196,8 @@ class TokenCreationWorker(QRunnable):
             except RuntimeError:
                 pass
 def delete_host_token(host_cfg):
-    """Удаляет API-токен с PVE-сервера.
-       Возвращает True при успехе, False при ошибке."""
+    """Deletes the API token from the PVE server.
+    Returns True on success, False on error."""
     provider = None
     try:
         provider = create_provider(host_cfg, timeout=10)

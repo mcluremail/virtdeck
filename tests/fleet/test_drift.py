@@ -1,4 +1,4 @@
-"""M4.3: version drift — таблица уровней отставания и сортировка."""
+"""M4.3: version drift — lag-level table and sorting."""
 
 from __future__ import annotations
 
@@ -21,12 +21,12 @@ def test_all_equal_all_ok():
 
 
 def test_mixed_levels_and_ordering():
-    """Порядок: major → unknown → patch → ok; patch по имени."""
+    """Order: major → unknown → patch → ok; patch by name."""
     rows = detect_drift({
         "pve-a": V824,     # ok
         "pve-b": V810,     # minor
         "pve-c": V821,     # patch
-        "pve-d": "8.2.3",  # patch (парсер принимает короткий вид)
+        "pve-d": "8.2.3",  # patch (parser accepts the short form)
         "pve-e": "garbage",
         "pve-f": V743,     # major
     })
@@ -39,7 +39,7 @@ def test_mixed_levels_and_ordering():
     assert by_node["pve-f"].level == "major"
     assert [r.node for r in rows] == [
         "pve-f", "pve-b", "pve-e", "pve-c", "pve-d", "pve-a"]
-    # у каждого ряда указан лидер кластера
+    # each row lists the cluster leader
     assert by_node["pve-f"].newest_node == "pve-a"
     assert by_node["pve-f"].newest_version == V824
 
@@ -59,7 +59,7 @@ def test_only_unparsable_all_unknown():
 
 def test_short_form_versions():
     rows = detect_drift({"pve-a": "8.2", "pve-b": "8.2.4"})
-    # '8.2' → 8.2.0 → patch от 8.2.4
+    # '8.2' → 8.2.0 → patch relative to 8.2.4
     by_node = {r.node: r for r in rows}
     assert by_node["pve-a"].level == "patch"
     assert by_node["pve-b"].level == "ok"

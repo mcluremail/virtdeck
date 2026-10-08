@@ -1,8 +1,8 @@
-"""M2.2: тесты командной палитры (Ctrl+K).
+"""M2.2: command palette tests (Ctrl+K).
 
-Реестр собирается из фейковых ActionSpec — палитра не должна знать о
-конкретных действиях; проверяются фильтрация по выделению, поиск,
-клавиатура (Enter/Esc/стрелки) и подсветка опасных действий.
+The registry is built from fake ActionSpecs — the palette must not know
+about concrete actions; covers selection filtering, search,
+keyboard (Enter/Esc/arrows) and dangerous-action highlighting.
 """
 from PySide6.QtCore import Qt
 
@@ -57,7 +57,7 @@ class TestCommandPalette:
         qtbot.addWidget(pal)
         pal.open_for()
         assert pal.isVisible()
-        # пустое выделение: только глобальные действия
+        # empty selection: global actions only
         assert _labels(pal) == ["Refresh data", "Quit"]
 
     def test_enter_invokes_first_match_and_closes(self, qtbot):
@@ -103,7 +103,7 @@ class TestCommandPalette:
         pal.open_for()
         qtbot.keyClicks(pal._input, "zzz")
         assert _labels(pal) == ["No matching actions"]
-        # пустышка не выполняется
+        # the stub does not run
         qtbot.keyClick(pal._input, Qt.Key_Return)
 
     def test_selection_filters_and_vm_actions(self, qtbot):
@@ -113,7 +113,7 @@ class TestCommandPalette:
         pal = CommandPalette(_registry(invoked), lambda: sel)
         qtbot.addWidget(pal)
         pal.open_for()
-        # остановленная ВМ: Start доступен, глобальные тоже
+        # stopped VM: Start available, globals too
         assert _labels(pal) == ["Refresh data", "Start", "Quit"]
         assert pal._header.text() == "web-01"
         pal._input.clear()
@@ -128,11 +128,11 @@ class TestCommandPalette:
         pal = CommandPalette(_registry([]), lambda: sel)
         qtbot.addWidget(pal)
         pal.open_for()
-        # Start запрещён для работающей ВМ → остаются только глобальные
+        # Start forbidden for a running VM → only globals remain
         assert _labels(pal) == ["Refresh data", "Quit"]
 
     def test_multi_selection_shows_bulk_not_singles(self, qtbot):
-        """Мульти-выделение: массовые действия вместо одиночных."""
+        """Multi-selection: bulk actions instead of single ones."""
         class _Sig:
             def __init__(self):
                 self.log = []
@@ -161,9 +161,9 @@ class TestCommandPalette:
         qtbot.addWidget(pal)
         pal.open_for()
         labels = _labels(pal)
-        assert "Start" not in labels          # одиночное скрыто
+        assert "Start" not in labels          # single hidden
         assert "Stop" not in labels
-        assert "Start all" in labels          # массовые доступны
+        assert "Start all" in labels          # bulk available
         assert "Stop all" in labels
         for i in range(pal._list.topLevelItemCount()):
             item = pal._list.topLevelItem(i)
@@ -188,7 +188,7 @@ class TestCommandPalette:
             raise AssertionError("Quit not in list")
 
     def test_host_selection_shows_host_actions(self, qtbot):
-        """Выделен хост: палитра предлагает host-действия реестра."""
+        """Host selected: the palette offers registry host actions."""
         from virtdeck.ui.action_specs import register_tree_actions
 
         class _Tree:
@@ -210,11 +210,11 @@ class TestCommandPalette:
         assert "Delete host" in labels
         assert "Refresh token" in labels
         assert "Create cluster…" in labels
-        assert "Start" not in labels            # VM-действия скрыты
+        assert "Start" not in labels            # VM actions hidden
 
     def test_retheme_updates_icon_size(self, qtbot):
-        """E2 (аудит 2026-10-06): смена темы с другим icon_size (Breeze 24px)
-        обновляет размер иконок списка палитры, созданной ранее."""
+        """E2 (2026-10-06 audit): a theme change with a different icon_size
+        (Breeze 24px) updates icon size of a palette list built earlier."""
         from virtdeck.ui import icons as icons_mod
 
         pal = CommandPalette(ActionRegistry(), lambda: Selection())

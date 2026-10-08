@@ -9,6 +9,7 @@ from virtdeck.domain.enums import VmStatus
 from virtdeck.domain.repositories import NodeRepository, VmRepository
 from virtdeck.ui.tree_panel import (
     GROUP_MIME,
+    INFO_ROLE,
     ITEM_KEY_ROLE,
     VM_KEY_ROLE,
     GroupTreeWidget,
@@ -102,9 +103,8 @@ class TestTreePanelBuild:
 
         items = _collect_items(tp)
         host = items[("host", "pve01", "h1")]
-        text = host.text(0)
-        # [running/total] = [1/2]
-        assert "[1/2]" in text
+        # [running/total] = [1/2] — name suffix (user's choice)
+        assert "[1/2]" in host.text(0)
         # Should have 2 vm children
         assert host.childCount() == 2
 
@@ -281,7 +281,7 @@ class TestHostGroups:
         group_key = next((k for k in items if k[0] == "group"), None)
         assert group_key is not None
         assert group_key[1] == "Site A"
-        # Group shows aggregated VM count
+        # Group shows aggregated VM count (name suffix)
         assert "[1/1]" in items[group_key].text(0)
         # Host is under the group, not at top level (B20: no sections)
         host_key = next((k for k in items if k[0] == "host"), None)
@@ -511,7 +511,7 @@ def _find_item(tp, text_part):
 
 
 class TestTreePanelNotes:
-    """B19: per-item notes in tree column 1."""
+    """B19: per-item notes — now an info line under the name (INFO_ROLE)."""
 
     def test_host_default_note_is_fqdn(self, qtbot, make_node):
         cfg = [{"name": "h1", "host": "pve01.example.com", "cluster": "", "skip": False}]
@@ -522,7 +522,7 @@ class TestTreePanelNotes:
 
         host_item = _find_item(tp, "pve01")
         assert host_item is not None
-        assert host_item.text(1) == "pve01.example.com"
+        assert host_item.data(0, INFO_ROLE) == "pve01.example.com"
 
     def test_host_user_note_overrides_fqdn(self, qtbot, make_node):
         cfg = [{"name": "h1", "host": "pve01.example.com", "cluster": "", "skip": False}]
@@ -533,7 +533,8 @@ class TestTreePanelNotes:
         tp.update_data([node], [], final=True)
 
         host_item = _find_item(tp, "pve01")
-        assert host_item.text(1) == "Main node"
+        assert host_item is not None
+        assert host_item.data(0, INFO_ROLE) == "Main node"
 
     def test_cluster_and_vm_notes(self, qtbot, make_node, make_vm):
         cfg = [{"name": "h1", "cluster": "c1", "cluster_rep": True, "skip": False}]
@@ -547,10 +548,10 @@ class TestTreePanelNotes:
 
         cl_item = _find_item(tp, "c1")
         assert cl_item is not None
-        assert cl_item.text(1) == "Prod cluster"
+        assert cl_item.data(0, INFO_ROLE) == "Prod cluster"
         vm_item = _find_item(tp, "test-vm")
         assert vm_item is not None
-        assert vm_item.text(1) == "web server"
+        assert vm_item.data(0, INFO_ROLE) == "web server"
 
     def test_no_note_without_cfg_host(self, qtbot, make_node):
         cfg = [{"name": "h1", "cluster": "", "skip": False}]
@@ -561,7 +562,7 @@ class TestTreePanelNotes:
 
         host_item = _find_item(tp, "pve01")
         assert host_item is not None
-        assert host_item.text(1) == ""
+        assert not host_item.data(0, INFO_ROLE)
 
     def test_long_note_truncated_with_tooltip(self, qtbot, make_node):
         cfg = [{"name": "h1", "host": "pve01.example.com", "cluster": "", "skip": False}]
@@ -572,8 +573,8 @@ class TestTreePanelNotes:
         tp.update_data([node], [], final=True)
 
         host_item = _find_item(tp, "pve01")
-        assert host_item.text(1) == "x" * 59 + "…"
-        assert host_item.toolTip(1) == "x" * 80
+        assert host_item.data(0, INFO_ROLE) == "x" * 59 + "…"
+        assert "x" * 80 in host_item.toolTip(0)
 
 
 class TestTreeModes:
@@ -732,9 +733,9 @@ class TestTreeModes:
         n2 = items[("storage", "ceph", "host", "h1", "n2")]
         assert n1.parent() is parent
         assert n1.text(0) == "ceph (n1@cl1)"
-        assert n1.text(1) == "10%"
+        assert n1.data(0, INFO_ROLE) == "10%"
         assert n2.text(0) == "ceph (n2@cl1)"
-        assert n2.text(1) == "50%"
+        assert n2.data(0, INFO_ROLE) == "50%"
 
     def test_mode_persisted_and_restored(self, qtbot, make_node, monkeypatch):
         import virtdeck.ui.tree_panel as tp_mod
@@ -867,7 +868,7 @@ class TestPbsView:
         items = _collect_items(tp)
         ds = items[("pbs_datastore", "pbs1", "store1")]
         assert ds.parent().data(0, ITEM_KEY_ROLE) == ("pbs", "pbs1")
-        assert ds.text(1) == "25%"
+        assert ds.data(0, INFO_ROLE) == "25%"
 
     def test_pbs_mode_persisted_and_restored(self, qtbot, monkeypatch):
         import virtdeck.ui.tree_panel as tp_mod
@@ -1222,7 +1223,7 @@ class TestClusterCreateContextMenu:
 
 
 class TestCurrentSelection:
-    """M2: Selection-дескриптор текущего элемента для палитры действий."""
+    """M2: Selection descriptor of the current item for the action palette."""
 
     def _make(self, qtbot, make_node, make_vm, vms):
         cfg = [{"name": "h1", "cluster": "", "skip": False}]
@@ -1239,8 +1240,8 @@ class TestCurrentSelection:
         return tp
 
     def _select(self, tp, key):
-        """Выбрать элемент по ключу: ВМ-элементы несут VM_KEY_ROLE,
-        остальные — ITEM_KEY_ROLE."""
+        """Select an item by key: VM items carry VM_KEY_ROLE,
+        the rest — ITEM_KEY_ROLE."""
 
         def walk(item):
             for role in (ITEM_KEY_ROLE, VM_KEY_ROLE):
@@ -1268,10 +1269,10 @@ class TestCurrentSelection:
 
     def test_skeleton_host_key_yields_empty_selection(
             self, qtbot, make_node, make_vm):
-        """E1 (аудит 2026-10-06): 2-элементный host-ключ скелетона первичной
-        загрузки не даёт Selection — палитра не предлагает host-действия с
-        пустым host_name (паритет с контекст-меню, которое на скелетоне
-        не строится)."""
+        """E1 (2026-10-06 audit): the 2-element host key of the initial-load
+        skeleton yields no Selection — the palette must not offer host actions
+        with an empty host_name (parity with the context menu, which is not
+        built on the skeleton)."""
         from virtdeck.ui.tree_panel import ITEM_KEY_ROLE
 
         vm = make_vm(vmid=100, name="alpha", host_name="h1", node="pve01")
@@ -1283,7 +1284,7 @@ class TestCurrentSelection:
         skeleton.setData(0, ITEM_KEY_ROLE, ("host", "hv02"))
         sel = tp.selection_for_item(skeleton)
         assert sel.is_empty
-        # Полноценный 3-элементный ключ по-прежнему резолвится.
+        # A full 3-element key still resolves.
         real = QTreeWidgetItem(tp.tree)
         real.setText(0, "pve01")
         real.setData(0, ITEM_KEY_ROLE, ("host", "pve01", "h1"))
@@ -1349,7 +1350,7 @@ class TestCurrentSelection:
 
 
 class TestVMContextMenuRegistry:
-    """M2: VM-блок контекст-меню строится из реестра действий."""
+    """M2: the VM context-menu block is built from the action registry."""
 
     def _make_panel(self, qtbot, make_node, make_vm, vms):
         cfg = [{"name": "h1", "cluster": "", "skip": False}]
@@ -1369,7 +1370,7 @@ class TestVMContextMenuRegistry:
         return _open_menu(qtbot, tp, item, monkeypatch)
 
     def _vm_item(self, tp, key):
-        """Элемент ВМ по VM_KEY_ROLE (ITEM_KEY_ROLE у ВМ отсутствует)."""
+        """VM item via VM_KEY_ROLE (VMs carry no ITEM_KEY_ROLE)."""
 
         def walk(item):
             if item.data(0, VM_KEY_ROLE) == key:
@@ -1467,7 +1468,7 @@ class TestVMContextMenuRegistry:
 
     def test_host_menu_from_registry(
             self, qtbot, make_node, make_vm, monkeypatch):
-        """M2: блок хоста — Create VM/Delete/Refresh token/Create cluster…"""
+        """M2: host block — Create VM/Delete/Refresh token/Create cluster…"""
         tp = self._make_panel(qtbot, make_node, make_vm, [])
         menu = self._menu_for(qtbot, tp,
                               _collect_items(tp)[("host", "pve01", "h1")],
@@ -1476,7 +1477,7 @@ class TestVMContextMenuRegistry:
         assert texts[0] == "Create VM"
         assert "Delete host" in texts
         assert "Refresh token" in texts
-        # standalone не-pbs хост → Create cluster… присутствует
+        # standalone non-pbs host → Create cluster… present
         assert "Create cluster…" in texts
         got = []
         tp.vm_create_requested.connect(lambda nn, hn: got.append((nn, hn)))
@@ -1485,7 +1486,7 @@ class TestVMContextMenuRegistry:
 
     def test_vm_menu_includes_tools(
             self, qtbot, make_node, make_vm, monkeypatch):
-        """M2: noVNC/Migrate/Clone/HA/Delete VM в меню, из реестра."""
+        """M2: noVNC/Migrate/Clone/HA/Delete VM in the menu, from the registry."""
         vm = make_vm(vmid=100, name="alpha", host_name="h1", node="pve01",
                      status=VmStatus.RUNNING)
         tp = self._make_panel(qtbot, make_node, make_vm, [vm])

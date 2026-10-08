@@ -1,16 +1,16 @@
-"""M2.3: спецификации действий приложения.
+"""M2.3: action specifications of the application.
 
-Действия дерева принадлежат TreePanel (invoke эмитит его сигналы или
-вызывает его методы — те же пути, что у контекст-меню; меню и палитра
-берут подписи, иконки и правила доступности из одних ActionSpec).
-Глобальные действия — mainwindow: build_registry(window) собирает их
-вместе с реестром TreePanel.
+Tree actions belong to TreePanel (invoke emits its signals or calls
+its methods — the same paths as the context menu; the menu and the
+palette take labels, icons and enabled rules from the same ActionSpec).
+Global actions — mainwindow: build_registry(window) collects them
+together with the TreePanel registry.
 
-Подписи — существующие tr()-ключи: смена языка = рестарт, поэтому
-запекаются при создании реестра. Иконки — имена Breeze-набора; отрисовка
-в слотах base_size(). Динамическое присутствие (режим дерева, наличие
-шаблонов, api-host хранилища) и действия с динамическими подписями
-(Trust SSL, Edit note…) остаются в меню — там их контекст.
+Labels are existing tr() keys: a language change = restart, so they
+are baked in when the registry is created. Icons are Breeze-set names;
+rendered at base_size() slots. Dynamic presence (tree mode, templates,
+api-host storage) and actions with dynamic labels (Trust SSL,
+Edit note...) stay in the menu — that is their context.
 """
 
 from .action_registry import (
@@ -28,7 +28,7 @@ from .action_registry import (
 )
 from .i18n import tr
 
-# Объектные scope'ы дерева — для действий над произвольным элементом.
+# Object scopes of the tree — for actions on an arbitrary item.
 _ALL_OBJECT_SCOPES = frozenset({
     SCOPE_VM, SCOPE_CT, SCOPE_TEMPLATE, SCOPE_HOST, SCOPE_CLUSTER,
     SCOPE_STORAGE, SCOPE_PBS, SCOPE_POOL, SCOPE_GROUP,
@@ -36,7 +36,7 @@ _ALL_OBJECT_SCOPES = frozenset({
 
 _VM_SCOPES = frozenset({SCOPE_VM, SCOPE_CT})
 
-# Порядок VM-блока контекст-меню (и палитры).
+# Order of the VM block of the context menu (and palette).
 VM_ACTION_IDS = (
     "vm.start", "vm.shutdown", "vm.reboot", "vm.stop",
     "vm.reset", "vm.resume", "vm.console",
@@ -47,8 +47,8 @@ VM_BULK_ACTION_IDS = (
 
 
 def _vm_ok(sel, *, need_status=None, forbid_running=False):
-    """Доступность одиночного действия над ВМ: не шаблон, статус подходит,
-    без мульти-выделения (тогда доступны массовые «* all»)."""
+    """Availability of a single VM action: not a template, status fits,
+    no multi-selection (bulk "* all" actions cover that case)."""
     if len(sel.vm_keys) > 1:
         return False
     vm = sel.vm
@@ -63,8 +63,8 @@ def _vm_ok(sel, *, need_status=None, forbid_running=False):
 
 
 def register_tree_actions(registry, tree):
-    """Действия над объектами дерева в реестр: invoke эмитит сигналы
-    TreePanel (или вызывает его методы-хелперы для контекстных кейсов)."""
+    """Register tree-object actions in the registry: invoke emits TreePanel
+    signals (or calls its helper methods for contextual cases)."""
     def vm_action(action):
         return lambda sel: tree.vm_action_requested.emit(
             sel.host_name, sel.node, sel.vmid, action)
@@ -73,7 +73,7 @@ def register_tree_actions(registry, tree):
         return lambda sel: tree.bulk_vm_action_requested.emit(
             list(sel.vm_keys), action)
 
-    # ── Действия над ВМ/CT ──────────────────────────────────────────
+    # ── VM/CT actions ───────────────────────────────────────────────
     registry.register(ActionSpec(
         action_id="vm.start", label=tr("Start"), icon="start",
         scopes=_VM_SCOPES, keywords=("boot", "power on"),
@@ -173,7 +173,7 @@ def register_tree_actions(registry, tree):
             sel.host_name, sel.node, sel.vmid),
     ))
 
-    # ── Массовые (мульти-выделение) ─────────────────────────────────
+    # ── Bulk (multi-selection) ──────────────────────────────────────
     registry.register(ActionSpec(
         action_id="vm.bulk_start", label=tr("Start all"), icon="start",
         scopes=_VM_SCOPES,
@@ -199,7 +199,7 @@ def register_tree_actions(registry, tree):
         invoke=bulk_action("stop"),
     ))
 
-    # ── Хост ────────────────────────────────────────────────────────
+    # ── Host ────────────────────────────────────────────────────────
     registry.register(ActionSpec(
         action_id="host.create_vm", label=tr("Create VM"), icon="vm",
         scopes=frozenset({SCOPE_HOST}),
@@ -235,7 +235,7 @@ def register_tree_actions(registry, tree):
         invoke=lambda sel: tree.cluster_create_requested.emit(sel.host_name),
     ))
 
-    # ── Кластер ─────────────────────────────────────────────────────
+    # ── Cluster ─────────────────────────────────────────────────────
     registry.register(ActionSpec(
         action_id="cluster.create_vm", label=tr("Create VM"), icon="vm",
         scopes=frozenset({SCOPE_CLUSTER}),
@@ -258,7 +258,7 @@ def register_tree_actions(registry, tree):
             "cluster", sel.key[1]),
     ))
 
-    # ── Группа ──────────────────────────────────────────────────────
+    # ── Group ───────────────────────────────────────────────────────
     registry.register(ActionSpec(
         action_id="group.rename", label=tr("Rename group…"),
         scopes=frozenset({SCOPE_GROUP}),
@@ -270,7 +270,7 @@ def register_tree_actions(registry, tree):
         invoke=lambda sel: tree.group_delete_requested.emit(sel.key[1]),
     ))
 
-    # ── Хранилище ───────────────────────────────────────────────────
+    # ── Storage ─────────────────────────────────────────────────────
     registry.register(ActionSpec(
         action_id="storage.edit", label=tr("Edit storage…"),
         scopes=frozenset({SCOPE_STORAGE}),
@@ -284,10 +284,10 @@ def register_tree_actions(registry, tree):
 
 
 def build_registry(window) -> ActionRegistry:
-    """Реестр палитры: глобальные действия окна + спеки TreePanel."""
+    """Palette registry: global window actions + TreePanel specs."""
     reg = ActionRegistry()
 
-    # ── Глобальные (доступны при любом выделении) ───────────────────
+    # ── Global (available under any selection) ──────────────────────
     reg.register(ActionSpec(
         action_id="global.add_server", label=tr("Add server"), icon="add",
         shortcut="Ctrl+N",
@@ -336,7 +336,7 @@ def build_registry(window) -> ActionRegistry:
         invoke=lambda sel: window.tree_panel.request_delete_current(),
     ))
 
-    # ── Действия дерева — единый источник с контекст-меню ───────────
+    # ── Tree actions — single source with the context menu ──────────
     for spec in window.tree_panel.action_registry.all():
         reg.register(spec)
     return reg

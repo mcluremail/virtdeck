@@ -1,8 +1,8 @@
-"""Состояние циклов hard/soft refresh — чистая логика без Qt.
+"""Hard/soft refresh cycle state — pure logic, no Qt.
 
-RefreshCoordinator хранит поколения, pending-множества и guard-и, на основе
-которых MainWindow решает, какие результаты воркеров считать актуальными,
-когда цикл завершён и когда зависший soft refresh пора сбросить по тайм-ауту.
+RefreshCoordinator keeps generations, pending sets and guards that
+MainWindow uses to decide which worker results are current, when a cycle
+is complete and when a stuck soft refresh should be reset by timeout.
 """
 
 from __future__ import annotations
@@ -11,13 +11,13 @@ from typing import Any
 
 
 class RefreshCoordinator:
-    """Состояние hard- и soft-refresh циклов.
+    """Hard and soft refresh cycle state.
 
-    Инварианты:
-    - результаты воркера актуальны, только если его поколение совпадает
-      с текущим (gen == 0 трактуется как legacy-вызов без поколения);
-    - hard-цикл завершён, когда все воркеры поколения отчитались;
-    - soft-цикл сбрасывается по тайм-ауту или новым hard refresh.
+    Invariants:
+    - a worker's result is current only if its generation matches the
+      current one (gen == 0 is treated as a legacy call without a generation);
+    - the hard cycle completes once all workers of the generation reported;
+    - the soft cycle is reset by timeout or by a new hard refresh.
     """
 
     def __init__(self, soft_timeout: float = 90.0) -> None:
@@ -37,7 +37,7 @@ class RefreshCoordinator:
         return self._hard_gen
 
     def begin_hard(self) -> int:
-        """Старт hard refresh: сброс pending. Возвращает новое поколение."""
+        """Start a hard refresh: reset pending. Returns the new generation."""
         self._hard_gen += 1
         self._hard_pending = set()
         return self._hard_gen
@@ -50,7 +50,7 @@ class RefreshCoordinator:
             self._hard_pending.discard(worker)
 
     def hard_result_current(self, gen: int) -> bool:
-        """Актуален ли результат hard-воркера (gen == 0 — legacy-вызов)."""
+        """Whether a hard worker's result is current (gen == 0 — legacy call)."""
         return gen == 0 or gen == self._hard_gen
 
     @property
@@ -72,21 +72,21 @@ class RefreshCoordinator:
         return self._soft_expected
 
     def reset_soft(self) -> None:
-        """Инвалидировать идущий soft-цикл (новый hard refresh / тайм-аут)."""
+        """Invalidate the running soft cycle (new hard refresh / timeout)."""
         self._soft_gen += 1
         self._soft_running = False
         self._soft_done = 0
         self._soft_expected = 0
 
     def finish_soft(self) -> None:
-        """Снять флаг running без инвалидации поколения."""
+        """Clear the running flag without invalidating the generation."""
         self._soft_running = False
 
     def soft_timed_out(self, now: float) -> bool:
         return self._soft_running and (now - self._soft_start > self.soft_timeout)
 
     def begin_soft(self, expected: int, now: float) -> int:
-        """Заявить ownership нового soft-цикла. Возвращает поколение."""
+        """Claim ownership of a new soft cycle. Returns the generation."""
         self._soft_running = True
         self._soft_start = now
         self._soft_done = 0
@@ -98,7 +98,7 @@ class RefreshCoordinator:
         return gen == self._soft_gen
 
     def soft_result(self, gen: int) -> bool:
-        """Учесть результат soft-воркера; True — если это был последний."""
+        """Account for a soft worker's result; True if it was the last one."""
         if gen != self._soft_gen:
             return False
         self._soft_done += 1

@@ -1,9 +1,9 @@
-"""M4.0: реальный провайдер против FakePveApi — контракт PVE API.
+"""M4.0: real provider against FakePveApi — the PVE API contract.
 
-Проверяется, что дорога «ProxmoxProvider → proxmoxer → transport»
-работает против фейка без сокетов и возвращает сцену как есть: это
-покрытие API-регрессий, которого не было до Fleet Health (фан-аут по
-всем кластерам живыми кластерами не тестируем).
+Checks that the path "ProxmoxProvider → proxmoxer → transport" works
+against the fake without sockets and returns the scene as is: this is
+API regression coverage that did not exist before Fleet Health (fan-out
+across all clusters is not tested against live clusters).
 """
 
 from __future__ import annotations
@@ -70,8 +70,8 @@ def test_storage_rrddata(provider, api):
 
 
 def test_multi_cluster_fanout(monkeypatch):
-    """Фундамент M4.2: сборщик ходит в независимые кластеры параллельно,
-    каждый фейк обслуживает только «свой» host."""
+    """M4.2 foundation: the collector hits independent clusters in parallel,
+    each fake serves only its own host."""
     alpha = make_pve_cluster("alpha")
     beta = make_pve_cluster("beta")
     beta.add_qemu("pve01", 111, "beta-vm")
@@ -97,8 +97,8 @@ def test_multi_cluster_fanout(monkeypatch):
 
 
 def test_partial_failure_maps_to_proxmox_error(provider, api):
-    """Семантика partial failure (B24): сбой одного эндпоинта —
-    классифицированная ошибка, остальной fan-out продолжает работать."""
+    """Partial failure semantics (B24): one endpoint failing is a classified
+    error, the rest of the fan-out keeps working."""
     api.fail["nodes/pve02/version"] = (500, "disk full")
     with pytest.raises(ProxmoxError):
         provider.nodes.get_version("pve02")

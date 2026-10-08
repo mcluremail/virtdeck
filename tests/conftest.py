@@ -8,9 +8,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 @pytest.fixture(autouse=True)
 def _isolate_xdg(tmp_path, monkeypatch):
-    """Изолировать пользовательские каталоги: тесты не должны трогать
-    реальный ~/.config/virtdeck (config.sqlite, кэш i18n и т.п.).
-    Регресс аудита 2026-09-09."""
+    """Isolate user directories: tests must not touch the real
+    ~/.config/virtdeck (config.sqlite, i18n cache, etc.). Regression
+    from the 2026-09-09 audit."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))

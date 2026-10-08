@@ -4,16 +4,19 @@ from collections import defaultdict
 from dataclasses import replace
 from datetime import timedelta
 
-from PySide6.QtCore import QByteArray, QMimeData, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QDrag
+from PySide6.QtCore import QMimeData, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QDrag, QFont, QFontMetrics
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QComboBox,
     QHBoxLayout,
-    QHeaderView,
     QInputDialog,
     QLabel,
     QMenu,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -39,6 +42,76 @@ from .utils import build_cfg_index, status_text
 
 VM_KEY_ROLE = Qt.UserRole + 1
 ITEM_KEY_ROLE = Qt.UserRole + 2
+INFO_ROLE = Qt.UserRole + 3      # second line under the name (pale, smaller)
+TIP_BASE_ROLE = Qt.UserRole + 4  # tooltip before the note is added (idempotence)
+
+
+class _TwoLineDelegate(QStyledItemDelegate):
+    """Single column: name + pale info line underneath.
+
+    Tree redesign (audit 2026-10-08): columns are gone; secondary info
+    (VM count, note/FQDN, storage usage) is drawn as a second line in a
+    smaller font and a pale color taken from INFO_ROLE. Rows without
+    INFO_ROLE are painted normally.
+    """
+
+    def paint(self, painter, option, index):
+        info = index.data(INFO_ROLE)
+        if not info:
+            super().paint(painter, option, index)
+            return
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.text = ""  # style paints background/hover/selection/icon (QSS alive)
+        style = opt.widget.style() if opt.widget else QApplication.style()
+        style.drawControl(QStyle.CE_ItemViewItem, opt, painter,
+                          opt.widget)
+
+        selected = bool(opt.state & QStyle.State_Selected)
+        name = index.data(Qt.ItemDataRole.DisplayRole) or ""
+        icon_w = 0 if opt.icon.isNull() else opt.decorationSize.width() + 6
+        text_rect = opt.rect.adjusted(icon_w + 2, 1, -4, -1)
+        line_h = text_rect.height() // 2
+
+        painter.save()
+        # line 1 — name (accent when selected, as the QSS ::selected did)
+        name_font = QFont(opt.font)
+        if selected:
+            name_font.setWeight(QFont.Weight.DemiBold)
+        painter.setFont(name_font)
+        painter.setPen(Color.ACCENT if selected else Color.TEXT)
+        fm = QFontMetrics(name_font)
+        painter.drawText(text_rect.adjusted(0, 0, 0, -line_h),
+                         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
+                         fm.elidedText(name, Qt.TextElideMode.ElideRight,
+                                       text_rect.width()))
+        # line 2 — info, pale and smaller
+        info_font = QFont(opt.font)
+        if info_font.pixelSize() > 0:
+            info_font.setPixelSize(max(10, round(info_font.pixelSize() * 0.82)))
+        else:
+            info_font.setPointSizeF(max(8.0, info_font.pointSizeF() * 0.82))
+        painter.setFont(info_font)
+        painter.setPen(Color.TEXT_SEC)
+        fm2 = QFontMetrics(info_font)
+        painter.drawText(text_rect.adjusted(0, line_h, 0, 0),
+                         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+                         fm2.elidedText(info, Qt.TextElideMode.ElideRight,
+                                        text_rect.width()))
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        hint = super().sizeHint(option, index)
+        if index.data(INFO_ROLE):
+            f = QFont(option.font)
+            if f.pixelSize() > 0:
+                f.setPixelSize(max(10, round(f.pixelSize() * 0.82)))
+            else:
+                f.setPointSizeF(max(8.0, f.pointSizeF() * 0.82))
+            # compact: the info line partially overlaps the row padding
+            hint.setHeight(hint.height() + QFontMetrics(f).height() - 2)
+        return hint
+
 
 def _vm_count_str(vms):
     total = len(vms)
@@ -188,8 +261,8 @@ class TreePanel(QWidget):
         self.all_vms = []
         self._vm_repo = None
         self.all_storages = []
-        # M2: реестр действий над объектами дерева — единый источник для
-        # контекст-меню и палитры (invoke эмитит сигналы ниже).
+        # M2: action registry for tree objects — the single source for the
+        # context menu and the palette (invoke emits the signals below).
         self.action_registry = ActionRegistry()
         register_tree_actions(self.action_registry, self)
 
@@ -205,7 +278,7 @@ class TreePanel(QWidget):
         self._rebuild_timer.timeout.connect(self._do_rebuild)
 
         self._loading_hosts = set()
-        # M0.3: VM в optimistic-pending (host_name, vmid) — спиннер.
+        # M0.3: VMs in optimistic-pending (host_name, vmid) — spinner.
         self._pending_vm_keys: set[tuple[str, int]] = set()
         # B17: datastore child to re-select after datastores refill post-rebuild
         self._pending_ds_key = None
@@ -252,27 +325,11 @@ class TreePanel(QWidget):
         layout.addWidget(self._empty_label)
 
         self.tree = GroupTreeWidget(self)
-        self.tree.setColumnCount(2)
-        # Заголовок нужен, чтобы колонки можно было двигать/растягивать
-        self.tree.setHeaderLabels([tr("Name"), tr("Info")])
-        header = self.tree.header()
-        header.setStretchLastSection(True)
-        header.setSectionResizeMode(0, QHeaderView.Interactive)
-        header.setMinimumSectionSize(48)
-        header.setSectionsMovable(True)
-        header.setStyleSheet(
-            "QHeaderView::section { padding: 3px 6px; border: none;"
-            f" border-bottom: 1px solid {Color.BORDER_LIGHT}; font-size: 11px; }}")
-        self.tree.setColumnWidth(0, 170)
-        self._last_saved_header_state = None
-        self._restore_tree_columns()
-        # Сохраняем ширины/порядок колонок дерева (debounce при изменении).
-        self._col_save_timer = QTimer(self)
-        self._col_save_timer.setSingleShot(True)
-        self._col_save_timer.setInterval(400)
-        self._col_save_timer.timeout.connect(self._save_tree_columns)
-        header.sectionResized.connect(lambda *_: self._col_save_timer.start())
-        header.sectionMoved.connect(lambda *_: self._col_save_timer.start())
+        # Redesign (audit 2026-10-08): a single column with no header,
+        # secondary info as a pale line under the name (delegate + INFO_ROLE).
+        self.tree.setColumnCount(1)
+        self.tree.setHeaderHidden(True)
+        self.tree.setItemDelegate(_TwoLineDelegate(self.tree))
         self.tree.setAlternatingRowColors(True)
         self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.tree.setIndentation(20)
@@ -293,39 +350,6 @@ class TreePanel(QWidget):
         layout.addLayout(bottom_layout)
 
         self.setLayout(layout)
-
-    def _restore_tree_columns(self):
-        """Восстанавливает ширины/порядок колонок дерева из ui_state."""
-        header = self.tree.header()
-        raw = load_ui_state("tree_header_state")
-        if raw:
-            try:
-                state = QByteArray.fromHex(str(raw).encode("ascii"))
-            except (ValueError, TypeError):
-                state = QByteArray()
-            if not state.isEmpty() and header.restoreState(state):
-                self._last_saved_header_state = str(raw)
-                return
-        # Фолбэк на старый ключ (сохранялась только ширина колонки 0).
-        raw = load_ui_state("tree_col_widths")
-        if not raw:
-            return
-        try:
-            widths = json.loads(raw)
-        except (ValueError, TypeError):
-            return
-        if isinstance(widths, list):
-            for i, w in enumerate(widths[:1]):
-                self.tree.setColumnWidth(i, int(w))
-
-    def _save_tree_columns(self):
-        current = bytes(self.tree.header().saveState().toHex()).decode("ascii")
-        if current == self._last_saved_header_state:
-            # Ранние sectionResized при раскладке не должны затирать
-            # сохранённое состояние промежуточными (дефолтными) значениями.
-            return
-        self._last_saved_header_state = current
-        save_ui_state("tree_header_state", current)
 
     def set_servers(self, nodes_cfg):
         self.nodes_cfg = nodes_cfg
@@ -363,7 +387,7 @@ class TreePanel(QWidget):
                         usage = int(round(st.usage * 100))
                     else:
                         usage = 0
-                    child.setText(1, f"{usage}%")
+                    child.setData(0, INFO_ROLE, f"{usage}%")
                 if expanded and item.childCount():
                     item.setExpanded(True)
                 # takeChildren()/refill may have destroyed the current item
@@ -433,15 +457,15 @@ class TreePanel(QWidget):
             return
         menu.exec(self.tree.viewport().mapToGlobal(pos))
 
-    # ── M2: контекстные хелперы реестра ─────────────────────────────
+    # ── M2: action registry context helpers ─────────────────────────
 
     def _cluster_members(self, cluster_name):
-        """Host-конфиги — члены кластера (для присутствия и invoke)."""
+        """Host configs that are members of the cluster (presence + invoke)."""
         return [c for c in self.nodes_cfg if c.get("cluster") == cluster_name]
 
     def _storage_api_host(self, key):
-        """API-host для storage-ключа: host → сам хост, cluster → первый
-        активный член. "" — разрешить не удалось."""
+        """API host for a storage key: host → the host itself,
+        cluster → the first active member. "" — resolution failed."""
         scope = key[3] if len(key) > 3 else ""
         kind = key[2] if len(key) > 2 else ""
         if kind == "host":
@@ -453,7 +477,7 @@ class TreePanel(QWidget):
             return first.get("name", "") if first else ""
         return ""
 
-    # Приёмники invoke из реестра (палитра/меню); контекстные кейсы.
+    # Invoke receivers from the registry (palette/menu); context cases.
 
     def cluster_create_vm(self, cluster_name):
         members = self._cluster_members(cluster_name)
@@ -480,9 +504,9 @@ class TreePanel(QWidget):
             self.storage_delete_requested.emit(api_host, key[1])
 
     def _add_action_specs(self, menu, sel, action_ids):
-        """QAction'ы реестра в контекст-меню: подписи, иконки и правила
-        доступности — из ActionSpec. Выключенные действия показываются
-        (семантика меню), а не скрываются, как в палитре."""
+        """Registry QActions into the context menu: labels, icons and
+        enablement rules come from ActionSpec. Disabled actions are shown
+        (menu semantics), not hidden as in the palette."""
         by_id = {s.action_id: s for s in self.action_registry.all()}
         for aid in action_ids:
             spec = by_id[aid]
@@ -497,10 +521,11 @@ class TreePanel(QWidget):
             menu.addAction(act)
 
     def _build_context_menu(self, item):
-        """Построить контекст-меню для элемента дерева; None — не строится.
+        """Build the context menu for a tree item; None — no menu.
 
-        Выделено из _on_context_menu (M0.2 runtime-контракт): тесты
-        обходят actions построенного меню, не заходя в модальный exec.
+        Split out of _on_context_menu (M0.2 runtime contract): tests
+        inspect the actions of the built menu without entering the
+        modal exec.
         """
         vm_key = item.data(0, VM_KEY_ROLE)
         if vm_key is not None:
@@ -515,13 +540,13 @@ class TreePanel(QWidget):
             is_template = bool(vm and vm.template)
             is_qemu = vm is not None and vm.vm_type is VmType.QEMU
             sel = self.selection_for_item(item)
-            # M2: подписи, иконки и доступность VM-действий — из реестра
-            # (тот же источник, что у палитры Ctrl+K).
+            # M2: VM action labels, icons and enablement come from the
+            # registry (the same source as the Ctrl+K palette).
             if len(sel.vm_keys) > 1:
                 self._add_action_specs(menu, sel, VM_BULK_ACTION_IDS)
                 menu.addSeparator()
-            # Одиночные действия в меню оцениваются по самому элементу,
-            # без учёта мульти-выделения (как раньше).
+            # Single-item actions are evaluated against the item itself,
+            # ignoring multi-selection (as before).
             vm_sel = replace(sel, vm_keys=())
             self._add_action_specs(menu, vm_sel, VM_ACTION_IDS)
             self._add_action_specs(menu, vm_sel, ("vm.novnc",))
@@ -565,8 +590,8 @@ class TreePanel(QWidget):
                 host_name = host.host_name if host else ""
             if host_name:
                 sel = self.selection_for_item(item)
-                # M2: подписи/иконки/доступность — из реестра; присутствие
-                # пунктов (режим дерева, шаблоны, тип хоста) — контекст меню.
+                # M2: labels/icons/enablement come from the registry; which
+                # entries exist (tree mode, templates, host type) — menu context.
                 host_ids = ["host.create_vm"]
                 if self._tree_mode == "storages":
                     host_ids.append("host.create_storage")
@@ -660,7 +685,7 @@ class TreePanel(QWidget):
                     item.setIcon(0, icon)
                 elif key[0] == "cluster" and f"cluster:{key[1]}" in self._loading_hosts:
                     item.setIcon(0, icon)
-            # M0.3: optimistic power-действия — VM в pending крутится.
+            # M0.3: optimistic power actions — VMs in pending spin.
             vm_key = item.data(0, VM_KEY_ROLE)
             if vm_key and (vm_key[0], vm_key[1]) in self._pending_vm_keys:
                 item.setIcon(0, icon)
@@ -670,10 +695,10 @@ class TreePanel(QWidget):
             spin(self.tree.topLevelItem(i))
 
     def set_pending_vm_keys(self, keys):
-        """M0.3: множество (host_name, vmid) в optimistic-pending.
+        """M0.3: the set of (host_name, vmid) in optimistic-pending.
 
-        Спиннер на этих элементах дерева; при выходе из pending иконка
-        восстанавливается из репозитория (текущий/откатанный статус)."""
+        Spinner on those tree items; on leaving pending the icon is
+        restored from the repo (current/rolled-back status)."""
         old = self._pending_vm_keys
         self._pending_vm_keys = set(keys)
         changed = old.symmetric_difference(self._pending_vm_keys)
@@ -730,7 +755,7 @@ class TreePanel(QWidget):
         self._update_empty_visibility()
 
     def reapply_theme(self):
-        """Перестройка дерева новыми цветами (движок тем, смена темы)."""
+        """Rebuild the tree with the new colors (theme engine, theme switch)."""
         if getattr(self, "all_nodes", None) is None:
             return
         self.tree.setIconSize(QSize(base_size(), base_size()))
@@ -836,15 +861,23 @@ class TreePanel(QWidget):
         return (cfg.get("host") or "") if cfg else ""
 
     def _refresh_note(self, item, key_str, default=""):
-        """Show the note in column 1 (muted); fall back to default when unset."""
+        """Info line under the name: note (pale, INFO_ROLE).
+
+        No note — no second line at all. The [running/total] counters
+        stay a name suffix (user decision, 2026-10-08). Tooltip: base
+        (node metrics) + note.
+        """
         note = self._tree_notes.get(key_str, "") or default
         if note:
-            item.setText(1, note if len(note) <= 60 else note[:59] + "…")
-            item.setForeground(1, QBrush(QColor(Color.TEXT_DIM)))
-            item.setToolTip(1, note)
+            item.setData(0, INFO_ROLE,
+                         note if len(note) <= 60 else note[:59] + "…")
+            base = item.data(0, TIP_BASE_ROLE)
+            if base is None:
+                base = item.toolTip(0)
+                item.setData(0, TIP_BASE_ROLE, base)
+            item.setToolTip(0, f"{base}\n\n{note}" if base else note)
         else:
-            item.setText(1, "")
-            item.setToolTip(1, "")
+            item.setData(0, INFO_ROLE, None)
 
     def _edit_note_dialog(self, item, key_str, default=""):
         current = self._tree_notes.get(key_str, "")
@@ -1258,7 +1291,7 @@ class TreePanel(QWidget):
                 child.setIcon(0, get_icon("storage"))
                 child.setData(0, ITEM_KEY_ROLE,
                               ("storage", sname, "host", ps.host_name, ps.node))
-                child.setText(1, f"{ps.usage_pct}%")
+                child.setData(0, INFO_ROLE, f"{ps.usage_pct}%")
 
         for node in sorted(nodes_in_cl, key=lambda n: (n.display_name or n.node).lower()):
             self._make_host_storage_item(cl_item, node)
@@ -1423,8 +1456,8 @@ class TreePanel(QWidget):
         return keys
 
     def selection_for_item(self, item):
-        """Selection-дескриптор произвольного элемента дерева
-        (палитра действий и контекст-меню, M2)."""
+        """Selection descriptor for an arbitrary tree item
+        (action palette and context menu, M2)."""
         if item is None:
             return Selection()
         text = item.text(0)
@@ -1452,14 +1485,14 @@ class TreePanel(QWidget):
         elif kind == "storage" and len(key) >= 4 and key[2] == "host":
             host_name = key[3]
         if kind == "host" and not host_name:
-            # Скелетон первичной загрузки («host», имя, без node/host_name):
-            # паритет с контекст-меню — действий нет (аудит 2026-10-06, E1).
+            # Skeleton of the initial load ("host", name, no node/host_name):
+            # parity with the context menu — no actions (audit 2026-10-06, E1).
             return Selection()
         return Selection(kind=kind, label=text, host_name=host_name,
                          node=node, key=tuple(key))
 
     def current_selection(self):
-        """Selection-дескриптор текущего элемента (палитра действий)."""
+        """Selection descriptor of the current item (action palette)."""
         return self.selection_for_item(self.tree.currentItem())
 
     def find_and_select(self, key_data):

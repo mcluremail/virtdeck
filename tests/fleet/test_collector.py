@@ -1,8 +1,8 @@
-"""M4.2: сборщик Fleet Health над реальным провайдером и харнессом.
+"""M4.2: Fleet Health collector over the real provider and harness.
 
-Проверяется дорога «collect_cluster → provider → proxmoxer → fake»:
-fan-out по источникам, изоляция частичных сбоев, мульти-кластерное
-слияние (tests/harness — без сокетов).
+Checks the path "collect_cluster → provider → proxmoxer → fake":
+fan-out across sources, partial-failure isolation, multi-cluster
+merging (tests/harness — no sockets).
 """
 
 from __future__ import annotations
@@ -34,21 +34,21 @@ def test_happy_path_fanout(alpha):
     report = collect_alpha()
     assert report.complete and report.errors == ()
     assert report.generated_at == NOW
-    # coverage через настоящий движок
+    # coverage via the real engine
     assert report.coverage.covered == frozenset({101, 102, 301})
     assert report.coverage.exempt == frozenset({201})
-    # task history агрегирована: 101 ok, 301 failed (ещё без успеха)
+    # task history aggregated: 101 ok, 301 failed (no success yet)
     s101 = report.backup_states[101]
     assert s101.task_last_ok == 1727827200
     s301 = report.backup_states[301]
     assert s301.task_last_failed == 1727827400
     assert s301.ever_backed_up is False
-    # версии обеих нод собраны (drift, M4.3): pveversion из статуса ноды
+    # both node versions collected (drift, M4.3): pveversion from status
     assert report.node_versions["pve01"].startswith("pve-manager/8.2.4")
     assert report.node_versions["pve02"].startswith("pve-manager/7.4.3")
-    # storage usage помечен нодой
+    # storage usage tagged with its node
     assert {r["node"] for r in report.storage_usage} == {"pve01"}
-    # фан-аут дошёл до всех источников
+    # fan-out reached every source
     paths = {c[1] for c in alpha.calls}
     assert {"/cluster/resources", "/cluster/backup", "/cluster/tasks",
             "/nodes/pve01/status", "/nodes/pve02/status",
@@ -56,7 +56,7 @@ def test_happy_path_fanout(alpha):
 
 
 def test_partial_failure_version_node(alpha):
-    # pveversion берётся из статуса с фолбэком на /version — валить надо оба
+    # pveversion from status with /version fallback — both must fail
     alpha.fail["nodes/pve02/status"] = (500, "disk full")
     alpha.fail["nodes/pve02/version"] = (500, "disk full")
     report = collect_alpha()
@@ -65,7 +65,7 @@ def test_partial_failure_version_node(alpha):
         == [("version:pve02", "alpha")]
     assert "pve01" in report.node_versions
     assert "pve02" not in report.node_versions
-    # остальные источники не задеты
+    # other sources untouched
     assert report.coverage is not None
 
 
@@ -74,7 +74,7 @@ def test_partial_failure_storage_node(alpha):
     report = collect_alpha()
     assert not report.complete
     assert report.errors[0].source == "storage:pve01"
-    assert report.node_versions  # версии собраны
+    assert report.node_versions  # versions collected
 
 
 def test_failed_resources_no_coverage_but_tasks_alive(alpha):
@@ -83,14 +83,14 @@ def test_failed_resources_no_coverage_but_tasks_alive(alpha):
     assert not report.complete
     assert report.coverage is None
     assert report.guests == ()
-    # ноды неизвестны → per-node фан-аут пропущен без новых ошибок
+    # nodes unknown → per-node fan-out skipped without new errors
     assert len(report.errors) == 1
-    # tasks — независимый источник
+    # tasks — independent source
     assert 101 in report.backup_states
 
 
 def test_whole_cluster_down(monkeypatch):
-    """Хост недоступен целиком: все источники в errors, отчёт пуст."""
+    """Host fully unreachable: all sources in errors, empty report."""
     alpha = make_pve_cluster("alpha")
     install_fake_pve(monkeypatch, alpha)
     with ProxmoxProvider(fake_pve_cfg("gamma")) as provider:
@@ -106,7 +106,7 @@ def test_pbs_enrichment(alpha):
     s101 = report.backup_states[101]
     assert s101.pbs_last_ok == 1727827200
     s301 = report.backup_states[301]
-    assert s301.pbs_last_ok is None  # lxc-гостя нет в PBS-маппинге
+    assert s301.pbs_last_ok is None  # lxc guest absent from the PBS mapping
 
 
 def test_collect_fleet_merge(monkeypatch):
@@ -125,7 +125,7 @@ def test_collect_fleet_merge(monkeypatch):
     assert fleet.complete
     assert fleet.generated_at == NOW
     assert [c.cluster for c in fleet.clusters] == ["alpha", "beta"]
-    # изоляция кластеров: у каждого свои гости и свои состояния
+    # cluster isolation: each has its own guests and states
     for cluster in fleet.clusters:
         assert {g.vmid for g in cluster.guests} == {101, 102, 201, 301}
         assert cluster.backup_states[301].task_last_failed == 1727827400

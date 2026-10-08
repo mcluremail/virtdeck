@@ -44,17 +44,17 @@ class TestBuildConsoleHtml:
         html = build_console_html(5910, "TICKET</script>")
         assert '"ws://127.0.0.1:" + cfg.port + "/"' in html
         assert "new RFB(" in html
-        # ticket вставлен как JSON-строка с разрывом "</"
+        # ticket inserted as a JSON string with "</" escaped
         assert 'TICKET<\\/script>' in html
 
     def test_ticket_not_raw_in_html(self):
         html = build_console_html(5910, "<script>alert(1)</script>")
-        # закрывающий тег не должен остаться живым html
+        # closing tag must not survive as live html
         assert "alert(1)</script>" not in html
         assert '<script>alert(1)<\\/script>' in html
 
     def test_no_html_entities_in_script(self):
-        # регресс: html.escape превращал " в &quot; → SyntaxError в <script>
+        # regression: html.escape turned " into &quot; → SyntaxError in <script>
         html = build_console_html(5910, 'a"b&c<d')
         assert "&quot;" not in html
         assert "&amp;" not in html
@@ -111,9 +111,9 @@ class TestProviderVncWebsocket:
             port=5901, vncticket="T")
 
     def test_get_vnc_proxy_without_proxy_param(self):
-        """noVNC-путь не шлёт proxy (опционален, некоторыми версиями PVE
-        отклоняется), но шлёт websocket=1 — без него PVE не поднимает
-        websocket-подготовленный листенер."""
+        """The noVNC path sends no proxy (optional, rejected by some PVE
+        versions), but sends websocket=1 — without it PVE does not raise
+        the websocket-ready listener."""
         from virtdeck.provider import VmAPI
         mock_session = MagicMock()
         mock_session.call = MagicMock(
@@ -128,9 +128,9 @@ class TestProviderVncWebsocket:
 
 
 class TestNoVncWorkerErrorMapping:
-    """Регресс: catch-all "vnc" в маппинге превращал таймаут/сбой сети в
-    ложное «Console not supported for this VM» (префиксы vncproxy:/vncwebsocket:
-    есть в любом сообщении)."""
+    """Regression: the catch-all "vnc" in the mapping turned a timeout/
+    network failure into a false "Console not supported for this VM"
+    (vncproxy:/vncwebsocket: prefixes appear in any message)."""
 
     @staticmethod
     def _worker_with(exc, monkeypatch):
@@ -204,7 +204,7 @@ class TestNoVncWindowToolbar:
         assert labels == ["Shift", "Ctrl", "Alt", "Win"]
 
         js = win.view.page().runJavaScript
-        # до загрузки страницы кнопки заблокированы
+        # before the page loads the buttons are disabled
         assert not any(a.isEnabled() for a in toolbar.actions())
         win._on_page_loaded(True)
         assert all(a.isEnabled() for a in toolbar.actions())
@@ -222,8 +222,8 @@ class TestNoVncWindowToolbar:
             'if (window.rfb) rfb.sendKey(65515, "MetaLeft", true);')
 
     def test_window_destroyed_on_close(self, qtbot, monkeypatch):
-        """Регресс: без WA_DeleteOnClose каждое открытие консоли оставляло
-        скрытый QMainWindow + QWebEngineView (утечка рендер-процессов)."""
+        """Regression: without WA_DeleteOnClose every console open left
+        a hidden QMainWindow + QWebEngineView (renderer process leak)."""
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QWidget
 
@@ -268,9 +268,10 @@ class _FakeConn:
 
 
 class TestWsBridgeShutdown:
-    """Регресс: teardown моста завершается ДО остановки цикла (без
-    "Task was destroyed" / GeneratorExit / EBADF); апстрим закрывается
-    ДО wait_closed — иначе дедлок (handler ждёт апстрим)."""
+    """Regression: bridge teardown finishes BEFORE the loop stops (no
+    "Task was destroyed" / GeneratorExit / EBADF); the upstream is
+    closed BEFORE wait_closed — otherwise a deadlock (the handler waits
+    for the upstream)."""
 
     def test_teardown_completes_before_loop_stop(self):
         from virtdeck.ui.console.bridge import WsBridge
@@ -288,7 +289,7 @@ class TestWsBridgeShutdown:
         assert log == ["server.close", "upstream.close",
                        "server.wait_closed"]
         assert bridge._upstream.closed
-        # ни одной незавершённой задачи на момент остановки цикла
+        # no unfinished tasks at the moment the loop stops
         assert not asyncio.all_tasks(loop)
         loop.close()
 
@@ -305,15 +306,15 @@ class TestWsBridgeShutdown:
 
 
 class TestWsBridgeStopRace:
-    """Регресс: stop() до port_ready / до старта потока не оставляет
-    необработанных исключений и утёкших потоков."""
+    """Regression: stop() before port_ready / before the thread starts
+    leaves no unhandled exceptions and no leaked threads."""
 
     def test_stop_before_loop_assigned_no_leak(self):
         from virtdeck.ui.console.bridge import WsBridge
 
         bridge = WsBridge("wss://upstream.test", "hdr", False)
-        bridge.stop()   # _loop ещё нет — раньше был no-op, поток утекал
-        bridge.start()  # поток обязан увидеть флаг и сразу завершиться
+        bridge.stop()   # no _loop yet — used to be a no-op, thread leaked
+        bridge.start()  # the thread must see the flag and exit immediately
         bridge._thread.join(5)
         assert not bridge._thread.is_alive()
 
@@ -325,7 +326,7 @@ class TestWsBridgeStopRace:
         from virtdeck.ui.console.bridge import WsBridge
 
         async def fake_serve(*args, **kwargs):
-            # имитируем «бинд ещё не завершился»: _serve висит до stop()
+            # simulate "bind not finished yet": _serve hangs until stop()
             await asyncio.get_running_loop().create_future()
 
         monkeypatch.setattr(bridge_mod.websockets, "serve", fake_serve)
@@ -351,5 +352,5 @@ class TestWsBridgeStopRace:
             threading.excepthook = old_hook
 
         assert not bridge._thread.is_alive()
-        assert recorded == []   # CancelledError не должен дойти до excepthook
-        assert errors == []     # и не должен превратиться в error-сигнал
+        assert recorded == []   # CancelledError must not reach the excepthook
+        assert errors == []     # and must not turn into an error signal

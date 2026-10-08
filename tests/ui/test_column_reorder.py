@@ -1,9 +1,9 @@
-"""Колонки должны перетаскиваться во всех таблицах и деревьях.
+"""Columns must be draggable in all tables and trees.
 
-В Qt6 QHeaderView у QTableWidget создаётся с sectionsMovable=False,
-поэтому каждое место с таблицей явно вызывает enable_column_reorder().
-Плюс: колонки в ResizeToContents/Fixed нельзя тянуть мышью — такие
-колонки переводятся в Interactive с автоподбором ширины по содержимому.
+In Qt6 QHeaderView is created with sectionsMovable=False for QTableWidget,
+so every table site calls enable_column_reorder() explicitly.
+Also: ResizeToContents/Fixed columns cannot be dragged, so they
+switch to Interactive with content-based width fitting.
 """
 import pytest
 from PySide6.QtCore import QEvent, QPointF, Qt
@@ -31,8 +31,8 @@ class TestMakeTable:
         assert t.horizontalHeader().sectionResizeMode(0) == QHeaderView.Interactive
 
     def test_stretch_becomes_interactive(self, qtbot):
-        """Stretch тоже нельзя тянуть — все колонки Interactive, последняя
-        становится заполнителем (stretchLastSection)."""
+        """Stretch cannot be dragged either — all columns Interactive, the last
+        becomes the filler (stretchLastSection)."""
         t = make_table(
             ["A", "B", "C"],
             [(QHeaderView.Stretch, None), (QHeaderView.Stretch, None),
@@ -58,7 +58,7 @@ class TestMakeTable:
 
 
 class TestTableAutofit:
-    """RTC/Fixed -> Interactive + автоподбор ширины до ручного ресайза."""
+    """RTC/Fixed -> Interactive + content-based width until manual resize."""
 
     def test_autofit_after_fill(self, qtbot):
         t = make_table(
@@ -92,7 +92,7 @@ class TestTableAutofit:
 
 
 class TestDirectTables:
-    """Виджеты со самодельными таблицами (мимо make_table)."""
+    """Widgets with hand-rolled tables (bypassing make_table)."""
 
     @pytest.mark.parametrize(
         "factory",
@@ -132,8 +132,8 @@ class TestDirectTables:
         ids=["options", "hardware", "pool", "task_history", "cluster_tasks"],
     )
     def test_no_resize_to_contents(self, qtbot, factory, resizable_cols):
-        """Бывшие RTC/Stretch-колонки должны быть Interactive (тянуться
-        мышью); последняя колонка — заполнитель."""
+        """Former RTC/Stretch columns must be Interactive (mouse-draggable);
+        the last column is the filler."""
         w = factory()
         qtbot.addWidget(w)
         header = w.table.horizontalHeader()
@@ -167,62 +167,20 @@ class TestDirectTables:
 
 
 class TestTreePanelHeader:
-    def test_header_visible_and_movable(self, qtbot):
-        from virtdeck.ui.tree_panel import TreePanel
+    def test_single_column_header_hidden(self, qtbot):
+        """2026-10-08 redesign: single column, header hidden, the info line
+        is drawn by the delegate from INFO_ROLE; column-width persistence removed."""
+        from virtdeck.ui.tree_panel import TreePanel, _TwoLineDelegate
         tp = TreePanel([])
         qtbot.addWidget(tp)
-        assert not tp.tree.isHeaderHidden()
-        assert tp.tree.header().sectionsMovable()
-        assert tp.tree.headerItem().text(0)
-        assert tp.tree.headerItem().text(1)
-
-    def test_column_order_persisted(self, qtbot, monkeypatch):
-        import virtdeck.ui.tree_panel as tp_mod
-        from virtdeck.ui.tree_panel import TreePanel
-
-        state = {}
-        monkeypatch.setattr(tp_mod, "load_ui_state", lambda k: state.get(k))
-        monkeypatch.setattr(
-            tp_mod, "save_ui_state", lambda k, v: state.__setitem__(k, v))
-
-        tp = TreePanel([])
-        qtbot.addWidget(tp)
-        header = tp.tree.header()
-        header.moveSection(1, 0)  # пользователь перетащил "Info" вперёд
-        tp._save_tree_columns()
-        assert state.get("tree_header_state")
-
-        tp2 = TreePanel([])
-        qtbot.addWidget(tp2)
-        assert tp2.tree.header().visualIndex(1) == 0
-        assert tp2.tree.header().visualIndex(0) == 1
-
-    def test_early_layout_save_skipped(self, qtbot, monkeypatch):
-        """sectionResized при раскладке не должен затирать сохранённое
-        состояние дефолтными ширинами (в конфиг попадало 100/100)."""
-        import virtdeck.ui.tree_panel as tp_mod
-        from virtdeck.ui.tree_panel import TreePanel
-
-        writes = []
-        monkeypatch.setattr(tp_mod, "load_ui_state", lambda key: None)
-        monkeypatch.setattr(
-            tp_mod, "save_ui_state", lambda key, val: writes.append(key))
-
-        tp = TreePanel([])
-        qtbot.addWidget(tp)
-        tp._save_tree_columns()
-        assert writes == ["tree_header_state"]
-        tp._save_tree_columns()  # то же состояние -> не пишется повторно
-        assert writes == ["tree_header_state"]
-
-        header = tp.tree.header()
-        header.moveSection(1, 0)  # реальное действие пользователя
-        tp._save_tree_columns()
-        assert writes == ["tree_header_state", "tree_header_state"]
+        assert tp.tree.isHeaderHidden()
+        assert tp.tree.columnCount() == 1
+        assert isinstance(tp.tree.itemDelegate(), _TwoLineDelegate)
+        assert not hasattr(tp, "_save_tree_columns")
 
 
 def _mk(module_name, class_name):
-    """Импорт и создание виджета (чтобы параметризация оставалась лаконичной)."""
+    """Import and create the widget (keeps parameterization terse)."""
     import importlib
     mod = importlib.import_module(module_name)
     return getattr(mod, class_name)()

@@ -1,9 +1,10 @@
-"""M4.0: FakePbsApi — in-memory Proxmox Backup Server для тестов.
+"""M4.0: FakePbsApi — in-memory Proxmox Backup Server for tests.
 
-Обслуживает ticket-логин (POST /access/ticket, сверяет username/password
-с заданными при создании) и read-only datastore-эндпоинты: список
-хранилищ, статус, группы и снапшоты (fundament «последний успешный бэкап»
-Fleet Health — vmaidx-эквивалент). Пути — без префикса `/api2/json`.
+Serves ticket login (POST /access/ticket, checks username/password
+against the values given at creation) and read-only datastore
+endpoints: datastore list, status, groups and snapshots (the foundation
+of the Fleet Health "last successful backup" — a vmaidx equivalent).
+Paths — without the `/api2/json` prefix.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from datetime import datetime, timezone
 
 
 class FakePbsApi:
-    """Сценарий одного независимого PBS."""
+    """Scenario of a single independent PBS."""
 
     def __init__(self, user: str = "root@pam", password: str = "secret"):
         self.user = user
@@ -21,7 +22,7 @@ class FakePbsApi:
         # store → {"total": int, "used": int, "snapshots": [entry]}
         self.datastores: dict[str, dict] = {}
 
-    # ── Сценарий ────────────────────────────────────────────────────
+    # ── Scenario ────────────────────────────────────────────────────
 
     def add_datastore(self, store: str, total: int = 10 << 30,
                       used: int = 4 << 30) -> FakePbsApi:
@@ -52,11 +53,12 @@ class FakePbsApi:
             {"ns": ns, "entry": entry})
         return self
 
-    # ── Обслуживание запросов ───────────────────────────────────────
+    # ── Request handling ────────────────────────────────────────────
 
     def handle(self, method: str, path: str,
                params: dict | None = None) -> tuple[int, object]:
-        """(method, path, params) → (status, data). path без /api2/json."""
+        """(method, path, params) → (status, data). path without
+        /api2/json."""
         params = dict(params or {})
         self.calls.append((method, path, params))
 

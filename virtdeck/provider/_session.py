@@ -25,11 +25,11 @@ PVE_PORT = 8006
 
 _WARN_SUPPRESSED = False
 
-# Явный прокси задаётся per-host: cfg["proxy"] (поле «Proxy» в диалоге
-# добавления сервера). Пусто/отсутствует — стандартное поведение requests:
-# env-прокси (HTTP(S)_PROXY, ALL_PROXY, no_proxy) учитываются, как в curl.
-# Явный URL полностью замещает env: trust_env=False + session.proxies,
-# иначе session-level proxies проигрывают env-прокси в requests.
+# Explicit proxy is set per-host: cfg["proxy"] (the "Proxy" field in the
+# add-server dialog). Empty/missing — standard requests behavior:
+# env proxies (HTTP(S)_PROXY, ALL_PROXY, no_proxy) are honored, like curl.
+# An explicit URL fully replaces env: trust_env=False + session.proxies,
+# otherwise session-level proxies lose to env proxies in requests.
 
 
 def _suppress_ssl_warnings() -> None:
@@ -51,14 +51,15 @@ def _proxies(url: str | None) -> dict[str, str] | None:
 
 
 def build_requests_session(cfg: dict) -> requests.Session:
-    """Сырая requests-сессия с per-host прокси (для raw-воркеров UI).
+    """Raw requests session with per-host proxy (for UI raw workers).
 
-    Голая Session() игнорирует cfg["proxy"] — в proxy-only окружении все
-    raw-воркеры падали по тайм-ауту, пока дерево через provider работал.
-    Явный прокси: trust_env=False + proxies (env не перебивает session-level).
-    Пустой cfg["proxy"]: env-прокси учитываются как раньше (trust_env=True).
+    A bare Session() ignores cfg["proxy"] — in proxy-only environments all
+    raw workers timed out while the tree via provider kept working.
+    Explicit proxy: trust_env=False + proxies (env does not override
+    session-level). Empty cfg["proxy"]: env proxies honored as before
+    (trust_env=True).
     """
-    import requests  # deferred: не тянуть requests в startup path (cfce3cd)
+    import requests  # deferred: keep requests out of the startup path (cfce3cd)
 
     sess = requests.Session()
     proxy = _proxy_url(cfg)
@@ -108,8 +109,9 @@ class ProxmoxSession:
                 proxies=_proxies(proxy),
             )
             if proxy:
-                # proxmoxer 2.3.0 для token-auth не применяет proxies-kwarg
-                # к запросам — фиксируем явный прокси на сессии напрямую.
+                # proxmoxer 2.3.0 does not apply the proxies kwarg to
+                # token-auth requests — pin the explicit proxy on the
+                # session directly.
                 sess = self._proxmox._store.get("session")
                 if sess is not None:
                     sess.trust_env = False

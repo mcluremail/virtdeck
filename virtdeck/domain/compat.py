@@ -1,9 +1,9 @@
-"""M0.5: PVE compat matrix — версии нод и capabilities.
+"""M0.5: PVE compat matrix — node versions and capabilities.
 
-Ядро не хардкодит версии PVE: потребители (M4 — rrddata/version
-расхождения, M5 — migrate/HA nuances) спрашивают ``supports(feature)``
-у провайдера. Матрица ``PVE_FEATURES`` — минимальные версии для
-известных фич; расширять через :func:`register_feature`.
+The core does not hardcode PVE versions: consumers (M4 — rrddata/version
+drift, M5 — migrate/HA nuances) ask ``supports(feature)`` on the provider.
+The ``PVE_FEATURES`` matrix maps known features to minimum versions;
+extend it via :func:`register_feature`.
 """
 
 from __future__ import annotations
@@ -28,22 +28,22 @@ class PveVersion:
         )
 
 
-# feature -> минимальная версия (major, minor). Поддерживаемая матрица:
-# 7.x/8.x/9.x; старше 7.x — best effort без гарантий.
+# feature -> minimum version (major, minor). Supported matrix:
+# 7.x/8.x/9.x; older than 7.x is best effort, no guarantees.
 PVE_FEATURES: dict[str, tuple[int, int]] = {
     "version": (6, 2),  # GET /nodes/{node}/version
-    "rrddata": (6, 0),  # GET .../rrddata — метрики нод и гостей
-    "guest_tags": (8, 0),  # теги ВМ/контейнеров (API + UI)
+    "rrddata": (6, 0),  # GET .../rrddata — node and guest metrics
+    "guest_tags": (8, 0),  # VM/container tags (API + UI)
 }
 
 
 def register_feature(name: str, major: int, minor: int) -> None:
-    """Добавить фичу в матрицу (для M4/M5 и плагинов)."""
+    """Add a feature to the matrix (for M4/M5 and plugins)."""
     PVE_FEATURES[name] = (int(major), int(minor))
 
 
 def _parse_dotted(part: str) -> PveVersion | None:
-    """'8.2.4' / '8.2' / '8' / '7.4-3' (minor-patch) → PveVersion; иначе None."""
+    """'8.2.4' / '8.2' / '8' / '7.4-3' (minor-patch) → PveVersion; else None."""
     nums: list[int] = []
     for c in part.split("."):
         if "-" in c:
@@ -64,9 +64,9 @@ def _parse_dotted(part: str) -> PveVersion | None:
 
 
 def parse_pve_version(raw: str | None) -> PveVersion | None:
-    """Разобрать pveversion: ``pve-manager/8.2.4/1ac2f4b`` или ``8.2.4``.
+    """Parse pveversion: ``pve-manager/8.2.4/1ac2f4b`` or ``8.2.4``.
 
-    Хэш-часть (``1ac2f4b``) и мусор отбрасываются; без версии → None.
+    Hash part (``1ac2f4b``) and garbage are dropped; no version → None.
     """
     if not raw:
         return None
@@ -81,8 +81,8 @@ def parse_pve_version(raw: str | None) -> PveVersion | None:
 
 
 def supports(version: PveVersion | None, feature: str) -> bool:
-    """Поддерживает ли версия фичу. Неизвестная версия/фича → False
-    (консервативно: вызывающий код делает фоллбэк)."""
+    """Whether the version supports the feature. Unknown version/feature →
+    False (conservative: the caller falls back)."""
     min_version = PVE_FEATURES.get(feature)
     if version is None or min_version is None:
         return False

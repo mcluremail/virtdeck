@@ -1,20 +1,20 @@
-"""M0.3: optimistic UI каркас «применить сразу → подтвердить/откатить».
+"""M0.3: optimistic UI skeleton "apply immediately -> confirm/rollback".
 
-UI показывает целевое состояние немедленно, не дожидаясь ни ответа
-воркера, ни следующего refresh-цикла:
+The UI shows the target state right away, without waiting for the
+worker response or the next refresh cycle:
 
-1. apply(): VmRepository патчится (frozen Vm заменяется копией с
-   целевым статусом), запись попадает в pending;
-2. успех воркера → confirm(): pending снимается, целевой статус
-   остаётся до прихода реальных данных (refresh_data);
-3. ошибка воркера → rollback(): прежний статус возвращается в
-   репозиторий, дерево перерисовывается.
+1. apply(): VmRepository is patched (frozen Vm replaced by a copy with
+   the target status), the entry goes into pending;
+2. worker success -> confirm(): pending is cleared, the target status
+   stays until real data arrives (refresh_data);
+3. worker failure -> rollback(): the previous status is restored in
+   the repository, the tree is redrawn.
 
-Дерево показывает pending-элементы спиннером (TreePanel.
-set_pending_vm_keys), поэтому UI-состояние видно в каждый момент.
-Каркас доменно-зависим в одном месте: POWER_TARGET_STATUS задаёт
-целевой статус для power-действия; действия вне словаря (migrate,
-clone, snapshot) оптимистично не применяются.
+The tree shows pending items with a spinner (TreePanel.
+set_pending_vm_keys), so the UI state is visible at every moment.
+The skeleton is domain-dependent in one place: POWER_TARGET_STATUS
+defines the target status for a power action; actions outside the
+dict (migrate, clone, snapshot) are not applied optimistically.
 """
 
 from collections.abc import Callable
@@ -35,7 +35,7 @@ POWER_TARGET_STATUS: dict[str, VmStatus] = {
 
 @dataclass(frozen=True)
 class _Pending:
-    """Одно изменение в полёте (оригинал статуса для отката)."""
+    """One in-flight change (original status kept for rollback)."""
 
     host_name: str
     vmid: int
@@ -44,11 +44,11 @@ class _Pending:
 
 
 class OptimisticVMs:
-    """Менеджер optimistic-изменений статусов ВМ поверх VmRepository.
+    """Manager of optimistic VM status changes on top of VmRepository.
 
-    Поток: apply() возвращает токен (или None — действие не power /
-    ВМ не найдена / шаблон); токен.confirm() или токен.rollback()
-    завершают изменение. Каждый шаг дёргает on_change (перерисовка).
+    Flow: apply() returns a token (or None — not a power action / VM
+    not found / template); token.confirm() or token.rollback() finishes
+    the change. Every step fires on_change (redraw).
     """
 
     def __init__(
@@ -68,8 +68,8 @@ class OptimisticVMs:
         if vm is None or vm.template:
             return None
         key = (host_name, vmid)
-        # Повторное действие поверх pending: оригинал статуса сохраняем,
-        # откат вернёт его, а не промежуточный optimistic.
+        # A repeated action on top of pending: keep the original status,
+        # rollback restores it, not the intermediate optimistic one.
         prev = self._pending[key].prev_status if key in self._pending else vm.status
         self._repo.add(replace(vm, status=target))
         self._pending[key] = _Pending(host_name, vmid, action, prev)
@@ -98,7 +98,7 @@ class OptimisticVMs:
 
 
 class OptimisticToken:
-    """Ручка одного optimistic-изменения: confirm/rollback по ответу."""
+    """Handle of one optimistic change: confirm/rollback based on the reply."""
 
     __slots__ = ("_manager", "_host_name", "_vmid")
 

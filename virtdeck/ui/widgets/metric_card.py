@@ -7,13 +7,13 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QSizePo
 from ..theme import TOKENS, Color
 from .spinner import SpinnerWidget
 
-# Живые карточки: инлайн-стили запекаются при создании, поэтому при смене
-# темы их нужно перестилизовать (см. retheme_metric_cards).
+# Live cards: inline styles are baked in at creation time, so they must be
+# restyled on theme change (see retheme_metric_cards).
 _LIVE_CARDS: weakref.WeakSet | None = None
 
 
 def retheme_metric_cards():
-    """Перекраска всех живых MetricCard под активную тему."""
+    """Recolor all live MetricCards to the active theme."""
     global _LIVE_CARDS
     if _LIVE_CARDS is None:
         return
@@ -21,11 +21,11 @@ def retheme_metric_cards():
         try:
             card.retheme()
         except RuntimeError:
-            _LIVE_CARDS.discard(card)  # C++-объект уже удалён
+            _LIVE_CARDS.discard(card)  # C++ object already deleted
 
 
 def _token_for(color):
-    """Имя канонического токена по значению (для перекраски при смене темы)."""
+    """Canonical token name by value (for recoloring on theme change)."""
     for name in TOKENS:
         if getattr(Color, name, None) == color:
             return name
@@ -37,7 +37,7 @@ class MetricCard(QFrame):
         super().__init__(parent)
         self._show_progress = show_progress
         self._progress = 0
-        self._bar_color = None        # кастомный цвет чанка (hex)
+        self._bar_color = None        # custom chunk color (hex)
         self._value_color_token = None
         self.setObjectName("metricCard")
 
@@ -84,9 +84,9 @@ class MetricCard(QFrame):
         else:
             self._bar = None
 
-        # Высота по содержимому: фиксированная высота резала значения
-        # (18pt-цифры не влезали). В grid-раскладке карточки одной строки
-        # всё равно выравниваются по самой высокой (Minimum).
+        # Content-driven height: a fixed height clipped the values
+        # (18pt digits did not fit). In a grid layout, cards of one row
+        # still align to the tallest one (Minimum).
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
 
         self._restyle()
@@ -97,7 +97,7 @@ class MetricCard(QFrame):
         _LIVE_CARDS.add(self)
 
     def _restyle(self):
-        """Инлайн-стили по текущим токенам (создание + смена темы)."""
+        """Inline styles from current tokens (creation + theme change)."""
         self._title_label.setStyleSheet(
             f"color: {Color.TEXT_DIM}; font-size: 11px; font-weight: 600;"
             " text-transform: uppercase; letter-spacing: 0.05em;"
@@ -113,7 +113,7 @@ class MetricCard(QFrame):
         self._apply_bar_style()
 
     def retheme(self):
-        """Перекраска при смене темы: свежие токены в инлайн-стилях."""
+        """Recolor on theme change: fresh tokens into inline styles."""
         self._restyle()
 
     def _apply_bar_style(self):

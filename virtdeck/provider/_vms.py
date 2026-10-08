@@ -188,9 +188,9 @@ class VmAPI:
 
     def get_vnc_proxy(self, node: str, vmid: int | str, vm_type: str,
                       proxy_host: str | None = None) -> dict:
-        """POST .../vncproxy. websocket=1 обязателен для noVNC-пути: PVE
-        поднимает websocket-подготовленный листенер (qm vncproxy --websocket).
-        proxy_host опционален: без него PVE выбирает адрес сам."""
+        """POST .../vncproxy. websocket=1 is required for the noVNC path:
+        PVE raises a websocket-ready listener (qm vncproxy --websocket).
+        proxy_host is optional: without it PVE picks the address itself."""
         if vm_type == "lxc":
             post = self._s.proxmox.nodes(_q(node)).lxc(vmid).vncproxy.post
         else:

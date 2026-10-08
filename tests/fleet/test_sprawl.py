@@ -1,4 +1,4 @@
-"""M4.4: snapshot sprawl — агрегация и скан с лимитом параллелизма."""
+"""M4.4: snapshot sprawl — aggregation and scan with a concurrency cap."""
 
 from __future__ import annotations
 
@@ -41,9 +41,9 @@ class TestScanSprawl:
                            {"name": "broken"}]}
         scan = scan_sprawl(snapshots, [guest(101)], now=NOW)
         row = scan.guests[0]
-        assert row.count == 2  # current исключён
+        assert row.count == 2  # current excluded
         assert row.zombie_names == ("broken",)
-        assert "broken" in row.stale_names  # зомби — тоже забытое
+        assert "broken" in row.stale_names  # zombies count as stale too
 
     def test_no_snapshots_guest_absent(self):
         scan = scan_sprawl({101: [snap("current", None)]},
@@ -54,9 +54,9 @@ class TestScanSprawl:
 
     def test_ordering_stale_first_by_oldest(self):
         snapshots = {
-            101: [snap("fresh", 2.0)],                  # без stale
-            102: [snap("a", 40.0)],                     # stale, моложе
-            103: [snap("b", 90.0), snap("c", 35.0)],    # stale, старейший
+            101: [snap("fresh", 2.0)],                  # no stale
+            102: [snap("a", 40.0)],                     # stale, younger
+            103: [snap("b", 90.0), snap("c", 35.0)],    # stale, oldest
         }
         guests = [guest(101), guest(102), guest(103)]
         scan = scan_sprawl(snapshots, guests, now=NOW)
@@ -64,7 +64,7 @@ class TestScanSprawl:
         assert scan.guests[0].stale_names == ("b", "c")
 
     def test_unknown_guest_keeps_vmid(self):
-        """Снапшоты есть, гостя нет в resources (удалён) — строка остаётся."""
+        """Snapshots exist, guest gone from resources (removed) — row stays."""
         scan = scan_sprawl({999: [snap("old", 60.0)]}, [], now=NOW)
         assert scan.guests[0].vmid == 999
         assert scan.guests[0].node == ""
@@ -80,7 +80,7 @@ class TestFetchSnapshots:
                       Guest(301, "cache01", "pve02", "lxc"),
                       Guest(201, "tmpl", "pve02", "qemu", template=True)]
             result = fetch_snapshots(provider, guests, concurrency=2)
-        # шаблон пропущен; у 301 снапшотов нет — его нет в результате
+        # template skipped; 301 has no snapshots — absent from the result
         assert set(result) == {101}
         assert result[101][0]["name"] == "pre-upgrade"
 
@@ -96,9 +96,9 @@ class TestFetchSnapshots:
             result = fetch_snapshots(provider, guests, concurrency=1,
                                      on_progress=lambda d, t:
                                      progress.append((d, t)))
-        assert 101 not in result and 102 not in result  # 102 без снапшотов
-        assert progress  # прогресс вызывался
-        assert progress[-1] == (2, 2)  # обработаны оба, включая упавший
+        assert 101 not in result and 102 not in result  # 102 has no snapshots
+        assert progress  # progress was reported
+        assert progress[-1] == (2, 2)  # both processed, including the failed one
 
     def test_empty_targets(self, monkeypatch):
         api = make_pve_cluster("alpha")

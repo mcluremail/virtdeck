@@ -89,7 +89,7 @@ from .widgets.cluster_tasks_widget import ClusterTasksWidget
 
 logger = logging.getLogger(__name__)
 
-# Максимум одновременно работающих воркеров
+# Maximum number of workers running at once
 MAX_WORKERS = 16
 
 
@@ -168,8 +168,8 @@ class MainWindow(QMainWindow):
         self.tree_panel.vm_delete_requested.connect(self._on_vm_delete_requested)
         self.tree_panel.vm_action_requested.connect(self._on_vm_action_from_tree)
         self.tree_panel.bulk_vm_action_requested.connect(self._on_bulk_vm_action)
-        self._palette = None   # M2: командная палитра, ленивая инициализация
-        # M0.3: optimistic UI — мгновенный статус + откат по ошибке.
+        self._palette = None   # M2: command palette, lazy init
+        # M0.3: optimistic UI — instant status + rollback on error.
         self._optimistic = OptimisticVMs(
             self._vm_repo, on_change=self._on_optimistic_change
         )
@@ -212,10 +212,10 @@ class MainWindow(QMainWindow):
         self.v_splitter.addWidget(self.h_splitter)
         self.v_splitter.addWidget(self.tasks_widget)
 
-        # Восстанавливаем положение сплиттеров из SQLite
+        # Restore splitter positions from SQLite
         self._restore_splitter_state()
 
-        # Сохраняем позиции сплиттера при изменении
+        # Persist splitter positions on change
         def _save_splitter():
             save_ui_state("splitter_h", json.dumps(self.h_splitter.sizes()))
             save_ui_state("splitter_v", json.dumps(self.v_splitter.sizes()))
@@ -269,18 +269,19 @@ class MainWindow(QMainWindow):
         self._tasks_gen = 0
         self._tasks_started = False
 
-        # Поколения hard/soft refresh, pending и guard-и — в координаторе
+        # Hard/soft refresh generations, pending and guards live in the
+        # coordinator
         self._refresh = RefreshCoordinator(soft_timeout=90)
 
-        # Шина событий (seed v3.0): продюсеры публикуют, панели подписываются
+        # Event bus (seed v3.0): producers publish, panels subscribe
         self._events = EventBus()
 
-        # Переменные для мягкого обновления
-        # (_soft_had_errors инициализируется раньше — до _init_tray, см. выше)
+        # Soft refresh state
+        # (_soft_had_errors is initialized earlier — before _init_tray, see above)
         self.last_refresh_ts = 0
         self.refresh_interval = 5
 
-        # Восстанавливаем состояние окна: геометрия, maximized, последний выбранный элемент
+        # Restore window state: geometry, maximized, last selected item
         self._restore_window_state()
 
         self.show()
@@ -364,37 +365,37 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Shift+F"), self, activated=self._open_fleet_health)
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self._open_command_palette)
 
-        # Таймер автообновления основных данных
+        # Auto-refresh timer for the main data
         self.refresh_timer = QTimer(self)
-        self.refresh_timer.setInterval(20000)          # 20 секунд
+        self.refresh_timer.setInterval(20000)          # 20 seconds
         self.refresh_timer.timeout.connect(self.soft_refresh)
         self.refresh_timer.start()
 
-        # Проверка обновлений через 3 секунды после старта
+        # Check for updates 3 seconds after startup
         QTimer.singleShot(3000, self._check_version)
 
-        # Детектор зависания главного потока
+        # Main thread freeze detector
         self._last_heartbeat = time.time()
         self._heartbeat_timer = QTimer(self)
         self._heartbeat_timer.setInterval(500)
         self._heartbeat_timer.timeout.connect(self._heartbeat)
         self._heartbeat_timer.start()
         self._closing = False
-        # В offscreen/pytest событийный цикл стоит — детектор шумит и
-        # штормом traceback-логов роняет производительность тестов.
+        # In offscreen/pytest the event loop stalls — the detector gets
+        # noisy and a traceback storm degrades test performance.
         if (os.environ.get("QT_QPA_PLATFORM") != "offscreen"
                 and "PYTEST_CURRENT_TEST" not in os.environ):
             self._freeze_detector = threading.Thread(
                 target=self._detect_freeze, daemon=True, name="freeze-detector")
             self._freeze_detector.start()
 
-        # Таймер обновления задач кластера
+        # Cluster tasks refresh timer
         self.tasks_timer = QTimer(self)
-        self.tasks_timer.setInterval(60000)            # 60 секунд
+        self.tasks_timer.setInterval(60000)            # 60 seconds
         self.tasks_timer.timeout.connect(self.refresh_cluster_tasks)
         self.tasks_timer.start()
 
-        # Первая загрузка задач — стартует из on_worker_finished, когда all_nodes заполнен
+        # First task load — started from on_worker_finished once all_nodes is filled
         self._cached_tasks = [DomainTask.from_pve(d) for d in load_tasks_cache()]
 
         # Offline mode: load cached resources immediately so tree is populated
@@ -437,9 +438,9 @@ class MainWindow(QMainWindow):
             self._offline_ts = None
 
     def _run_worker(self, worker) -> bool:
-        """Запускает воркер в пуле. False — отклонён (пул переполнен):
-        воркер никогда не стартует и не отчитается, поэтому вызывающий
-        код не должен учитывать его в ожиданиях (track_hard/begin_soft)."""
+        """Start a worker in the pool. False — rejected (pool full): the
+        worker never starts and never reports, so the caller must not
+        count it in its expectations (track_hard/begin_soft)."""
         if len(self._workers) >= MAX_WORKERS:
             try:
                 worker.signals.deleteLater()
@@ -457,7 +458,7 @@ class MainWindow(QMainWindow):
         return True
 
     def _discard_worker(self, worker):
-        """Удаляет воркер из _workers и отключает signal connections."""
+        """Removes the worker from _workers and disconnects its signals."""
         self._workers.discard(worker)
         if not worker or not hasattr(worker, "signals"):
             return
@@ -546,7 +547,7 @@ class MainWindow(QMainWindow):
                                     count=len(merged)))
 
     # ------------------------------------------------------------
-    # Добавление сервера
+    # Add server
     # ------------------------------------------------------------
     def _on_add_server(self, context=""):
         from .add_server_dialog import AddServerDialog
@@ -563,7 +564,7 @@ class MainWindow(QMainWindow):
         self.refresh_data()
 
     # ------------------------------------------------------------
-    # Создание ВМ
+    # Create VM
     # ------------------------------------------------------------
     def _on_vm_create_requested(self, node_name, host_name):
         from .create_vm_dialog import CreateVmDialog
@@ -766,27 +767,27 @@ class MainWindow(QMainWindow):
         self.pbs_panel.update_nodes_cfg(self.nodes_cfg)
 
     # ------------------------------------------------------------
-    # Удаление ВМ
+    # Delete VM
     # ------------------------------------------------------------
     def _on_vm_delete_requested(self, host_name, node, vmid):
-        # Найти ВМ по vmid + host_name
+        # Find the VM by vmid + host_name
         vm = self._vm_repo.get(host_name, vmid)
         vm_name = vm.name if vm else f"VM {vmid}"
         vm_status = vm.status_value if vm else ""
         vm_type = vm.vm_type.value if vm else "qemu"
         is_running = vm_status == "running"
 
-        # Найти конфиг хоста
+        # Find the host config
         cfg = self._cfg_by_name.get(host_name)
         if not cfg:
             self._notifications.show(tr("Config not found for {}").format(host_name), error=True)
             return
 
-        # Диалог подтверждения
+        # Confirmation dialog
         dlg = QDialog(self)
         dlg.setWindowTitle(tr("Delete VM"))
-        # минимум вместо setFixedSize: в локалях с длинным переводом
-        # перенесённый текст и чекбоксы не влезали в 240px высоты
+        # minimum instead of setFixedSize: in locales with long translations
+        # the wrapped text and checkboxes didn't fit into 240px of height
         dlg.setMinimumWidth(480)
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -871,8 +872,8 @@ class MainWindow(QMainWindow):
     def _confirm_delete(self, text):
         dlg = QDialog(self)
         dlg.setWindowTitle(tr("Delete"))
-        # минимум вместо setFixedSize: длинные подтверждения в локалях
-        # обрезались одной строкой без переносов
+        # minimum instead of setFixedSize: long confirmations in some locales
+        # got clipped to a single line without wrapping
         dlg.setMinimumWidth(420)
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -912,7 +913,7 @@ class MainWindow(QMainWindow):
         vm_type = (vm.vm_type.value if vm else "qemu")
         if not confirm_vm_action(action, vmid, parent=self):
             return
-        # M0.3: применяем optimistic-статус сразу, подтверждаем по ответу.
+        # M0.3: apply the optimistic status right away, confirm on reply.
         self._optimistic.apply(host_name, vmid, action)
         from ..backend import VmActionWorker
         worker = VmActionWorker(cfg, node, vmid, vm_type, action)
@@ -994,7 +995,7 @@ class MainWindow(QMainWindow):
         self._run_worker(worker)
 
     # ------------------------------------------------------------
-    # Группы серверов (B16)
+    # Server groups (B16)
     def _on_group_move(self, kind, name, group):
         if kind == "host":
             names = [name]
@@ -1413,7 +1414,7 @@ class MainWindow(QMainWindow):
         self.refresh_data()
 
     def _open_command_palette(self):
-        """M2: командная палитра (Ctrl+K) над реестром действий."""
+        """M2: command palette (Ctrl+K) over the action registry."""
         if self._palette is None:
             from .action_specs import build_registry
             from .command_palette import CommandPalette
@@ -1432,13 +1433,13 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _open_fleet_health(self):
-        """Fleet Health: сводный отчёт по всем кластерам парка (M4)."""
+        """Fleet Health: summary report across all fleet clusters (M4)."""
         dlg = FleetHealthDialog(build_fleet_targets(self.nodes_cfg), self)
         dlg.object_selected.connect(self.tree_panel.reveal_key)
         dlg.exec()
 
     def refresh_data(self):
-        # Отменяем все pending soft_refresh — их результаты устарели
+        # Cancel all pending soft_refresh — their results are stale
         self._refresh.reset_soft()
         self._soft_refresh_active = False
         self._soft_had_errors = False
@@ -1448,7 +1449,7 @@ class MainWindow(QMainWindow):
         self._spin_timer.stop()
         self._refresh_spinner.setText("")
 
-        # Сохраняем выделение и вкладку (для послед. восстановления после refresh)
+        # Save the selection and tab (to restore them after the refresh)
         current_key = self.tree_panel.get_current_item_key()
         if current_key is not None:
             self._saved_key = current_key
@@ -1485,8 +1486,8 @@ class MainWindow(QMainWindow):
             worker.signals.result_ready.connect(
                 lambda data, w=worker, g=refresh_gen: self.on_worker_finished(data, w, g)
             )
-            # track_hard только для фактически запущенных: отклонённый
-            # воркер не отчитается и навсегда заблокировал бы финализацию
+            # track_hard only for actually started workers: a rejected
+            # worker never reports and would block finalization forever
             if self._run_worker(worker):
                 self._refresh.track_hard(worker)
 
@@ -1522,10 +1523,10 @@ class MainWindow(QMainWindow):
     def on_worker_finished(self, data, worker=None, gen=0):
         if not self._refresh.hard_result_current(gen):
             return
-        # Убираем воркер из _workers сразу: его finished (queued) придёт
-        # позже, чем собственный result_ready, и без этого сброса множество
-        # _workers никогда не пустеет в момент проверки ниже — финальная
-        # ветка (сохранение кэша, сброс offline) не выполняется никогда.
+        # Drop the worker from _workers right away: its finished (queued)
+        # arrives later than its own result_ready, and without this reset
+        # the _workers set never empties at the check below — the final
+        # branch (cache save, offline reset) would never run.
         self._workers.discard(worker)
         self._refresh.hard_done(worker, gen)
         status = data.get("status", "error")
@@ -1543,15 +1544,15 @@ class MainWindow(QMainWindow):
             for st_dict in data.get("storages", []):
                 st_dict["host_name"] = host
                 self._storage_repo.add(DomainStorage.from_pve(st_dict, host, cluster_name))
-            # Собираем пулы (доменные объекты, репозиторий дедуплицирует по poolid)
+            # Collect pools (domain objects; the repo dedupes by poolid)
             for pd in data.get("pools", []):
                 self._pool_repo.add(DomainPool.from_pve(pd))
             self.all_pools = self._pool_repo.all()
-            # Собираем ISO-образы (host_name -> list volid)
+            # Collect ISO images (host_name -> list volid)
             for iso_host, isos in data.get("iso_images", {}).items():
                 if isos:
                     self.all_iso_images[iso_host] = isos
-            # Собираем HA группы (host_name -> [group, ...])
+            # Collect HA groups (host_name -> [group, ...])
             ha_list = [HaGroup.from_pve(g) for g in data.get("ha_groups", [])]
             if ha_list:
                 self.all_ha_groups[host] = ha_list
@@ -1560,9 +1561,9 @@ class MainWindow(QMainWindow):
             err_msg = data.get("error", "Unknown error")
             existing_nodes = self._node_repo.get_by_host(host)
             if existing_nodes:
-                # Нода этого хоста уже есть (короткое имя из кэша или
-                # успешного fetch) — помечаем её ошибкой, а не добавляем
-                # дубликат с именем из конфига (FQDN).
+                # A node of this host already exists (short name from the
+                # cache or a successful fetch) — flag it with the error
+                # instead of adding a duplicate named from the config (FQDN).
                 for old in existing_nodes:
                     self._node_repo.add(
                         replace(old, status=NodeStatus.ERROR, error=err_msg))
@@ -1585,11 +1586,11 @@ class MainWindow(QMainWindow):
 
         self._detect_status_changes()
 
-        # Обновляем статус-бар сразу — частичные данные лучше, чем пустота
+        # Update the status bar right away — partial data beats emptiness
         self._update_status_bar()
 
-        # Промежуточное обновление дерева — без очистки спиннеров.
-        # Не загрузившиеся кластеры остаются в дереве как заглушки со спиннерами.
+        # Intermediate tree update — no spinner cleanup. Clusters that
+        # failed to load stay in the tree as stubs with spinners.
         self.tree_panel.update_data(
             self._node_repo.all(), self._vm_repo.all(), self._storage_repo.all(), final=False,
             node_repo=self._node_repo, vm_repo=self._vm_repo,
@@ -1601,26 +1602,27 @@ class MainWindow(QMainWindow):
         self.detail_panel.all_pools = self.all_pools
         self.detail_panel.all_ha_groups = self.all_ha_groups
 
-        # Выбираем первый элемент в дереве при первой же возможности.
+        # Select the first tree item at the earliest opportunity.
         if not getattr(self, '_first_selection_done', False) and self.tree_panel.tree.topLevelItemCount() > 0:
             self._do_first_selection()
             self.detail_panel.refresh_current_view()
 
-        # Загрузка задач стартует при первом же воркере — не ждём все данные
+        # Task loading starts on the first worker — no waiting for all data
         if not self._tasks_started:
             self._tasks_started = True
             QTimer.singleShot(0, self.refresh_cluster_tasks)
 
-        # Финальная ветка — когда все воркеры ЭТОГО поколения отчитались
-        # (успехом или ошибкой). Общее множество _workers тут не годится:
-        # soft-воркеры и воркеры деталей держат его непустым постоянно.
+        # Final branch — all workers of THIS generation reported
+        # (success or error). The shared _workers set won't do here:
+        # soft workers and detail workers keep it non-empty constantly.
         if not self._refresh.hard_pending_count:
-            # Выбираем первый элемент до финальной перестройки дерева —
-            # сводка кластера появляется сразу, не дожидаясь _build_tree с сотнями VM
+            # Select the first item before the final tree rebuild — the
+            # cluster summary appears immediately, without waiting for a
+            # _build_tree with hundreds of VMs
             if not getattr(self, '_first_selection_done', False):
                 self._do_first_selection()
                 self.detail_panel.refresh_current_view()
-            # Все данные загружены — финальная перестройка: спиннеры гаснут, VM/пулы в дереве
+            # All data loaded — final rebuild: spinners go away, VMs/pools in the tree
             self.tree_panel.update_data(
                 self._node_repo.all(), self._vm_repo.all(), self._storage_repo.all(), final=True,
                 node_repo=self._node_repo, vm_repo=self._vm_repo,
@@ -1675,7 +1677,7 @@ class MainWindow(QMainWindow):
             self._last_vm_statuses[key] = status
 
     # ------------------------------------------------------------
-    # Фоновое (мягкое) обновление
+    # Background (soft) refresh
     # ------------------------------------------------------------
     def soft_refresh(self):
         now = time.time()
@@ -1708,9 +1710,9 @@ class MainWindow(QMainWindow):
         if not active_cfgs:
             self._refresh.finish_soft()
             return
-        # Пул может быть переполнен: воркеры сверх лимита не стартуют,
-        # а begin_soft уже заявила их в expected → цикл висел бы до
-        # тайм-аута. Запускаем только влезающие, остаток — следующий тик.
+        # The pool may be full: workers above the limit never start, while
+        # begin_soft already counted them in expected → the loop would hang
+        # until timeout. Start only what fits; the rest waits for the next tick.
         capacity = max(0, MAX_WORKERS - len(self._workers))
         if capacity == 0:
             self._refresh.finish_soft()
@@ -1749,8 +1751,9 @@ class MainWindow(QMainWindow):
             err_msg = data.get("error", "Unknown error")
             existing_nodes = self._soft_node_repo.get_by_host(host)
             if existing_nodes:
-                # Нода этого хоста уже есть (короткое имя) — помечаем её ошибкой,
-                # а не добавляем дубликат с именем-Hostname из конфига
+                # A node of this host already exists (short name) — flag it
+                # with the error instead of adding a duplicate named with
+                # the config's Hostname
                 for old in existing_nodes:
                     self._soft_node_repo.add(
                         replace(old, status=NodeStatus.ERROR, error=err_msg))
@@ -1764,8 +1767,9 @@ class MainWindow(QMainWindow):
                 }
                 self._soft_node_repo.add(DomainNode.from_pve(err_node, host, "", False))
 
-        # PBS-серверы не участвуют в soft refresh, но раньше попадали в
-        # active_count — цикл не завершался и кэш не сохранялся.
+        # PBS servers don't take part in soft refresh, but they used to be
+        # counted in active_count — the loop never finished and the cache
+        # was never saved.
         if self._refresh.soft_result(gen):
             if self._soft_node_repo or self._soft_vm_repo:
                 try:
@@ -1799,8 +1803,9 @@ class MainWindow(QMainWindow):
                         node_repo=self._node_repo, vm_repo=self._vm_repo
                     )
                     self.detail_panel.refresh_current_view()
-                    # Пробрасываем уже собранные на hard refresh пулы/HA —
-                    # soft refresh не имеет ProxmoxAPI, пересобрать не может
+                    # Pass through pools/HA already collected during hard
+                    # refresh — soft refresh has no ProxmoxAPI and can't
+                    # re-collect them
                     self.detail_panel.all_pools = self.all_pools
                     self.detail_panel.all_ha_groups = self.all_ha_groups
                     self._detect_status_changes()
@@ -1828,10 +1833,10 @@ class MainWindow(QMainWindow):
             self._update_tray_state()
 
     # ------------------------------------------------------------
-    # Обновление задач кластера
+    # Cluster tasks refresh
     # ------------------------------------------------------------
     def refresh_cluster_tasks(self):
-        # Показываем кэшированные задачи мгновенно, пока воркер грузит свежие
+        # Show cached tasks instantly while the worker fetches fresh ones
         if self._cached_tasks:
             self.tasks_widget.set_tasks(self._cached_tasks)
         elif not self._workers:
@@ -1874,11 +1879,11 @@ class MainWindow(QMainWindow):
             )
         )
         worker.signals.tasks_error.connect(lambda err, w=worker: self._discard_worker(w))
-        # finished подключается в _run_worker; но ClusterTasksWorker запускается
-        # через threading.Thread (а не QThreadPool), чтобы не блокировать слот
-        # пула на время join() внутри run(). Поэтому регистрируем в _workers
-        # вручную — иначе воркер не учтётся в MAX_WORKERS и утечёт при падении
-        # до emit.
+        # finished is connected in _run_worker; but ClusterTasksWorker runs
+        # via threading.Thread (not QThreadPool) so the pool slot isn't
+        # blocked for the join() inside run(). So we register it in _workers
+        # manually — otherwise the worker isn't counted in MAX_WORKERS and
+        # leaks if it fails before emit.
         if len(self._workers) >= MAX_WORKERS:
             try:
                 worker.signals.tasks_ready.disconnect()
@@ -1916,22 +1921,23 @@ class MainWindow(QMainWindow):
                 enriched.append(new)
             tasks = enriched
         except Exception as e:
-            logger.error("Ошибка при обогащении задач: %s", e)
+            logger.error("Failed to enrich tasks: %s", e)
         try:
             self.tasks_widget.set_tasks(tasks)
         except Exception as e:
-            logger.error("Ошибка при установке задач: %s", e)
+            logger.error("Failed to set tasks: %s", e)
 
     # ------------------------------------------------------------
-    # Сохранение/восстановление состояния окна (SQLite)
+    # Window state save/restore (SQLite)
     # ------------------------------------------------------------
     def _restore_window_state(self):
-        """Восстанавливает геометрию, maximized, splitter-ы и последний выбранный элемент.
-        Вызывается до show(), чтобы окно появилось в правильном положении.
-        Используем SQLite (ui_state), а не QSettings, потому что:
-          - Единое хранилище: задачи и UI-состояние в одном файле
-          - Прозрачность: файл в ~/.config/virtdeck/, можно глянуть руками
-          - QSettings размазывает данные по platform-specific местам (реестр/dconf/INI)"""
+        """Restores geometry, maximized state, splitters and the last selected item.
+        Called before show() so the window appears in the right position.
+        We use SQLite (ui_state) instead of QSettings because:
+          - Single storage: tasks and UI state in one file
+          - Transparency: the file lives in ~/.config/virtdeck/, easy to inspect
+          - QSettings scatters data across platform-specific places
+            (registry/dconf/INI)"""
         raw = load_ui_state("window_geometry")
         if raw:
             try:
@@ -1964,7 +1970,7 @@ class MainWindow(QMainWindow):
             self._saved_obj_type = raw
 
     def _restore_splitter_state(self):
-        """Восстанавливает позиции сплиттеров из SQLite."""
+        """Restores splitter positions from SQLite."""
         raw = load_ui_state("splitter_h")
         if raw:
             try:
@@ -1987,7 +1993,7 @@ class MainWindow(QMainWindow):
             self.v_splitter.setSizes([550, 150])
 
     # ------------------------------------------------------------
-    # Строка состояния
+    # Status bar
     # ------------------------------------------------------------
     def _update_status_bar(self):
         from datetime import datetime
@@ -2027,14 +2033,15 @@ class MainWindow(QMainWindow):
     def _do_first_selection(self):
         self._first_selection_done = True
         self._pending_first_selection = False
-        # Табы detail-панели ещё строятся чанками — откладываем выбор до их
-        # готовности, иначе _ensure_tabs() достроит всё синхронно и заморозит
-        # main thread на секунды (регресс: FREEZE DETECTED при старте).
+        # Detail panel tabs are still built in chunks — postpone the selection
+        # until they are ready, otherwise _ensure_tabs() would build everything
+        # synchronously and freeze the main thread for seconds (regression:
+        # FREEZE DETECTED at startup).
         if not self.detail_panel._tabs_built:
             self._pending_first_selection = True
             return
-        # Если пользователь уже выбрал элемент (например, PBS-сервер) —
-        # не перехватываем выделение на первый элемент дерева.
+        # If the user already picked an item (e.g. a PBS server) — don't
+        # hijack the selection to the first tree item.
         if self.tree_panel.get_current_item_key() is not None:
             return
         saved_key = getattr(self, '_saved_key', None)
@@ -2053,8 +2060,8 @@ class MainWindow(QMainWindow):
             self.tree_panel.select_first_item()
 
     def _on_all_tabs_built(self):
-        # Первое решение выбора было отложено до окончания чанковой стройки
-        # табов (см. _do_first_selection) — выполняем его сейчас.
+        # The first selection decision was postponed until the chunked tab
+        # build finished (see _do_first_selection) — run it now.
         if getattr(self, "_pending_first_selection", False):
             self._pending_first_selection = False
             if self.tree_panel.tree.topLevelItemCount() > 0:
@@ -2062,10 +2069,10 @@ class MainWindow(QMainWindow):
                 self.detail_panel.refresh_current_view()
 
     # ------------------------------------------------------------
-    # Детектор зависания
+    # Freeze detector
     # ------------------------------------------------------------
     def _tick_spinner(self):
-        """Анимирует спиннер в статус-баре при фоновом обновлении."""
+        """Animates the spinner in the status bar during background refresh."""
         if not self._soft_refresh_active:
             self._refresh_spinner.setText("")
             self._spin_timer.stop()
@@ -2111,7 +2118,7 @@ class MainWindow(QMainWindow):
                 f"QComboBox QAbstractItemView {{ font-size: 12px; }}")
 
     def _build_theme_switcher(self):
-        """Переключатель темы — постоянный виджет статус-бара, рядом с языком."""
+        """Theme switcher — a permanent status bar widget, next to the language."""
         from ..plugins import get_registry
         from . import theme as theme_mod
         from .theme import load_theme
@@ -2140,9 +2147,10 @@ class MainWindow(QMainWindow):
             if tid == saved:
                 self._theme_combo.setCurrentIndex(self._theme_combo.count() - 1)
         self._theme_combo.blockSignals(False)
+        self._applied_theme_tid = saved  # theme already applied at startup (main())
         self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
         self.status_bar.insertPermanentWidget(2, self._theme_combo)
-        # Перерисовка дерева при смене темы (кэшированные QColor в ячейках).
+        # Repaint the tree on theme change (cached QColor in cells).
         self._theme_listener = lambda _tid: self._on_theme_applied()
         theme_mod.subscribe_theme_changed(self._theme_listener)
         self.destroyed.connect(
@@ -2154,14 +2162,21 @@ class MainWindow(QMainWindow):
         tid = self._theme_combo.itemData(idx)
         if not tid:
             return
+        if tid == self._applied_theme_tid:
+            # Same theme: a full UI repolish (setStyleSheet across all
+            # widgets) costs seconds — don't repeat it on a click on the
+            # already active combo item.
+            return
         try:
             load_theme(tid)
+            self._applied_theme_tid = tid
         except Exception as exc:
+            self._applied_theme_tid = None  # failure — retry allowed
             logger.error("theme switch failed (%s): %s", tid, exc, exc_info=True)
             self.status_label.setText(tr("Theme failed to load"))
 
     def _on_theme_applied(self):
-        """Реакция UI на применённую тему: инлайн-стили + дерево + тулбар."""
+        """UI reaction to an applied theme: inline styles + tree + toolbar."""
         from .icons import base_size, init_icons
 
         for combo in (self._lang_combo, self._theme_combo):
@@ -2231,7 +2246,7 @@ class MainWindow(QMainWindow):
         self._update_tray_state()
 
     def _update_tray_state(self):
-        """Трей-иконка состояния бренда: offline / error / ok."""
+        """Brand tray icon reflecting the state: offline / error / ok."""
         if self._tray is None:
             return
         if not self.nodes_cfg or self._offline_mode:
@@ -2290,7 +2305,7 @@ class MainWindow(QMainWindow):
                 self._tray_show()
 
     # ------------------------------------------------------------
-    # Закрытие приложения
+    # Application shutdown
     # ------------------------------------------------------------
     def closeEvent(self, event):
         if self._tray and self._tray.isVisible() and self._tray_minimize_to_tray:

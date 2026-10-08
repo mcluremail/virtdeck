@@ -1,8 +1,8 @@
-"""M4.0: PBS-клиент против FakePbsApi — контракт ticket-аутентификации.
+"""M4.0: PBS client against FakePbsApi — the ticket auth contract.
 
-Логин по требованию, cookie PBSAuthCookie, ns-фильтр снапшотов (фундамент
-«последний успешный бэкап» для Fleet Health), негативный сценарий
-неверного секрета.
+Login on demand, PBSAuthCookie, snapshot ns filter (the foundation of
+"last successful backup" for Fleet Health), the wrong-secret
+negative scenario.
 """
 
 from __future__ import annotations
@@ -24,12 +24,12 @@ def make_client(api: FakePbsApi, **cfg_extra) -> PbsClient:
 def test_login_on_demand_and_ticket_reuse():
     api = make_pbs()
     client = make_client(api)
-    first = client.snapshots("main")  # явный login не нужен
+    first = client.snapshots("main")  # explicit login not needed
     assert len(first) == 3
     second = client.snapshots("main")
     assert len(second) == 3
     logins = [c for c in api.calls if c[1] == "/access/ticket"]
-    assert len(logins) == 1  # ticket получен один раз и переиспользуется
+    assert len(logins) == 1  # ticket obtained once and reused
 
 
 def test_snapshot_fields_for_last_backup():
@@ -59,7 +59,7 @@ def test_groups_last_backup():
     groups = client.get("/admin/datastore/main/groups")
     vm101 = next(g for g in groups if g["backup-id"] == "101")
     assert vm101["backup-type"] == "vm"
-    assert vm101["last-backup"] == 1727827200  # свежий из двух
+    assert vm101["last-backup"] == 1727827200  # the newer of the two
 
 
 def test_bad_secret_raises_pbs_error():

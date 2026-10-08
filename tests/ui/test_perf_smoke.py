@@ -1,8 +1,8 @@
-"""M0.4: perf-smoke — грубые пороги, ловим регрессии на порядок.
+"""M0.4: perf-smoke — coarse thresholds, catching order-of-magnitude regressions.
 
-Абсолютные пороги намеренно щедрые (offscreen CI-раннер без фиксированного
-железа): локальный бейслайн см. docs/PERF_BASELINE.md (скрипт
-scripts/perf_session.py, nightly на эталонной машине).
+Absolute thresholds are deliberately generous (offscreen CI runner with
+no fixed hardware): see docs/PERF_BASELINE.md for local baselines
+(scripts/perf_session.py, nightly on a reference machine).
 """
 
 import time
@@ -57,9 +57,9 @@ def _rebuild_ms(tp, node_repo, vm_repo):
     [(1, 100, 1000.0), (10, 100, 5000.0)],
 )
 def test_tree_rebuild_smoke(qtbot, hosts, vms_per_host, limit_ms):
-    """Rebuild дерева укладывается в щедрый smoke-порог.
+    """Tree rebuild fits the generous smoke threshold.
 
-    Локальный бейслайн: 100 элементов ~60 мс, 1000 ~430 мс (2026-09).
+    Local baseline: 100 items ~60 ms, 1000 ~430 ms (2026-09).
     """
     cfgs, node_repo, vm_repo = _make_data(hosts, vms_per_host)
     tp = TreePanel(cfgs)
@@ -69,5 +69,5 @@ def test_tree_rebuild_smoke(qtbot, hosts, vms_per_host, limit_ms):
     ms = _rebuild_ms(tp, node_repo, vm_repo)
     assert ms < limit_ms, (
         f"rebuild {hosts * vms_per_host} items: {ms:.0f} ms "
-        f"> smoke-порога {limit_ms:.0f} ms — регрессия на порядок?"
+        f"> smoke threshold {limit_ms:.0f} ms — order-of-magnitude regression?"
     )

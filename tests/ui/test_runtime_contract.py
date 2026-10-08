@@ -1,9 +1,9 @@
-"""M0.2: runtime-контракт «ни одного сетевого вызова в UI-потоке».
+"""M0.2: runtime contract "no network calls in the UI thread".
 
-Офлайн-прогон action-слотов: guard-провайдер фиксирует любой вызов
-sync-клиента из main-потока, fake-пул не выполняет воркеры, диалоги
-автопринимаются. Требование ROADMAP: toolbar, контекст-меню дерева,
-диалоги — ни один слот не должен дотянуться до провайдера синхронно.
+Offline run of action slots: the guard provider records any sync-client
+call from the main thread, the fake pool never runs workers, dialogs
+auto-accept. ROADMAP requirement: toolbar, tree context menus, dialogs —
+no slot may reach the provider synchronously.
 """
 
 import threading
@@ -20,8 +20,8 @@ from tests.ui.runtime_contract import (
 
 
 class TestGuard:
-    """Guard-провайдер: ловит sync-клиент в main-потоке, пропускает
-    фоновые потоки."""
+    """Guard provider: catches the sync client in the main thread, lets
+    background threads through."""
 
     def test_main_thread_call_is_recorded(self, monkeypatch):
         violations = install_guard(monkeypatch)
@@ -30,9 +30,9 @@ class TestGuard:
         provider = plugins_mod.create_provider({"name": "h1", "type": "pve"})
         provider.cluster.get("nodes")
         assert len(violations) == 3
-        assert "provider[h1]: доступ к .cluster" in violations[0]
-        assert "provider[h1].cluster: доступ к .get" in violations[1]
-        assert "provider[h1].cluster.get: вызов" in violations[2]
+        assert "provider[h1]: access to .cluster" in violations[0]
+        assert "provider[h1].cluster: access to .get" in violations[1]
+        assert "provider[h1].cluster.get: call" in violations[2]
 
     def test_raise_mode_raises_base_exception(self, monkeypatch):
         install_guard(monkeypatch, raise_in_main=True)
@@ -61,9 +61,9 @@ class TestGuard:
 
 
 def _run_and_report(actions, violations, label):
-    """Триггерит каждый action в изоляции и возвращает отчёт нарушений:
-    {«action»: [сообщения guard]} — только по нарушившим действиям.
-    Модальные диалоги, открытые слотом, закрывает modal-closer."""
+    """Triggers each action in isolation and returns the violation
+    report: {"action": [guard messages]} — only for offending actions.
+    Modal dialogs opened by a slot are closed by the modal-closer."""
     report = {}
     closer = rc.install_modal_closer()
     closer.start()
@@ -81,20 +81,21 @@ def _run_and_report(actions, violations, label):
 
 
 def test_toolbar_actions_make_no_sync_calls(main_window, offline):
-    """Все QAction MainWindow (toolbar и пр.) не выполняют сетевых
-    вызовов в UI-потоке."""
+    """All MainWindow QActions (toolbar etc.) make no network calls
+    in the UI thread."""
     violations, _ = offline
     mw = main_window
     actions = mw.findChildren(QAction)
-    assert actions, "MainWindow обязан иметь actions"
+    assert actions, "MainWindow must have actions"
     report = _run_and_report(actions, violations, "mainwindow")
-    assert not report, "Синхронные сетевые вызовы в UI-потоке:\n" + "\n".join(
+    assert not report, "Synchronous network calls in the UI thread:\n" + "\n".join(
         f"{k}\n  " + "\n  ".join(v) for k, v in report.items()
     )
 
 
 def test_tree_context_menus_make_no_sync_calls(qtbot, offline, make_node, make_vm):
-    """Контекст-меню дерева (VM и host) — действия не тянут сеть."""
+    """Tree context menus (VM and host) — actions do not touch the
+    network."""
     violations, _ = offline
     from virtdeck.domain.enums import VmStatus
     from virtdeck.domain.repositories import NodeRepository, VmRepository
@@ -113,8 +114,8 @@ def test_tree_context_menus_make_no_sync_calls(qtbot, offline, make_node, make_v
     tp.update_data(node_repo.all(), vm_repo.all(), final=True, node_repo=node_repo, vm_repo=vm_repo)
     tp._build_tree()
 
-    # Контекст-меню открывается по itemAt(pos): подать позицию элемента ВМ
-    # (элемент ищем по VM_KEY_ROLE — текст может содержать декорации).
+    # The context menu opens via itemAt(pos): feed the position of the
+    # VM item (found by VM_KEY_ROLE — the text may carry decorations).
     vm_items = []
 
     def walk(item):
@@ -125,10 +126,10 @@ def test_tree_context_menus_make_no_sync_calls(qtbot, offline, make_node, make_v
 
     for i in range(tp.tree.topLevelItemCount()):
         walk(tp.tree.topLevelItem(i))
-    assert vm_items, "ВМ-элемент должен быть в дереве"
-    # M0.2 рефакторинг tree_panel: меню строится билдером, exec не нужен.
+    assert vm_items, "VM item must be in the tree"
+    # M0.2 tree_panel refactor: the menu is built by a builder, no exec.
     menus = [tp._build_context_menu(vm_items[0])]
-    # Host-элемент: те же правила для host-меню.
+    # Host item: same rules for the host menu.
     host_items = []
 
     def walk_keys(item):
@@ -143,7 +144,7 @@ def test_tree_context_menus_make_no_sync_calls(qtbot, offline, make_node, make_v
     if host_items:
         menus.append(tp._build_context_menu(host_items[0]))
     menus = [m for m in menus if m is not None]
-    assert menus, "Контекст-меню должно собраться"
+    assert menus, "Context menus must be built"
     report = {}
     while menus:
         menu = menus.pop()
@@ -154,13 +155,13 @@ def test_tree_context_menus_make_no_sync_calls(qtbot, offline, make_node, make_v
                 f"menu@{menu.title() or 'tree'}",
             )
         )
-    assert not report, "Синхронные сетевые вызовы в UI-потоке:\n" + "\n".join(
+    assert not report, "Synchronous network calls in the UI thread:\n" + "\n".join(
         f"{k}\n  " + "\n  ".join(v) for k, v in report.items()
     )
 
 
 def test_trap_in_worker_thread_returns_stub():
-    """_SyncTrap из фонового потока — заглушка (без нарушений)."""
+    """_SyncTrap from a background thread is a stub (no violations)."""
     collected = []
     trap = _SyncTrap("provider", collect=collected.append)
     result = {}
@@ -177,8 +178,8 @@ def test_trap_in_worker_thread_returns_stub():
 
 
 def test_main_window_fixture_boots_offline(main_window, offline):
-    """Санити: MainWindow создаётся офлайн, guard активен, нарушений
-    при загрузке нет."""
+    """Sanity: MainWindow boots offline, guard active, no violations
+    during load."""
     violations, _ = offline
     assert main_window is not None
     assert violations == []

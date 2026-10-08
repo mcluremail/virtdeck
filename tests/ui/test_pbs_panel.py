@@ -130,7 +130,7 @@ class TestDatastoreView:
 
 class TestUsageColors:
     def test_usage_color_thresholds(self):
-        # токены, а не hex: значения меняются контрастным аудитом
+        # tokens, not hex: values change with the contrast audit
         color = pbs_panel_mod._usage_color
         assert color(0.5) == Color.SUCCESS
         assert color(0.8) == Color.WARNING

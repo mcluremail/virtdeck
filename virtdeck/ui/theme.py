@@ -1,7 +1,7 @@
 """
-Тема оформления VirtDeck.
-Светлая. Шрифты резолвятся из доступных в системе (Noto Sans / Terminus
-приоритетны, на Windows/под macOS подставляются системные аналоги).
+VirtDeck UI theme.
+Light. Fonts are resolved from those available on the system (Noto Sans /
+Terminus preferred; Windows/macOS get system substitutes).
 """
 
 import logging
@@ -15,20 +15,33 @@ from PySide6.QtWidgets import QApplication, QHeaderView, QProxyStyle, QStyle
 logger = logging.getLogger(__name__)
 
 
-class BaseIconStyle(QProxyStyle):
-    """Стиль с иконочными метриками = базовому размеру иконок темы.
+_ICON_METRICS = (
+    QStyle.PM_SmallIconSize, QStyle.PM_ListViewIconSize,
+    QStyle.PM_IconViewIconSize, QStyle.PM_TabBarIconSize,
+)
+_BASE_SIZE_FN = None  # cache of icons.base_size: a local import per call is costly
 
-    Без него виджеты, не задающие setIconSize явно (вкладки, кнопки,
-    таблицы детальной панели и т.п.), рисуют иконки в дефолте Qt
-    (PM_SmallIconSize = 16), а не в base_size(). Размер читается живьём
-    из icons.base_size(), так что смена темы подхватывается сама.
+
+class BaseIconStyle(QProxyStyle):
+    """Style whose icon metrics follow the theme's base icon size.
+
+    Without it, widgets that don't call setIconSize explicitly (tabs,
+    buttons, detail panel tables, etc.) draw icons at the Qt default
+    (PM_SmallIconSize = 16) instead of base_size(). The size is read live
+    from icons.base_size(), so theme switches are picked up automatically.
     """
 
     def pixelMetric(self, metric, option=None, widget=None):
-        if metric in (QStyle.PM_SmallIconSize, QStyle.PM_ListViewIconSize,
-                      QStyle.PM_IconViewIconSize, QStyle.PM_TabBarIconSize):
-            from .icons import base_size  # локально: icons <-> theme цикл
-            return base_size()
+        # Hot path: setStyleSheet restyles thousands of widgets, each one
+        # asking for metrics via this Python override — the body must stay
+        # minimal (no imports, no class attribute lookups).
+        if metric in _ICON_METRICS:
+            global _BASE_SIZE_FN
+            fn = _BASE_SIZE_FN
+            if fn is None:
+                from .icons import base_size
+                _BASE_SIZE_FN = fn = base_size
+            return fn()
         return super().pixelMetric(metric, option, widget)
 
 
@@ -36,14 +49,14 @@ _BASE_ICON_STYLE: BaseIconStyle | None = None
 
 
 def install_base_icon_style() -> None:
-    """Поставить BaseIconStyle один раз на всё приложение (идемпотентно).
+    """Install BaseIconStyle once for the whole app (idempotent).
 
-    Вызывается из main() сразу после создания QApplication (при светлой
-    теме load_theme на старте не запускается — иначе стиль бы не встал)
-    и повторно из load_theme() для страховки. Ссылка держится глобально:
-    без неё Python-обёртку стиля собирает GC и Shiboken восстанавливает
-    её как базовый QCommonStyle (тип и виртуальный pixelMetric теряют
-    питоновскую идентичность).
+    Called from main() right after QApplication is created (load_theme
+    does not run at startup for the light theme — otherwise the style
+    wouldn't stick) and again from load_theme() as a safety net. The
+    reference is kept global: without it GC collects the style's Python
+    wrapper and Shiboken restores it as a plain QCommonStyle (the type
+    and its virtual pixelMetric lose their Python identity).
     """
     global _BASE_ICON_STYLE
     app = QApplication.instance()
@@ -54,84 +67,85 @@ def install_base_icon_style() -> None:
 
 
 def _app() -> QApplication:
-    """Возвращает текущий экземпляр QApplication."""
+    """Return the current QApplication instance."""
     app = QApplication.instance()
     if app is None:
-        raise RuntimeError("theme.load(): QApplication ещё не создан")
+        raise RuntimeError("theme.load(): QApplication not created yet")
     return app
 
 
-# ── Цветовые токены ────────────────────────────────────────────────
-# Канонический семантический набор (контракт ThemePlugin v1, см.
-# docs/THEMES.md). Color — фасад: движок тем подменяет значения через
-# setattr при активации темы. Прямые ссылки на токены во всём UI остаются
-# валидными и переключаются на лету.
+# ── Color tokens ───────────────────────────────────────────────────
+# Canonical semantic set (ThemePlugin v1 contract, see docs/THEMES.md).
+# Color is a facade: the theme engine swaps values via setattr on theme
+# activation. Direct references to the tokens across the UI remain valid
+# and switch on the fly.
 
 class Color:
-    """Активная тема — цвета-токены (светлая по умолчанию)."""
+    """Active theme — color tokens (light by default)."""
 
-    # Фоны
-    BG          = "#fafafa"   # окно
-    PANEL       = "#ffffff"   # панели/карточки/контролы
-    RAISED      = "#f4f5f7"   # приподнятый hover-фон
-    TRACK       = "#f3f4f6"   # утопленный фон: дорожка прогресса, сегменты
-    ALT_ROW     = "#f8f9fb"   # чередование строк таблиц
+    # Backgrounds
+    BG          = "#fafafa"   # window
+    PANEL       = "#ffffff"   # panels/cards/controls
+    RAISED      = "#f4f5f7"   # raised hover background
+    TRACK       = "#f3f4f6"   # sunken background: progress track, segments
+    ALT_ROW     = "#f8f9fb"   # table row alternation
 
-    # Границы
+    # Borders
     BORDER          = "#e5e7eb"
     BORDER_LIGHT    = "#f0f1f4"
-    BORDER_STRONG   = "#cbd5e1"   # акцентированная рамка контролов
+    BORDER_STRONG   = "#cbd5e1"   # emphasized control border
 
-    # Текст
+    # Text
     TEXT        = "#181c26"
     TEXT_SEC    = "#5f6774"
     TEXT_DIM    = "#868a8f"
     DISABLED    = "#868a8f"
-    ON_ACCENT   = "#ffffff"   # текст/штрих поверх насыщенного цвета
+    ON_ACCENT   = "#ffffff"   # text/stroke on saturated color
 
-    # Акцент
+    # Accent
     ACCENT          = "#0a6ed1"
     ACCENT_HOVER    = "#005bbf"
     ACCENT_LIGHT    = "#e8f0fe"
-    ACCENT_PRESSED  = "#c6dafc"   # зажатый контрол (spin-стрелки)
+    ACCENT_PRESSED  = "#c6dafc"   # pressed control (spin arrows)
 
-    # Статусы
-    SUCCESS     = "#15803d"  # контраст >=4.5 на светлых фонах
-    SUCCESS_LIGHT = "#bbf7d0"  # светлый зелёный на тёмных поверхностях (тост)
-    WARNING     = "#92600a"  # контраст >=4.5 на светлых фонах
-    WARNING_TEXT = "#92600a"  # тёмный янтарный текст-подсказка (контраст >=4.5)
-    DANGER      = "#b91c1c"   # error-акцент в тексте/рамках (контраст >=4.5)
-    DANGER_SOLID         = "#c0392b"   # насыщенный красный: строгий текст, кнопка
+    # Status
+    SUCCESS     = "#15803d"  # contrast >=4.5 on light backgrounds
+    SUCCESS_LIGHT = "#bbf7d0"  # light green on dark surfaces (toast)
+    WARNING     = "#92600a"  # contrast >=4.5 on light backgrounds
+    WARNING_TEXT = "#92600a"  # dark amber hint text (contrast >=4.5)
+    DANGER      = "#b91c1c"   # error accent in text/borders (contrast >=4.5)
+    DANGER_SOLID         = "#c0392b"   # saturated red: solid text, button
     DANGER_SOLID_HOVER   = "#e74c3c"
     DANGER_SOLID_PRESSED = "#a93226"
 
-    STATUS_OK    = "#15803d"   # индикаторы/текст статуса (контраст >=4.5)
+    STATUS_OK    = "#15803d"   # status indicators/text (contrast >=4.5)
     STATUS_WARN  = "#92600a"
     STATUS_ERR   = "#b91c1c"
 
-    # Ряды и поверхности
-    HOVER       = "#e8edf4"   # подсветка строки/ячейки
-    ROW_WARN    = "#fff3cd"   # фон строки-предупреждения
-    TOAST_BG    = "#1f2937"   # тёмная подложка всплывающих уведомлений
+    # Rows and surfaces
+    HOVER       = "#e8edf4"   # row/cell highlight
+    ROW_WARN    = "#fff3cd"   # warning row background
+    TOAST_BG    = "#1f2937"   # dark toast backdrop
 
-    # Скроллбар
+    # Scrollbar
     SCROLLBAR_BG     = "#eef1f5"
     SCROLLBAR_HANDLE = "#c0c6d0"
     SCROLLBAR_HOVER  = "#a4abb8"
 
-    # Иконки
-    ICON_FG     = "#4b5563"   # основной штрих SVG-иконок
-    ICON_FG_DIM = "#374151"   # вторичный штрих
+    # Icons
+    ICON_FG     = "#4b5563"   # primary SVG icon stroke
+    ICON_FG_DIM = "#374151"   # secondary stroke
 
-    # Шрифты — резолвятся из установленных в системе (см. _resolve_fonts ниже).
+    # Fonts — resolved from the fonts installed on the system (see
+    # _resolve_fonts below).
     UI_FONT   = "Noto Sans"
     MONO_FONT = "Noto Sans Mono"
 
 
-# ── Резолвинг шрифтов по доступности в системе ─────────────────────
-# Приоритетные кандидаты: первый найденный через QFontDatabase.hasFamily
-# используется как имя шрифта в QSS и app.setFont. На Windows/macOS
-# Noto-семейства обычно отсутствуют, и выбирается системный аналог.
+# ── Font resolution by system availability ────────────────────────
+# Priority candidates: the first one found via QFontDatabase.hasFamily
+# becomes the font name used in QSS and app.setFont. On Windows/macOS
+# the Noto families are usually missing and a system substitute is picked.
 _UI_CANDIDATES = (
     "Noto Sans", "Cantarell", "Segoe UI", "SF Pro Text", "Helvetica",
 )
@@ -142,18 +156,18 @@ _MONO_CANDIDATES = (
 
 
 def enable_column_reorder(header):
-    """Разрешает перетаскивать колонки за заголовок.
+    """Allow dragging columns by their header.
 
-    В Qt6 QHeaderView у QTableWidget создаётся с sectionsMovable=False,
-    поэтому без явного включения пользователь не может двигать колонки.
-    Возвращает header для цепочек вызовов.
+    In Qt6 the QHeaderView of a QTableWidget is created with
+    sectionsMovable=False, so without this explicit enablement the user
+    cannot move columns. Returns the header for call chaining.
     """
     header.setSectionsMovable(True)
     return header
 
 
 class _AutofitGuard(QObject):
-    """Гасит автоподбор колонки после того, как пользователь потянул её заголовок."""
+    """Stops autofit for a column once the user drags its header."""
 
     def __init__(self, header, state):
         super().__init__(header)
@@ -169,14 +183,14 @@ class _AutofitGuard(QObject):
 
 
 def enable_table_autofit(view, cols, max_width=None):
-    """Ручной ресайз колонок с автоподбором ширины по содержимому.
+    """Manual column resize with content-based width autofit.
 
-    В режимах ResizeToContents/Fixed/Stretch Qt не даёт менять ширину
-    колонки мышью, поэтому колонки из cols переводятся в Interactive,
-    а ширина автоматически подбирается по содержимому (с debounce) до
-    тех пор, пока пользователь не потянет заголовок этой колонки сам.
-    max_width ограничивает автоподбор (чтобы одна длинная колонка не
-    съедала всю таблицу).
+    In ResizeToContents/Fixed/Stretch modes Qt does not allow changing
+    column width with the mouse, so columns from cols are switched to
+    Interactive, and their width is auto-fitted to content (debounced)
+    until the user drags that column's header themselves.
+    max_width caps the autofit (so one long column doesn't eat up the
+    whole table).
     """
     header = (view.horizontalHeader() if hasattr(view, "horizontalHeader")
               else view.header())
@@ -206,7 +220,7 @@ def enable_table_autofit(view, cols, max_width=None):
 
 
 def _pick_font(candidates):
-    """Вернуть первое доступное в системе имя шрифта, иначе последний из списка."""
+    """Return the first font name available on the system, else the last candidate."""
     db = QFontDatabase
     for name in candidates:
         try:
@@ -218,22 +232,22 @@ def _pick_font(candidates):
 
 
 def _resolve_fonts():
-    """Резолвинг UI/MONO один раз при load(). Логирует выбранные имена."""
+    """Resolve UI/MONO fonts once at load(). Logs the chosen names."""
     Color.UI_FONT = _pick_font(_UI_CANDIDATES)
     Color.MONO_FONT = _pick_font(_MONO_CANDIDATES)
     logger.info("theme fonts: ui=%s, mono=%s", Color.UI_FONT, Color.MONO_FONT)
 
 
-# ── Пути к SVG-индикаторам чекбокса ──
+# ── Checkbox SVG indicator paths ──
 _CHECK_DIR = os.path.dirname(os.path.abspath(__file__))
 _CHECK_ON  = _CHECK_DIR + "/checkbox-checked.svg"
 _CHECK_OFF = _CHECK_DIR + "/checkbox-unchecked.svg"
 
 # ── QSS ────────────────────────────────────────────────────────────
-# QSS собирается функцией _build_qss() в load(), после того как
-# _resolve_fonts() подставит доступные имена шрифтов в Color.UI_FONT /
-# Color.MONO_FONT. До вызова load() QSS содержит пустую строку —
-# использовать app.setStyleSheet(QSS) напрямую нельзя.
+# QSS is assembled by _build_qss() in load(), after _resolve_fonts()
+# substitutes the available font names into Color.UI_FONT /
+# Color.MONO_FONT. Until load() runs, QSS is an empty string —
+# app.setStyleSheet(QSS) must not be used directly.
 
 QSS = ""
 
@@ -248,15 +262,15 @@ def _build_qss() -> str:
         color: {Color.TEXT};
     }}
 
-    /* ── Базовый фон: без этого правила «голые» QWidget-контейнеры
-       (центральная панель, шапка задач) светятся системной палитрой
-       в тёмных темах ── */
+    /* ── Base background: without this rule, "bare" QWidget containers
+       (central panel, tasks header) glow with the system palette
+       in dark themes ── */
     QWidget {{
         background: {Color.BG};
     }}
 
-    /* ── Текстовые виджеты поверх карточек/панелей: их подложка должна
-       совпадать с подложкой контейнера, а не с общим фоном окна ── */
+    /* ── Text widgets on cards/panels: their background must match the
+       container's background, not the window-wide one ── */
     QLabel, QCheckBox, QRadioButton, QGroupBox {{
         background: transparent;
     }}
@@ -294,7 +308,7 @@ def _build_qss() -> str:
         color: {Color.ACCENT};
     }}
 
-    /* ── Дерево навигации ── */
+    /* ── Navigation tree ── */
     QTreeWidget {{
         font-size: 13px;
         alternate-background-color: transparent;
@@ -303,8 +317,8 @@ def _build_qss() -> str:
         background: {Color.PANEL};
     }}
     QTreeWidget::item {{
-        padding: 3px 4px;
-        min-height: 22px;
+        padding: 1px 4px;
+        min-height: 20px;
         border-left: 2px solid transparent;
     }}
     QTreeWidget::item:hover {{
@@ -320,7 +334,7 @@ def _build_qss() -> str:
         background: transparent;
     }}
 
-    /* ── Таблицы данных ── */
+    /* ── Data tables ── */
     QTableWidget {{
         font-family: "{ui}", "Cantarell", "sans-serif";
         font-size: 13px;
@@ -362,7 +376,7 @@ def _build_qss() -> str:
         border-bottom: 1px solid {Color.BORDER_LIGHT};
     }}
 
-    /* ── Вкладки (segmented control) ── */
+    /* ── Tabs (segmented control) ── */
     QTabWidget::pane {{
         border: none;
         border-top: 1px solid {Color.BORDER};
@@ -391,7 +405,7 @@ def _build_qss() -> str:
         border-bottom: 2px solid {Color.ACCENT};
     }}
 
-    /* ── Прогресс-бар ── */
+    /* ── Progress bar ── */
     QProgressBar {{
         border: none;
         border-radius: 3px;
@@ -406,7 +420,7 @@ def _build_qss() -> str:
         border-radius: 3px;
     }}
 
-    /* ── Кнопки ── */
+    /* ── Buttons ── */
     QPushButton {{
         padding: 7px 14px;
         font-size: 13px;
@@ -429,12 +443,12 @@ def _build_qss() -> str:
         border-color: {Color.BORDER_LIGHT};
     }}
 
-    /* ── Диалоги ── */
+    /* ── Dialogs ── */
     QDialog {{
         background: {Color.PANEL};
     }}
 
-    /* Кнопка обновления */
+    /* Refresh button */
     QPushButton#refreshBtn {{
         background: transparent;
         border: none;
@@ -453,7 +467,7 @@ def _build_qss() -> str:
         border-radius: 3px;
     }}
 
-    /* Акцентные кнопки (Создать ВМ) */
+    /* Accent buttons (Create VM) */
     QPushButton#accentBtn {{
         background: {Color.ACCENT};
         color: {Color.ON_ACCENT};
@@ -496,7 +510,7 @@ def _build_qss() -> str:
         color: {Color.ON_ACCENT};
     }}
 
-    /* ── Сегментированные кнопки (Clusters/Nodes toggle) ── */
+    /* ── Segmented buttons (Clusters/Nodes toggle) ── */
     QPushButton#segBtnLeft, QPushButton#segBtnRight {{
         font-size: 12px;
         padding: 5px 14px;
@@ -520,7 +534,7 @@ def _build_qss() -> str:
         border-color: {Color.ACCENT};
     }}
 
-    /* Опасные кнопки (Удаление) */
+    /* Danger buttons (Delete) */
     QPushButton#dangerBtn {{
         background: {Color.DANGER_SOLID};
         color: {Color.ON_ACCENT};
@@ -539,7 +553,7 @@ def _build_qss() -> str:
         color: {Color.ON_ACCENT};
     }}
 
-    /* ── Сплиттер ── */
+    /* ── Splitter ── */
     QSplitter::handle {{
         width: 6px;
         background: {Color.BORDER};
@@ -549,7 +563,7 @@ def _build_qss() -> str:
         background: {Color.SCROLLBAR_HOVER};
     }}
 
-    /* ── Меню ── */
+    /* ── Menus ── */
     QMenu {{
         border: 1px solid {Color.BORDER};
         background: {Color.PANEL};
@@ -610,7 +624,7 @@ def _build_qss() -> str:
         height: 8px;
     }}
 
-    /* ── Скроллбар (тонкий, закруглённый) ── */
+    /* ── Scrollbar (thin, rounded) ── */
     QScrollBar:vertical {{
         width: 10px;
         background: {Color.SCROLLBAR_BG};
@@ -655,7 +669,7 @@ def _build_qss() -> str:
         background: none;
     }}
 
-    /* ── Чекбоксы ── */
+    /* ── Checkboxes ── */
     QCheckBox {{
         font-size: 13px;
         spacing: 6px;
@@ -724,7 +738,7 @@ def _build_qss() -> str:
         height: 8px;
     }}
 
-    /* ── Заголовки секций в диалогах ── */
+    /* ── Section headers in dialogs ── */
     QLabel#sectionTitle {{
         font-size: 14px;
         font-weight: 700;
@@ -732,19 +746,19 @@ def _build_qss() -> str:
         letter-spacing: 0.3px;
     }}
 
-    /* ── Подписи полей в форме ── */
+    /* ── Form field labels ── */
     QLabel#fieldLabel {{
         color: {Color.TEXT_SEC};
         font-size: 13px;
     }}
 
-    /* ── Разделитель секций ── */
+    /* ── Section separator ── */
     QFrame#sectionSep {{
         color: {Color.BORDER};
         margin: 4px 0;
     }}
 
-    /* ── Кнопка «Дополнительно» (collapsible toggle) ── */
+    /* ── "More" toggle button (collapsible) ── */
     QToolButton#extraToggle {{
         border: none;
         background: transparent;
@@ -757,7 +771,7 @@ def _build_qss() -> str:
         color: {Color.ACCENT_HOVER};
     }}
 
-    /* ── ScrollArea (убираем рамку) ── */
+    /* ── ScrollArea (no border) ── */
     QScrollArea {{
         border: none;
         background: transparent;
@@ -770,7 +784,7 @@ def _build_qss() -> str:
         border-radius: 6px;
     }}
 
-    /* ── Title block (заголовок объекта) ── */
+    /* ── Title block (object heading) ── */
     QLabel#titleMain {{
         font-size: 22px;
         font-weight: 600;
@@ -782,14 +796,14 @@ def _build_qss() -> str:
         color: {Color.TEXT_SEC};
     }}
 
-    /* ── Карточки метрик ── */
+    /* ── Metric cards ── */
     QFrame#metricCard {{
         background: {Color.PANEL};
         border: 1px solid {Color.BORDER};
         border-radius: 10px;
     }}
 
-    /* ── Список карточек ── */
+    /* ── Card list ── */
     QFrame#cardList {{
         background: {Color.PANEL};
         border: 1px solid {Color.BORDER};
@@ -806,7 +820,7 @@ def _build_qss() -> str:
         background: {Color.RAISED};
     }}
 
-    /* ── Key-value секции (Hardware/Options) ── */
+    /* ── Key-value sections (Hardware/Options) ── */
     QLabel#kvSectionHead {{
         font-size: 12px;
         font-weight: 600;
@@ -828,36 +842,36 @@ def _build_qss() -> str:
 """
 
 
-# ── Движок тем (ThemePlugin v1) ────────────────────────────────────
-# Ядро знает только канонические токены; темы — плагины через
-# plugins.ThemePlugin. QSS собирается из токенов активной темы, Color —
-# живой фасад (значения подменяются setattr'ом).
+# ── Theme engine (ThemePlugin v1) ──────────────────────────────────
+# The core only knows the canonical tokens; themes are plugins via
+# plugins.ThemePlugin. QSS is built from the active theme's tokens,
+# Color is a live facade (values are swapped via setattr).
 
 TOKENS = (
-    # Фоны
+    # Backgrounds
     "BG", "PANEL", "RAISED", "TRACK", "ALT_ROW",
-    # Границы
+    # Borders
     "BORDER", "BORDER_LIGHT", "BORDER_STRONG",
-    # Текст
+    # Text
     "TEXT", "TEXT_SEC", "TEXT_DIM", "DISABLED", "ON_ACCENT",
-    # Акцент
+    # Accent
     "ACCENT", "ACCENT_HOVER", "ACCENT_LIGHT", "ACCENT_PRESSED",
-    # Статусы
+    # Status
     "SUCCESS", "SUCCESS_LIGHT", "WARNING", "WARNING_TEXT",
     "DANGER", "DANGER_SOLID", "DANGER_SOLID_HOVER", "DANGER_SOLID_PRESSED",
     "STATUS_OK", "STATUS_WARN", "STATUS_ERR",
-    # Ряды и поверхности
+    # Rows and surfaces
     "HOVER", "ROW_WARN", "TOAST_BG",
-    # Скроллбар
+    # Scrollbar
     "SCROLLBAR_BG", "SCROLLBAR_HANDLE", "SCROLLBAR_HOVER",
-    # Иконки
+    # Icons
     "ICON_FG", "ICON_FG_DIM",
 )
 
-FONT_TOKENS = ("UI_FONT", "MONO_FONT")   # не часть контракта тем v1
+FONT_TOKENS = ("UI_FONT", "MONO_FONT")   # not part of the themes v1 contract
 
-# Устаревшие имена (шкалы) → канонические токены. Принимаются только на
-# входе от сторонних тем; в ядре и встроенных темах не используются.
+# Legacy names (scales) → canonical tokens. Accepted only as input from
+# third-party themes; not used in the core or the built-in themes.
 ALIASES = {
     "GRAY_400": "TEXT_DIM", "GRAY_500": "TEXT_SEC",
     "GRAY_200": "BORDER", "GRAY_100": "TRACK",
@@ -870,7 +884,8 @@ ALIASES = {
     "SELECTED": "HOVER",
 }
 
-# Снимок светлой палитры при импорте модуля — до любых подмен фасада.
+# Snapshot of the light palette taken at module import — before any
+# facade swaps.
 LIGHT_TOKENS = {name: getattr(Color, name) for name in TOKENS}
 
 _HEX_RE = re.compile(r"#[0-9a-fA-F]{6}\Z")
@@ -880,18 +895,18 @@ _EXTRA_QSS = ""
 
 
 def subscribe_theme_changed(fn):
-    """Колбэк fn(theme_id) после применения темы (UI перерисовка)."""
+    """Callback fn(theme_id) after a theme is applied (UI repaint)."""
     _theme_listeners.append(fn)
 
 
 def unsubscribe_theme_changed(fn):
-    """Снятие подписки (закрытые окна обязаны отписываться)."""
+    """Unsubscribe (closed windows must unsubscribe)."""
     while fn in _theme_listeners:
         _theme_listeners.remove(fn)
 
 
 def validate_tokens(tokens) -> dict:
-    """Проверка набора темы: алиасы → канон, полное покрытие, hex-формат."""
+    """Validate a theme token set: aliases → canonical, full coverage, hex."""
     from ..plugins import PluginError
 
     if not isinstance(tokens, dict):
@@ -911,7 +926,7 @@ def validate_tokens(tokens) -> dict:
 
 
 def apply_tokens(tokens: dict) -> None:
-    """Подмена значений фасада Color токенами темы."""
+    """Swap the Color facade values to the theme's tokens."""
     for name, value in tokens.items():
         setattr(Color, name, value)
 
@@ -926,7 +941,7 @@ _ACTIVE_THEME_ID = "light"
 
 
 def active_theme_id() -> str:
-    """id последней активированной темы (для системы — 'system')."""
+    """id of the last activated theme ('system' for the system theme)."""
     return _ACTIVE_THEME_ID
 
 
@@ -934,14 +949,14 @@ _THEME_ORDER = ("light", "breeze", "breeze_dark", "oxygen", "graphite", "system"
 
 
 def ordered_theme_ids(registry) -> list[str]:
-    """id тем в UX-порядке; сторонние — по алфавиту в конце."""
+    """Theme ids in UX order; third-party ones sorted alphabetically last."""
     ids = set(registry.theme_ids())
     known = [t for t in _THEME_ORDER if t in ids]
     return known + sorted(t for t in ids if t not in _THEME_ORDER)
 
 
 def _qt_scheme_name() -> str:
-    """Схема ОС: 'dark' | 'light' (ошибка/неизвестно → light)."""
+    """OS color scheme: 'dark' | 'light' (error/unknown → light)."""
     try:
         from PySide6.QtGui import QGuiApplication
 
@@ -977,11 +992,11 @@ def _install_scheme_listener() -> None:
 
 
 def load_theme(theme_id: str, registry=None, persist: bool = True) -> str:
-    """Активация темы-плагина: токены → QSS → иконки → графики.
+    """Activate a theme plugin: tokens → QSS → icons → plots.
 
-    Возвращает фактический id темы. Python-кэши QColor (brush в ячейках)
-    обновляются при ближайшей перестройке виджетов — слушатели
-    subscribe_theme_changed() отвечают за перерисовку.
+    Returns the actual theme id. Python-level QColor caches (cell brushes)
+    refresh on the next widget rebuild — subscribe_theme_changed()
+    listeners are responsible for repainting.
     """
     global _ACTIVE_THEME_ID, _EXTRA_QSS
 
@@ -1028,10 +1043,10 @@ def load_theme(theme_id: str, registry=None, persist: bool = True) -> str:
     return theme_id
 
 
-# ── Публичный API ──────────────────────────────────────────────────
+# ── Public API ─────────────────────────────────────────────────────
 
 def load():
-    """Стартовая инициализация: шрифты + тема (по умолчанию светлая)."""
+    """Startup init: fonts + theme (light by default)."""
     app = _app()
     _resolve_fonts()
     try:

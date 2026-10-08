@@ -57,7 +57,7 @@ class TestSetValueSubtitle:
 
 class TestRetheme:
     def test_retheme_updates_inline_colors(self, qtbot):
-        """Инлайн-цвета карточки перекрашиваются при смене темы."""
+        """Card inline colors are repainted on theme change."""
         from virtdeck.ui.theme import Color, load_theme
 
         try:
@@ -67,7 +67,7 @@ class TestRetheme:
             assert f"color: {Color.TEXT};" in card._value_label.styleSheet()
 
             load_theme("breeze_dark", persist=False)
-            # TEXT тёмной темы — светлый; инлайн обновлён из свежих токенов
+            # dark-theme TEXT is light; inline updated from fresh tokens
             assert Color.TEXT == "#fcfcfc"
             assert "color: #fcfcfc;" in card._value_label.styleSheet()
             assert "background: #2c3034;" in card._bar.styleSheet()  # TRACK dark
@@ -75,7 +75,7 @@ class TestRetheme:
             load_theme("light", persist=False)
 
     def test_retheme_keeps_token_value_color(self, qtbot):
-        """set_value_color(токен) перекрашивается при смене темы."""
+        """set_value_color(token) is repainted on theme change."""
         from virtdeck.ui.theme import Color, load_theme
 
         try:
@@ -99,16 +99,16 @@ class TestRetheme:
             qtbot.addWidget(card)
             card.set_progress(95, color=Color.DANGER)
             load_theme("breeze_dark", persist=False)
-            # кастомный цвет чанка сохранён, фон дорожки — из свежей темы
+            # custom chunk color kept, track background from the fresh theme
             assert f"background: {Color.TRACK};" in card._bar.styleSheet()
         finally:
             load_theme("light", persist=False)
 
     def test_height_follows_content(self, qtbot):
-        """Карточка не режет контент: высота по sizeHint, не фиксированная."""
+        """Card does not clip content: height from sizeHint, not fixed."""
         card = MetricCard("Disk", "300.0 ГиБ", "Размер (использование недоступно)",
                           show_progress=True)
         qtbot.addWidget(card)
         assert card.minimumHeight() <= card.sizeHint().height()
-        # контент должен помещаться: тайтул + значение + подзаголовок + бар
+        # content must fit: title + value + subtitle + bar
         assert card.sizeHint().height() >= 100

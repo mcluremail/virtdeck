@@ -509,10 +509,10 @@ def load_tasks_cache() -> list[dict]:
 
 def save_resources_cache(nodes, vms, storages):
     try:
-        # Заглушки ошибок текущей сессии (status="error") не кэшируются:
-        # кэш — «последние успешные данные», а заглушки при загрузке
-        # порождают дубликаты в дереве (реальная нода хоста приходит
-        # с коротким именем, заглушка создаётся с FQDN из конфига).
+        # Error stubs of the current session (status="error") are not cached:
+        # the cache holds "last successful data", and load-time stubs
+        # create duplicates in the tree (the real host node arrives with
+        # a short name while the stub is created with the config's FQDN).
         nodes = [
             dict(o) if not isinstance(o, dict) else o
             for o in nodes

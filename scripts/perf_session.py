@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-"""M0.4: perf-бейслайн типовой сессии VirtDeck.
+"""M0.4: perf baseline of a typical VirtDeck session.
 
-Замеряет в offscreen-режиме (без сети):
-  1. startup  — конструирование MainWindow (show() в offscreen, сеть
-     исключена fake-пулом из runtime-контракта M0.2);
-  2. tree     — TreePanel.update_data/_build_tree на лестнице объёмов
-     (хосты x ВМ), median из 3 прогонов;
-  3. ceiling  — прототип стратегий вставки QTreeWidget (baseline /
-     updates-off / batch+lazy-expand) до первых десятков тысяч
-     элементов — «сколько тянет до фриза»;
-  4. detail   — DetailPanel.show_details("vm", ...) первое/повторное
-     открытие.
+Measures in offscreen mode (no network):
+  1. startup  — MainWindow construction (show() under offscreen, network
+     excluded by the fake pool of the M0.2 runtime contract);
+  2. tree     — TreePanel.update_data/_build_tree on a volume ladder
+     (hosts x VMs), median of 3 runs;
+  3. ceiling  — prototype of QTreeWidget insertion strategies
+     (baseline / updates-off / batch+lazy-expand) up to the first tens
+     of thousands of items — "how far it goes before freezing";
+  4. detail   — DetailPanel.show_details("vm", ...) first/repeat open.
 
-Результат: таблица в stdout + секция между маркерами
-<!-- PERF:DATA --> ... <!-- /PERF:DATA --> в docs/PERF_BASELINE.md
-(остальной файл не трогается). Запуск из корня репо:
+Result: a table to stdout + a section between the markers
+<!-- PERF:DATA --> ... <!-- /PERF:DATA --> in docs/PERF_BASELINE.md
+(the rest of the file is untouched). Run from the repo root:
 
     .venv/bin/python scripts/perf_session.py
 """
@@ -40,7 +39,7 @@ from tests.ui.runtime_contract import install_fake_pool, install_guard  # noqa: 
 
 
 class _MP:
-    """Мини-monkeypatch без pytest (setattr + undo)."""
+    """Minimal monkeypatch without pytest (setattr + undo)."""
 
     def __init__(self):
         self._undo = []
@@ -56,7 +55,7 @@ class _MP:
 
 
 def _timed(fn, repeats=1):
-    """Возвращает (результат, время_мс)."""
+    """Returns (result, elapsed_ms)."""
     t0 = time.perf_counter()
     res = fn()
     return res, (time.perf_counter() - t0) * 1000.0
@@ -67,7 +66,7 @@ def _median_ms(fn, repeats=3):
 
 
 def section_startup(mp):
-    """Время конструирования MainWindow (сеть исключена)."""
+    """MainWindow construction time (network excluded)."""
     from virtdeck.ui.mainwindow import MainWindow
 
     violations = install_guard(mp)
@@ -120,7 +119,7 @@ def _make_data(hosts, vms_per_host):
 
 
 def section_tree(ladder):
-    """TreePanel rebuild (update_data final=True) на лестнице объёмов."""
+    """TreePanel rebuild (update_data final=True) on the volume ladder."""
     from virtdeck.ui.tree_panel import TreePanel
 
     rows = []
@@ -141,13 +140,15 @@ def section_tree(ladder):
 
 
 def section_ceiling(sizes, batch=500):
-    """Прототип стратегий вставки QTreeWidget: доFindObject потолка.
+    """Prototype of QTreeWidget insertion strategies: up to the
+    ceiling.
 
-    Стратегии:
-      baseline    — addTopLevelItem по одному + expandAll (как сейчас);
-      updates_off — setUpdatesEnabled(False) вокруг вставки + expandAll;
-      batch_lazy  — setUpdatesEnabled(False) + insertTopLevelItems
-                    батчами + expand только верхнего уровня.
+    Strategies:
+      baseline    — addTopLevelItem one by one + expandAll (as now);
+      updates_off — setUpdatesEnabled(False) around insertion +
+                    expandAll;
+      batch_lazy  — setUpdatesEnabled(False) + insertTopLevelItems in
+                    batches + expand top level only.
     """
 
     def build(widget, top, per_top, strategy):
@@ -198,7 +199,7 @@ def section_ceiling(sizes, batch=500):
 
 
 def section_detail(cfgs):
-    """DetailPanel.show_details('vm', ...) — первое и повторное открытие."""
+    """DetailPanel.show_details('vm', ...) — first and repeat open."""
     from virtdeck.ui.detail_panel import DetailPanel
 
     cfgs_, node_repo, vm_repo = _make_data(1, 50)
@@ -223,7 +224,7 @@ def _fmt(rows, headers):
 
 
 def write_report(data_md):
-    """Пишет секцию между маркерами в docs/PERF_BASELINE.md."""
+    """Writes the section between the markers into docs/PERF_BASELINE.md."""
     path = ROOT / "docs" / "PERF_BASELINE.md"
     begin, end = "<!-- PERF:DATA -->", "<!-- /PERF:DATA -->"
     block = f"{begin}\n{data_md}\n{end}"
@@ -238,9 +239,9 @@ def write_report(data_md):
         path.write_text(text, encoding="utf-8")
         return path
     path.write_text(
-        "# Perf-бейслайн (M0.4)\n\n"
-        "Абсолютные числа — с машины разработки, не для CI-гейта "
-        "(см. ROADMAP M0.4). Повтор: `.venv/bin/python scripts/perf_session.py`.\n\n"
+        "# Perf baseline (M0.4)\n\n"
+        "Absolute numbers — from a dev machine, not a CI gate (see "
+        "ROADMAP M0.4). Re-run: `.venv/bin/python scripts/perf_session.py`.\n\n"
         + block + "\n",
         encoding="utf-8",
     )
@@ -277,17 +278,17 @@ def main():
                f"Python {platform.python_version()}, offscreen")
     date = time.strftime("%Y-%m-%d %H:%M")
     data_md = (
-        f"Последний прогон: {date} ({sysinfo})\n\n"
+        f"Last run: {date} ({sysinfo})\n\n"
         "### Startup\n\n"
         f"- MainWindow construction: **{startup_ms:.0f} ms**\n\n"
-        "### Дерево (TreePanel rebuild, median из 3)\n\n"
+        "### Tree (TreePanel rebuild, median of 3)\n\n"
         + "```\n" + _fmt(tree_rows, ["hosts", "items", "rebuild_ms"]) + "\n```\n\n"
-        "### Потолок QTreeWidget (прототип стратегий вставки)\n\n"
+        "### QTreeWidget ceiling (insertion strategy prototype)\n\n"
         + "```\n"
         + _fmt(ceil_rows, ["items", "baseline_ms", "updates_off_ms", "batch_lazy_ms"])
         + "\n```\n\n"
         "### DetailPanel.show_details (vm)\n\n"
-        f"- первое открытие: **{first:.0f} ms**, повтор: **{second:.0f} ms**\n"
+        f"- first open: **{first:.0f} ms**, repeat: **{second:.0f} ms**\n"
     )
     path = write_report(data_md)
     print(f"\nReport: {path}")

@@ -21,13 +21,13 @@ def pg_loaded():
 
 
 def apply_chart_colors(pg_mod):
-    """Ре-применение цветовой темы к графикам (load + каждая смена темы)."""
+    """Re-apply the color theme to charts (load + every theme change)."""
     pg_mod.setConfigOption('background', Color.BG)
     pg_mod.setConfigOption('foreground', Color.TEXT_SEC)
 
 
 def register_plot(widget):
-    """Регистрация живого PlotWidget для перекраски при смене темы."""
+    """Register a live PlotWidget for recoloring on theme change."""
     global _LIVE_PLOTS
     if _LIVE_PLOTS is None:
         _LIVE_PLOTS = weakref.WeakSet()
@@ -35,10 +35,11 @@ def register_plot(widget):
 
 
 def retheme_plots():
-    """Живая перекраска уже построенных графиков под активную тему.
+    """Live recoloring of already built charts to the active theme.
 
-    Кривые помечаются атрибутом `_vd_token` (имя цветового токена из Color)
-    в месте создания; фон, оси, заголовок и перья перекрашиваются здесь.
+    Curves are tagged with a `_vd_token` attribute (a Color token name)
+    where they are created; background, axes, title and pens are
+    recolored here.
     """
     pg_mod = pg_loaded()
     if pg_mod is None:
@@ -63,7 +64,7 @@ def retheme_plots():
                     di.setPen(pg_mod.mkPen(color, width=2))
                     di.setFillBrush(pg_mod.mkBrush(color + "33"))
         except (RuntimeError, AttributeError):
-            _LIVE_PLOTS.discard(w)  # C++-объект уже удалён или разобран
+            _LIVE_PLOTS.discard(w)  # C++ object already destroyed or torn down
 
 
 def ensure_pg():

@@ -1,13 +1,13 @@
-"""M2.1: единый реестр действий приложения + fuzzy-поиск для палитры.
+"""M2.1: single action registry of the application + fuzzy search for the palette.
 
-Действие описывается декларативной спецификацией ActionSpec (id, подпись,
-иконка, scope, shortcut, правило доступности, invoke-замыкание). Реестр —
-единый источник действий: из него строится командная палитра (Ctrl+K);
-контекст-меню дерева переводится на него инкрементально (M2.2), чтобы
-подписи, иконки и правила доступности жили в одном месте.
+An action is described by a declarative ActionSpec (id, label, icon,
+scope, shortcut, enabled rule, invoke closure). The registry is the
+single source of actions: the command palette (Ctrl+K) is built from
+it; the tree context menu is migrated onto it incrementally (M2.2), so
+labels, icons and enabled rules live in one place.
 
-Модуль Qt не импортирует: Selection/ActionSpec — чистые данные,
-invoke/enabled — замыкания, которые создаёт UI-слой.
+The module does not import Qt: Selection/ActionSpec are pure data,
+invoke/enabled are closures created by the UI layer.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-# Scope'ы — типы объектов дерева (ITEM_KEY_ROLE[0]) и глобальный контекст.
+# Scopes — tree object types (ITEM_KEY_ROLE[0]) and the global context.
 SCOPE_GLOBAL = "global"
 SCOPE_VM = "vm"
 SCOPE_CT = "ct"
@@ -30,35 +30,35 @@ SCOPE_GROUP = "group"
 
 @dataclass(frozen=True)
 class Selection:
-    """Дескриптор выделенного объекта дерева (или пустой).
+    """Descriptor of the selected tree object (or empty).
 
-    Заполняется TreePanel.current_selection(); используется и для
-    фильтрации действий (scope + enabled), и как аргумент invoke.
+    Filled by TreePanel.current_selection(); used both for action
+    filtering (scope + enabled) and as the invoke argument.
     """
 
     kind: str = ""
-    """Тип объекта: один из SCOPE_*; "" — ничего не выделено."""
+    """Object type: one of SCOPE_*; "" — nothing selected."""
 
     label: str = ""
-    """Человекочитаемое имя объекта (для заголовков палитры)."""
+    """Human-readable object name (for palette headers)."""
 
     host_name: str = ""
-    """virtdeck config-имя хоста (для VM — хост подключения)."""
+    """virtdeck config host name (for a VM — the connection host)."""
 
     node: str = ""
-    """Имя PVE-ноды (если известно)."""
+    """PVE node name (if known)."""
 
     vmid: int = -1
-    """VMID для VM/CT, иначе -1."""
+    """VMID for VM/CT, otherwise -1."""
 
     vm: object = None
-    """Объект domain.Vm, если выделена VM/CT (list-level данные)."""
+    """domain.Vm object if a VM/CT is selected (list-level data)."""
 
     key: tuple = ()
-    """Ключ элемента дерева: VM_KEY_ROLE-кортеж или ITEM_KEY_ROLE-кортеж."""
+    """Tree item key: VM_KEY_ROLE tuple or ITEM_KEY_ROLE tuple."""
 
     vm_keys: tuple = ()
-    """Мульти-выделение VM: ((host_name, vmid, node), …)."""
+    """VM multi-selection: ((host_name, vmid, node), ...)."""
 
     @property
     def is_empty(self) -> bool:
@@ -70,7 +70,7 @@ EMPTY_SELECTION = Selection()
 
 @dataclass(frozen=True)
 class ActionSpec:
-    """Декларативное описание действия (единый источник для палитры и меню)."""
+    """Declarative action description (single source for palette and menu)."""
 
     action_id: str
     label: str
@@ -78,23 +78,23 @@ class ActionSpec:
     scopes: frozenset = frozenset({SCOPE_GLOBAL})
     shortcut: str = ""
     keywords: tuple = ()
-    """Дополнительные термины поиска (не показываются)."""
+    """Extra search terms (not displayed)."""
 
     enabled: Callable[[Selection], bool] | None = None
-    """None — всегда доступно; иначе предикат над выделением."""
+    """None — always enabled; otherwise a predicate over the selection."""
 
     invoke: Callable[[Selection], None] | None = None
-    """Выполняющее замыкание (аргумент — выделение на момент вызова)."""
+    """Invoking closure (argument — the selection at call time)."""
 
     dangerous: bool = False
-    """Деструктивное действие — палитра подсвечивает красным."""
+    """Destructive action — the palette highlights it in red."""
 
     section: str = ""
-    """Порядковая группа (сортировка внутри совпадений): меньше — выше."""
+    """Ordering group (sorting within matches): lower is higher."""
 
 
 class ActionRegistry:
-    """Плоский реестр ActionSpec (порядок регистрации = порядок в палитре)."""
+    """Flat registry of ActionSpec (registration order = palette order)."""
 
     def __init__(self) -> None:
         self._specs: list[ActionSpec] = []
@@ -107,10 +107,10 @@ class ActionRegistry:
         return tuple(self._specs)
 
     def actions_for(self, selection: Selection) -> list[ActionSpec]:
-        """Спеки, применимые к выделению: по scope и правилу enabled.
+        """Specs applicable to the selection: by scope and the enabled rule.
 
-        Спеки с SCOPE_GLOBAL применимы всегда (в том числе при пустом
-        выделении); остальные — при совпадении типа объекта.
+        Specs with SCOPE_GLOBAL are always applicable (including with an
+        empty selection); the others — when the object type matches.
         """
         out = []
         for spec in self._specs:
@@ -124,7 +124,7 @@ class ActionRegistry:
     def search(
         self, query: str, selection: Selection, limit: int = 30
     ) -> list[ActionSpec]:
-        """Fuzzy-поиск по подписи и ключевым словам; пустой запрос — все."""
+        """Fuzzy search over the label and keywords; empty query — all."""
         specs = self.actions_for(selection)
         query = query.strip()
         if not query:
@@ -141,7 +141,7 @@ class ActionRegistry:
 
 
 def fuzzy_score(query: str, text: str) -> int:
-    """Оценка совпадения 0–100: префикс > начало слова > подстрока > подпосл."""
+    """Match score 0-100: prefix > word start > substring > subsequence."""
     if not query:
         return 1
     q = query.lower()
@@ -151,7 +151,7 @@ def fuzzy_score(query: str, text: str) -> int:
         return 100
     if idx > 0:
         return 80 if t[idx - 1] in " -_./:(" else 60
-    # Подпоследовательность: штраф за «дырки» и поздний старт.
+    # Subsequence: penalty for "holes" and a late start.
     pos = 0
     first = -1
     prev = -1

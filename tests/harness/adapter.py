@@ -1,19 +1,19 @@
-"""M4.0: requests-адаптеры харнесса — fake, запись и replay.
+"""M4.0: requests adapters of the harness — fake, record, replay.
 
-`FakeApiAdapter` обслуживает запросы обработчиком фейка
-(`FakePveApi.handle` / `FakePbsApi.handle`) — сетевых сокетов нет,
-TLS не начинается, реальный код провайдера/PBS-клиента работает как в
-продакшене. `record_into` включает запись в формат фиксстуры.
+`FakeApiAdapter` serves requests via the fake's handler
+(`FakePveApi.handle` / `FakePbsApi.handle`) — no network sockets, TLS
+never starts, the real provider/PBS-client code runs as in production.
+`record_into` turns on recording into the fixture format.
 
-`RecordingAdapter` оборачивает реальный HTTPAdapter для записи с живого
-кластера (выполняется вручную с сетью и кредами, в CI не запускается).
+`RecordingAdapter` wraps a real HTTPAdapter to record from a live
+cluster (run manually with network and credentials, never in CI).
 
-`ReplayAdapter` обслуживает запросы из записанных entry — контракт
-проверяется на ответах живого API. Совпадение — по (method, path,
-params): параметры входят в ключ (rrddata-запросы с разными timeframe —
-разные entry).
+`ReplayAdapter` serves requests from recorded entries — the contract is
+checked against live API responses. Matching is by (method, path,
+params): params are part of the key (rrddata requests with different
+timeframes are different entries).
 
-Формат фиксстуры (FIXTURE_FORMAT):
+Fixture format (FIXTURE_FORMAT):
 
     {
       "kind": "virtdeck-recording",
@@ -26,8 +26,8 @@ params): параметры входят в ключ (rrddata-запросы с 
       ]
     }
 
-`path` — без префикса `/api2/json`; `data` — значение конверта
-`{"data": ...}` (для не-200 — тело ошибки как есть).
+`path` — without the `/api2/json` prefix; `data` — the value of the
+`{"data": ...}` envelope (for non-200 — the error body as is).
 """
 
 from __future__ import annotations
@@ -44,11 +44,12 @@ FIXTURE_KIND = "virtdeck-recording"
 FIXTURE_VERSION = 1
 
 
-# ── Разбор запроса / сборка ответа ──────────────────────────────────
+# ── Request parsing / response building ─────────────────────────────
 
 
 def _parse(request) -> tuple[str, dict]:
-    """URL запроса → (path без /api2/json, params из query и form-тела)."""
+    """Request URL → (path without /api2/json, params from query and
+    form body)."""
     split = urlsplit(request.url)
     path = split.path
     if "/api2/json" in path:
@@ -89,15 +90,15 @@ def _entry(request, status: int, data: object) -> dict:
             "status": status, "data": data}
 
 
-# ── Адаптеры ────────────────────────────────────────────────────────
+# ── Adapters ────────────────────────────────────────────────────────
 
 
 class FakeApiAdapter(BaseAdapter):
-    """requests-адаптер над обработчиком фейка.
+    """requests adapter over the fake's handler.
 
     `handler(method, path, params) -> (status, data)`. `record_into` —
-    список, в который дописываются entry формата фиксстуры (запись
-    сценария в replay-файл).
+    a list that fixture-format entries are appended to (recording a
+    scenario into a replay file).
     """
 
     def __init__(self, handler, record_into: list | None = None):
@@ -116,8 +117,9 @@ class FakeApiAdapter(BaseAdapter):
 
 
 class RecordingAdapter(BaseAdapter):
-    """Live-запись с реального кластера: ответ уходит как есть,
-    entry дописывается в `entries` (см. FIXTURE_FORMAT)."""
+    """Live recording from a real cluster: the response is passed
+    through as is, the entry is appended to `entries` (see
+    FIXTURE_FORMAT)."""
 
     def __init__(self, inner: HTTPAdapter):
         self.inner = inner
@@ -139,9 +141,9 @@ class RecordingAdapter(BaseAdapter):
 
 
 class ReplayAdapter(BaseAdapter):
-    """requests-адаптер над записанными entry. Промах — AssertionError
-    с перечнем записанных путей (в прод-коде превратится в ProxmoxError
-    с тем же сообщением)."""
+    """requests adapter over recorded entries. A miss raises
+    AssertionError with the list of recorded paths (production code
+    turns it into ProxmoxError with the same message)."""
 
     def __init__(self, entries: list[dict]):
         self._index: dict[tuple, dict] = {}
@@ -159,14 +161,14 @@ class ReplayAdapter(BaseAdapter):
             known = sorted({k[1] for k in self._index})
             raise AssertionError(
                 f"replay miss: {request.method} {path} "
-                f"params={sorted(params.items())}; записано: {known}")
+                f"params={sorted(params.items())}; recorded: {known}")
         return _response(entry["status"], entry["data"])
 
     def close(self) -> None:
         pass
 
 
-# ── Фикстуры ────────────────────────────────────────────────────────
+# ── Fixtures ────────────────────────────────────────────────────────
 
 
 def save_fixture(path: str | Path, entries: list[dict], *, host: str = "",

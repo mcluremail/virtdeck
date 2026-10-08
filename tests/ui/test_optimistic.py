@@ -1,8 +1,8 @@
-"""M0.3: optimistic UI каркас «применить сразу → подтвердить/откатить».
+"""M0.3: optimistic UI skeleton — "apply now → confirm/rollback".
 
-Юнит-тесты менеджера OptimisticVMs (репозиторий + pending + токен),
-интеграция с деревом (спиннер/восстановление иконки) и сквозной поток
-MainWindow (apply по действию, confirm/rollback по сигналу воркера).
+Unit tests for the OptimisticVMs manager (repository + pending + token),
+tree integration (spinner/icon restore) and the end-to-end MainWindow
+flow (apply on action, confirm/rollback on the worker signal).
 """
 
 import pytest
@@ -73,8 +73,8 @@ class TestOptimisticVMs:
         assert repo.get("h1", 100).status is VmStatus.RUNNING
 
     def test_rollback_after_refresh_overwrite(self, repo, make_vm):
-        """Refresh затёр репозиторий реальными данными — откат вернёт
-        прежний статус, а не optimistic-промежуточный."""
+        """Refresh overwrote the repository with real data — rollback restores
+        the previous status, not the optimistic intermediate."""
         opt = OptimisticVMs(repo)
         token = opt.apply("h1", 100, "stop")
         repo.add(
@@ -153,8 +153,8 @@ class TestTreePending:
         return None
 
     def _icon_png(self, item):
-        """Пиксельное содержимое иконки (cacheKey ненадёжен: QIcon
-        пересоздаётся при каждом get_icon/make_loading_icon)."""
+        """Pixel content of the icon (cacheKey is unreliable: QIcon is
+        recreated on every get_icon/make_loading_icon)."""
         buf = QBuffer()
         buf.open(QIODevice.OpenModeFlag.WriteOnly)
         item.icon(0).pixmap(16, 16).save(buf, "PNG")
@@ -190,8 +190,8 @@ class TestTreePending:
 
 
 def test_mainwindow_optimistic_flow(main_window, offline, make_vm):
-    """Сквозной поток: действие из дерева → optimistic-статус → сигнал
-    воркера подтверждает/откатывает."""
+    """End-to-end: tree action → optimistic status → worker signal
+    confirms/rolls back."""
     violations, pool = offline
     mw = main_window
     mw._cfg_by_name["h1"] = {"name": "h1", "type": "pve"}
@@ -199,7 +199,7 @@ def test_mainwindow_optimistic_flow(main_window, offline, make_vm):
         make_vm(vmid=100, name="alpha", host_name="h1", node="pve01", status=VmStatus.RUNNING)
     )
 
-    # start не требует подтверждения (не в _CONFIRM_ACTIONS).
+    # start needs no confirmation (not in _CONFIRM_ACTIONS).
     mw._on_vm_action_from_tree("h1", "pve01", 100, "start")
     assert mw._vm_repo.get("h1", 100).status is VmStatus.RUNNING
     assert mw._optimistic.pending_keys() == {("h1", 100)}
@@ -217,8 +217,8 @@ def test_mainwindow_optimistic_flow(main_window, offline, make_vm):
 
 
 def test_mainwindow_actions_still_offline(main_window, offline):
-    """Контракт M0.2 не нарушен optimistic-интеграцией: прогон actions
-    MainWindow не делает сетевых вызовов."""
+    """The M0.2 contract survives optimistic integration: running actions
+    on MainWindow makes no network calls."""
     violations, _ = offline
     mw = main_window
     actions = mw.findChildren(QAction)
@@ -226,6 +226,6 @@ def test_mainwindow_actions_still_offline(main_window, offline):
     from tests.ui.test_runtime_contract import _run_and_report
 
     report = _run_and_report(actions, violations, "mainwindow-optimistic")
-    assert not report, "Синхронные сетевые вызовы в UI-потоке:\n" + "\n".join(
+    assert not report, "Synchronous network calls on the UI thread:\n" + "\n".join(
         f"{k}\n  " + "\n  ".join(v) for k, v in report.items()
     )

@@ -1,8 +1,8 @@
-"""M2.3: тесты спецификаций действий (register_tree_actions, build_registry).
+"""M2.3: action spec tests (register_tree_actions, build_registry).
 
-Спеки дерева — единый источник контекст-меню и палитры: invoke эмитит
-сигналы TreePanel (или вызывает его контекстные методы), enabled —
-предикаты по статусу/шаблону/мульти-выделению.
+Tree specs are the single source for the context menu and palette:
+invoke emits TreePanel signals (or calls its context methods),
+enabled holds predicates on status/template/multi-selection.
 """
 from virtdeck.ui.action_registry import (
     SCOPE_CLUSTER,
@@ -30,7 +30,7 @@ class _FakeSignal:
 
 
 class _FakeTree:
-    """Стаб TreePanel: сигналы invoke + записи контекстных вызовов."""
+    """TreePanel stub: invoke signals + context call records."""
 
     def __init__(self):
         self.vm_action_requested = _FakeSignal()
@@ -55,7 +55,7 @@ class _FakeTree:
         self.action_registry = ActionRegistry()
         register_tree_actions(self.action_registry, self)
 
-    # Контекстные приёмники (на настоящем TreePanel — хелперы с guards).
+    # Context receivers (real TreePanel uses guarded helpers).
     def cluster_create_vm(self, name):
         self.calls.append(("cluster_create_vm", name))
 
@@ -122,7 +122,7 @@ class TestVMActionSpecs:
         tree = _FakeTree()
         enabled = _enabled_map(tree, _sel(_FakeVm(status="paused")))
         assert enabled["vm.resume"] is True
-        # паритет со старым меню: Start запрещён только для running
+        # parity with the old menu: Start forbidden only for running
         assert enabled["vm.start"] is True
         assert enabled["vm.console"] is False
 
@@ -134,9 +134,9 @@ class TestVMActionSpecs:
                  "vm.convert_to_template", "vm.ha_add", "vm.ha_remove"))
         assert enabled["vm.migrate"] is False
         assert enabled["vm.ha_add"] is False
-        assert enabled["vm.clone"] is None          # без предиката
+        assert enabled["vm.clone"] is None          # no predicate
         assert enabled["vm.ha_remove"] is None
-        assert enabled["vm.convert_to_vm"] is True  # шаблон → в VM
+        assert enabled["vm.convert_to_vm"] is True  # template → VM
         assert enabled["vm.convert_to_template"] is False
 
     def test_running_vm_convert_to_template_disabled(self):
@@ -250,7 +250,7 @@ class TestObjectActionSpecs:
 
 
 class _StubWindow:
-    """Стаб mainwindow: обработчики-рекордеры + tree_panel-стаб."""
+    """Mainwindow stub: recorder handlers + tree_panel stub."""
 
     def __init__(self):
         self.log = []
@@ -268,7 +268,7 @@ class _StubWindow:
         }
 
     def __getattr__(self, name):
-        # Ленивые обработчики-рекордеры: действие пишет свой id в log.
+        # Lazy recorder handlers: each action logs its own id.
         if name in self._handlers.values() or name.startswith("_on_"):
             return lambda *a, n=name: self.log.append(n)
         raise AttributeError(name)
@@ -301,7 +301,7 @@ class TestBuildRegistry:
         assert win.log == ["delete"]
 
     def test_registry_specs_shared_with_tree(self):
-        """Спеки в реестре палитры — те же объекты, что у TreePanel."""
+        """Specs in the palette registry are the same objects as TreePanel's."""
         win = _StubWindow()
         reg = build_registry(win)
         tree_specs = {s.action_id: s for s in win.tree_panel.action_registry.all()}

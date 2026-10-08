@@ -322,8 +322,8 @@ class TestBundle:
         assert config.load_config()[0]["token_value"] == "secret-1"
 
     def test_import_preserves_type_port_proxy(self, cfg_dir, fake_keyring, monkeypatch):
-        """Регресс: import не должен терять type/port/proxy — иначе PBS-сервер
-        после переноса бандла превращается в битый PVE-хост."""
+        """Regression: import must not lose type/port/proxy — otherwise the PBS
+        server turns into a broken PVE host after a bundle move."""
         monkeypatch.setattr(config, "_ask_password", lambda mode="enter": "password123")
         pbs = make_cfg("pbs1", "10.1.0.1", type="pbs", port=8007,
                        proxy="http://squid:3128")

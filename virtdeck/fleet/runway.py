@@ -1,14 +1,15 @@
-"""M4.3: storage runway — прогноз «хранилище кончится через ~N дней».
+"""M4.3: storage runway — "storage runs out in ~N days" forecast.
 
-Вход — ряд rrddata хранилища (GET /nodes/{node}/storage/{store}/rrddata):
-точки ``{time, used, total}``, причём used/total бывают None (дыры
-rrdcached, офлайны) — наивная линейность по дырявому ряду врёт (B24).
-Модель: МНК по последнему окну, доверительный интервал 95% на наклоне
-(нормальная аппроксимация, только при достаточно плотном ряде).
+Input is a storage rrddata series
+(GET /nodes/{node}/storage/{store}/rrddata): points ``{time, used,
+total}`` where used/total may be None (rrdcached holes, outages) —
+naive linearity over a holey series lies (B24). Model: least squares
+over the last window, 95% confidence interval on the slope (normal
+approximation, only with a sufficiently dense series).
 
-Качество прогноза: ``ok`` (n >= 8, есть CI) / ``sparse`` (точек мало —
-точечная оценка без CI) / ``no-trend`` (наклон <= 0 — не кончится) /
-``no-capacity`` (unknown total) / ``no-data`` (меньше 2 точек).
+Forecast quality: ``ok`` (n >= 8, CI present) / ``sparse`` (few points —
+point estimate without CI) / ``no-trend`` (slope <= 0 — never fills) /
+``no-capacity`` (unknown total) / ``no-data`` (fewer than 2 points).
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ SECONDS_PER_DAY = 86400.0
 _Z95 = 1.96
 _MIN_POINTS_FOR_CI = 8
 
-# качество прогноза
+# forecast quality
 OK = "ok"
 SPARSE = "sparse"
 NO_TREND = "no-trend"
@@ -34,15 +35,15 @@ class RunwayEstimate:
     node: str
     storage: str
     used_bytes: int | None
-    """Последний известный used."""
+    """Last known used."""
     total_bytes: int | None
     slope_bytes_per_day: float | None
     days_left: float | None
-    """Точечная оценка; None — не кончится или прогноз невозможен."""
+    """Point estimate; None — never fills or forecast impossible."""
     days_left_low: float | None
-    """Пессимистичная граница (наклон сверху CI)."""
+    """Pessimistic bound (slope at the upper CI)."""
     days_left_high: float | None
-    """Оптимистичная граница (наклон снизу CI)."""
+    """Optimistic bound (slope at the lower CI)."""
     points_used: int
     quality: str
 
@@ -54,13 +55,13 @@ def _valid_points(series: Sequence[dict]) -> list[tuple[float, float]]:
         try:
             points.append((float(t), float(used)))
         except (TypeError, ValueError):
-            continue  # дыры rrddata (None/мусор) отбрасываются
+            continue  # rrddata holes (None/garbage) are dropped
     points.sort()
     return points
 
 
 def _fit(points: list[tuple[float, float]]) -> tuple[float, float, float]:
-    """МНК: (наклон/день, свободный член, стандартная ошибка наклона)."""
+    """Least squares: (slope/day, intercept, slope standard error)."""
     n = len(points)
     x0 = points[0][0]
     xs = [(t - x0) / SECONDS_PER_DAY for t, _u in points]
@@ -89,10 +90,10 @@ def _days_until_full(total: float, used_now: float,
 def estimate_runway(series: Sequence[dict], *, node: str = "",
                     storage: str = "", window_days: int = 30) \
         -> RunwayEstimate:
-    """Прогноз по ряду rrddata (см. докмодуль)."""
+    """Forecast from an rrddata series (see module doc)."""
     points = _valid_points(series)
 
-    # total — из самой свежей точки ряда, где он известен и положителен.
+    # total — from the freshest series point where it is known and positive.
     total: float | None = None
     total_ts: float | None = None
     for row in series:
@@ -136,7 +137,7 @@ def estimate_runway(series: Sequence[dict], *, node: str = "",
                               days_left_low=None, days_left_high=None,
                               points_used=len(points), quality=SPARSE,
                               **base)
-    # CI 95% на наклоне: пессимизм — наклон сверху (заполнится раньше).
+    # 95% CI on the slope: pessimism is the upper slope (fills sooner).
     slope_hi = slope + _Z95 * se
     slope_lo = slope - _Z95 * se
     low = _days_until_full(total, used_now, slope_hi) \

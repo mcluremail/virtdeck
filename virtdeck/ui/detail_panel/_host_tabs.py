@@ -34,6 +34,7 @@ from ..utils import format_uptime as _format_uptime
 from ..utils import status_text
 from ._constants import TabIndex, _progress_style
 from ._table_utils import (
+    fit_table_height,
     loading_label,
     make_table,
     safe_pct,
@@ -400,8 +401,10 @@ class HostTabs:
         self.panel.cluster_quorum_label.setStyleSheet("font-size: 12px; padding: 4px 8px;")
         quorum_layout.addWidget(self.panel.cluster_quorum_label)
         self.panel.cluster_quorum_table = make_table(
-            [tr("Node"), tr("Online"), tr("Quorum votes"), tr("Ring 0 addr"), tr("Ring 1 addr")],
-            [(QHeaderView.Interactive, 120), (QHeaderView.Interactive, 60),
+            # Online column removed (2026-10-08 audit): duplicates the node
+            # status from the host list right below the table
+            [tr("Node"), tr("Quorum votes"), tr("Ring 0 addr"), tr("Ring 1 addr")],
+            [(QHeaderView.Interactive, 120),
              (QHeaderView.Interactive, 90), (QHeaderView.Stretch, None),
              (QHeaderView.Stretch, None)],
         )
@@ -1794,9 +1797,9 @@ class HostTabs:
     # --- backup jobs fetch / populate ---
 
     def _detect_pve_major(self, cfg_or_host):
-        """M0.5: major из pve_version_raw через compat-матрицу.
+        """M0.5: major from pve_version_raw via the compat matrix.
 
-        Неизвестная версия → 7 (самый совместимый маршрут backup API).
+        Unknown version -> 7 (the most compatible backup API route).
         """
         from ...domain.compat import parse_pve_version
 
@@ -1966,17 +1969,14 @@ class HostTabs:
         table.setRowCount(len(data.nodes))
         for i, node in enumerate(data.nodes):
             table.setItem(i, 0, QTableWidgetItem(node.name))
-            online_item = QTableWidgetItem(tr("Yes") if node.online else tr("No"))
-            if node.online:
-                online_item.setForeground(QColor(Color.STATUS_OK))
-            else:
-                online_item.setForeground(QColor(Color.STATUS_ERR))
-            table.setItem(i, 1, online_item)
-            table.setItem(i, 2, QTableWidgetItem(node.votes_display))
-            table.setItem(i, 3, QTableWidgetItem(node.ring0_display))
-            table.setItem(i, 4, QTableWidgetItem(node.ring1_addr))
+            table.setItem(i, 1, QTableWidgetItem(node.votes_display))
+            table.setItem(i, 2, QTableWidgetItem(node.ring0_display))
+            table.setItem(i, 3, QTableWidgetItem(node.ring1_addr))
         table.resizeRowsToContents()
         table.setSortingEnabled(True)
+        # fit to content: unconstrained, the table ate half the page with
+        # just a couple of nodes, squeezing the host list below it
+        fit_table_height(table)
 
         panel.cluster_quorum_widget.setVisible(True)
 
@@ -1988,6 +1988,7 @@ class HostTabs:
             f"font-size: 12px; padding: 4px 8px; color: {Color.STATUS_WARN};"
         )
         panel.cluster_quorum_table.setRowCount(0)
+        fit_table_height(panel.cluster_quorum_table)
         panel.cluster_quorum_widget.setVisible(True)
 
     # ------------------------------------------------------------------

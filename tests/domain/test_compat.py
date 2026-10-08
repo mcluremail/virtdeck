@@ -1,4 +1,4 @@
-"""M0.5: парсинг версий PVE и compat-матрица фич."""
+"""M0.5: PVE version parsing and the feature compat matrix."""
 
 import pytest
 
@@ -17,7 +17,7 @@ class TestParsePveVersion:
         ("raw", "expected"),
         [
             ("pve-manager/8.2.4/1ac2f4b0f", (8, 2, 4)),
-            ("pve-manager/7.4-3/0615a192", (7, 4, 3)),  # формат 7.x
+            ("pve-manager/7.4-3/0615a192", (7, 4, 3)),  # 7.x format
             ("7.2-1", (7, 2, 1)),
             ("pve-manager/9.0.6/xyz", (9, 0, 6)),
             ("8.2.4", (8, 2, 4)),
@@ -38,7 +38,7 @@ class TestParsePveVersion:
             assert v.as_tuple() == expected
 
     def test_hash_part_is_not_mistaken_for_version(self):
-        """Хэш '1ac2f4b' не принимается за версию (не числовые компоненты)."""
+        """The '1ac2f4b' hash is not mistaken for a version (non-numeric parts)."""
         assert parse_pve_version("pve-manager/1ac2f4b/8.2.4") == PveVersion(8, 2, 4)
 
 
@@ -68,7 +68,7 @@ class TestSupports:
             PVE_FEATURES.pop("test_feat_xyz", None)
 
     def test_patch_version_does_not_gate_feature(self):
-        """Фичи гейтятся по (major, minor), патч не важен."""
+        """Features are gated on (major, minor); the patch is irrelevant."""
         assert supports(PveVersion(8, 0, 99), "guest_tags") is True
 
     def test_str_short_form(self):
@@ -77,7 +77,7 @@ class TestSupports:
 
 
 def test_compat_module_is_pure():
-    """domain/compat не тянет сеть/Qt — только stdlib (AST-скан импортов)."""
+    """domain/compat pulls no network/Qt — stdlib only (AST import scan)."""
     import ast
     import pathlib
 

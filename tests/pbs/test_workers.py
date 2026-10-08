@@ -1,7 +1,7 @@
 """Tests for virtdeck.pbs.workers — PbsApiWorker lifecycle.
 
-Регресс аудита 2026-09-09: провайдер (requests.Session) закрывается в
-finally — и при успехе, и при ошибке (раньше не закрывался вовсе).
+Regression from the 2026-09-09 audit: the provider (requests.Session) is
+closed in finally — on success and on error (previously never closed).
 """
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def _run_worker(cfg):
     signals.done.connect(lambda tag, res: results.append(res))
     signals.failed.connect(lambda tag, err: failures.append(err))
     w = PbsApiWorker(cfg, "datastores")
-    w.run()  # QThreadPool не нужен: run() вызываем напрямую
+    w.run()  # no QThreadPool needed: run() called directly
     return results, failures
 
 

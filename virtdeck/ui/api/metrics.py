@@ -54,7 +54,7 @@ class HostMetricsSignals(_FinishedMixin):
     error_occurred = Signal(str)
 
 class StorageMetricsWorker(QRunnable):
-    """Загружает RRD-данные для хранилища (заполнение по времени)."""
+    """Fetch RRD data for a storage (fill level over time)."""
     def __init__(self, host_cfg, node_name, storage_name, timeframe='hour'):
         super().__init__()
         self.host_cfg = host_cfg
@@ -452,7 +452,7 @@ class DiskSignals(_FinishedMixin):
     disks_error = Signal(str, str)
 
 class StorageDisksWorker(QRunnable):
-    """Собирает диски ВМ на указанном storage из VM configs (параллельно)."""
+    """Collect guest disks on the given storage from VM configs (in parallel)."""
     def __init__(self, host_cfg, node_name, storage_name, all_vms):
         super().__init__()
         self.host_cfg = host_cfg
@@ -494,7 +494,7 @@ class StorageDisksWorker(QRunnable):
                     for key, val in config.items():
                         val_str = str(val)
                         if ":" in val_str and val_str.startswith(prefix):
-                            # Пропускаем CDROM (ISO образы)
+                            # Skip CDROM (ISO images)
                             if "media=cdrom" in val_str:
                                 continue
                             volpath = val_str.split(",")[0]
@@ -523,9 +523,9 @@ class StorageDisksWorker(QRunnable):
                 finally:
                     s.close()
 
-            # executor.map возвращает ленивый итератор — без list() futures не
-            # создаются и потоки не стартуют. Список результатов не нужен, но
-            # итератор должен быть материализован, чтобы воркеры запустились.
+            # executor.map returns a lazy iterator — without list() the futures
+            # are never created and threads never start. The result list is not
+            # needed, but the iterator must be materialized so workers run.
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
                 list(executor.map(fetch_vm_config, self.all_vms))
 
@@ -565,7 +565,7 @@ class StorageDisksWorker(QRunnable):
 
 
 class HostMetricsWorker(QRunnable):
-    """Загружает RRD-данные для узла Proxmox (ЦП, RAM, сеть)."""
+    """Fetch RRD data for a Proxmox node (CPU, RAM, network)."""
     def __init__(self, host_cfg, node_name, timeframe='hour'):
         super().__init__()
         self.host_cfg = host_cfg
@@ -614,7 +614,7 @@ class HostMetricsWorker(QRunnable):
 
 
 class MetricsWorker(QRunnable):
-    """Загружает RRD-данные для ВМ/CT (ЦП, RAM, сеть, диск)."""
+    """Fetch RRD data for a VM/CT (CPU, RAM, network, disk)."""
     def __init__(self, host_cfg, node_name, vmid, vm_type='qemu', timeframe='hour'):
         super().__init__()
         self.host_cfg = host_cfg

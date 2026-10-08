@@ -74,6 +74,20 @@ def make_loading_stack(content_widget, text=None):
     return stack
 
 
+def fit_table_height(table, max_h: int = 260) -> None:
+    """Fit table height to content: header + rows (+2px frame).
+
+    Unconstrained, a QTableWidget in a stretched layout takes its own
+    sizeHint (~256px or more) regardless of the row count — with a couple
+    of rows dead space is left under the table and neighboring widgets
+    get squeezed out. If rows exceed max_h, an internal vertical
+    scrollbar kicks in.
+    """
+    rows = sum(table.rowHeight(r) for r in range(table.rowCount()))
+    h = table.horizontalHeader().height() + rows + 2
+    table.setFixedHeight(min(max(h, 40), max_h))
+
+
 def make_table(headers, col_specs, sortable=False):
     table = QTableWidget()
     table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -83,19 +97,20 @@ def make_table(headers, col_specs, sortable=False):
     autofit_cols = []
     for col, (mode, width) in enumerate(col_specs):
         if mode in (QHeaderView.ResizeToContents, QHeaderView.Fixed):
-            # Auto-режимы не дают тянуть колонку мышью — Interactive + autofit.
+            # Auto modes do not allow dragging the column with the mouse —
+            # Interactive + autofit.
             mode = QHeaderView.Interactive
             autofit_cols.append(col)
         elif mode == QHeaderView.Stretch:
             mode = QHeaderView.Interactive
             if col != len(col_specs) - 1:
-                # Средние Stretch-колонки подбираются по содержимому;
-                # последняя становится заполнителем (stretchLastSection).
+                # Middle Stretch columns are sized by content; the last one
+                # becomes the filler (stretchLastSection).
                 autofit_cols.append(col)
         table.horizontalHeader().setSectionResizeMode(col, mode)
         if width is not None:
             table.setColumnWidth(col, width)
-    # Таблица всегда заполняет ширину панели: последняя колонка тянется.
+    # The table always fills the panel width: the last column stretches.
     table.horizontalHeader().setStretchLastSection(True)
     enable_column_reorder(table.horizontalHeader())
     if autofit_cols:

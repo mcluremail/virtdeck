@@ -1,16 +1,17 @@
-"""Domain: модели и чистая агрегация Fleet Health (M4.2).
+"""Domain: Fleet Health models and pure aggregation (M4.2).
 
-Отчёт собирается из независимых read-only источников (resources,
-backup jobs, task history, версии нод, storage usage); каждый источник
-может отвалиться отдельно — частичный сбор отражается в ``errors`` и
-``complete=False``, отчёт остаётся полезным («данные от HH:MM» —
-``generated_at`` + перечень ошибок). Сопоставление покрытия — в
-``backup_coverage``; здесь только агрегация и сборка отчёта.
+The report is assembled from independent read-only sources (resources,
+backup jobs, task history, node versions, storage usage); each source
+may fail separately — a partial collection is reflected in ``errors``
+and ``complete=False``, the report stays useful ("data as of HH:MM" —
+``generated_at`` + the error list). Coverage matching lives in
+``backup_coverage``; this module only aggregates and assembles the
+report.
 
-«Последний успешный бэкап» (B24) — из двух источников:
-- task history (vzdump-таски): есть на любом кластере, без маппинга;
-- PBS-снапшоты (``client.snapshots``) — точнее, передаются готовым
-  маппингом ``{(backup-type, backup-id): ts}``.
+"Last successful backup" (B24) — from two sources:
+- task history (vzdump tasks): available on any cluster, no mapping;
+- PBS snapshots (``client.snapshots``) — more precise, passed in as a
+  ready ``{(backup-type, backup-id): ts}`` mapping.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from dataclasses import dataclass, replace
 
 from .backup_coverage import BackupJob, Coverage, Guest, compute_coverage
 
-# backup-type в PBS для типов гостей PVE.
+# PBS backup-type for PVE guest types.
 _PBS_TYPE = {"qemu": "vm", "lxc": "lxc"}
 
 _UPID_TYPE_SLOT = 5
@@ -29,24 +30,24 @@ _UPID_START_SLOT = 4
 
 
 def _upid_field(upid: str, slot: int) -> str:
-    """Слот UPID: UPID:<node>:<pid>:<pstart>:<starttime>:<type>:<vmid>:<user>."""
+    """UPID slot: UPID:<node>:<pid>:<pstart>:<starttime>:<type>:<vmid>:<user>."""
     parts = upid.split(":")
     return parts[slot] if len(parts) > slot else ""
 
 
 @dataclass(frozen=True)
 class GuestBackupState:
-    """Состояние бэкапов одного гостя (по всем источникам)."""
+    """Backup state of one guest (across all sources)."""
 
     vmid: int
     task_last_ok: int | None = None
-    """Epoch последнего успешного vzdump-таска."""
+    """Epoch of the last successful vzdump task."""
     task_last_attempt: int | None = None
-    """Epoch последнего vzdump-таска (любого, включая незавершённый)."""
+    """Epoch of the last vzdump task (any, including unfinished)."""
     task_last_failed: int | None = None
-    """Epoch последнего завершившегося неудачей vzdump-таска."""
+    """Epoch of the last failed vzdump task."""
     pbs_last_ok: int | None = None
-    """Epoch последнего PBS-снапшота без failed-верификации."""
+    """Epoch of the last PBS snapshot without a failed verification."""
 
     @property
     def last_successful(self) -> int | None:
@@ -61,7 +62,7 @@ class GuestBackupState:
 
 @dataclass(frozen=True)
 class CollectError:
-    """Ошибка сбора одного источника одного кластера."""
+    """Collection error of a single source of a single cluster."""
 
     cluster: str
     source: str
@@ -71,7 +72,7 @@ class CollectError:
 
 @dataclass(frozen=True)
 class ClusterFleetReport:
-    """Собранный отчёт по одному кластеру на момент generated_at."""
+    """Collected report for one cluster as of generated_at."""
 
     cluster: str
     generated_at: int
@@ -79,20 +80,20 @@ class ClusterFleetReport:
     errors: tuple[CollectError, ...]
     guests: tuple[Guest, ...]
     coverage: Coverage | None
-    """None — если resources или backup jobs собрать не удалось."""
+    """None — if resources or backup jobs could not be collected."""
     backup_states: Mapping[int, GuestBackupState]
     node_versions: Mapping[str, str]
     """node → pveversion raw (drift, M4.3)."""
     storage_usage: tuple[dict, ...]
-    """Строки /nodes/{node}/storage, помеченные 'node' (runway, M4.3)."""
+    """/nodes/{node}/storage rows tagged 'node' (runway, M4.3)."""
 
 
 @dataclass(frozen=True)
 class FleetReport:
-    """Сводка по всем независимым кластерам («весь парк одним взглядом»)."""
+    """Summary over all independent clusters ("the whole fleet at a glance")."""
 
     generated_at: int
-    """Самый ранний generated_at участников — честное «данные от HH:MM»."""
+    """Earliest generated_at of the members — an honest "data as of HH:MM"."""
     clusters: tuple[ClusterFleetReport, ...]
 
     @property
@@ -105,7 +106,7 @@ class FleetReport:
 
 
 def merge_fleet_reports(reports: Sequence[ClusterFleetReport]) -> FleetReport:
-    """Объединить отчёты кластеров (сбор может идти параллельно)."""
+    """Merge cluster reports (collection may run in parallel)."""
     return FleetReport(
         generated_at=min((r.generated_at for r in reports), default=0),
         clusters=tuple(reports),
@@ -113,7 +114,7 @@ def merge_fleet_reports(reports: Sequence[ClusterFleetReport]) -> FleetReport:
 
 
 def _task_aggregates(tasks: Sequence[dict]) -> dict[int, dict]:
-    """vzdump-таски по vmid: последние ok/attempt/failed (по starttime)."""
+    """vzdump tasks per vmid: latest ok/attempt/failed (by starttime)."""
     agg: dict[int, dict] = {}
     for row in tasks:
         upid = str(row.get("upid") or "")
@@ -133,7 +134,7 @@ def _task_aggregates(tasks: Sequence[dict]) -> dict[int, dict]:
             bucket["task_last_attempt"] = starttime
         status = row.get("status")
         if status is None:
-            continue  # таск ещё выполняется — только attempt
+            continue  # task still running — attempt only
         if str(status) == "OK":
             if bucket["task_last_ok"] is None \
                     or starttime > bucket["task_last_ok"]:
@@ -156,7 +157,7 @@ def _row_vmid(row: dict, upid: str) -> int | None:
 
 
 def _row_starttime(row: dict, upid: str) -> int | None:
-    """starttime: поле строки — int; слот UPID — hex."""
+    """starttime: row field is int; UPID slot is hex."""
     raw = row.get("starttime")
     if raw is not None:
         try:
@@ -172,11 +173,11 @@ def _row_starttime(row: dict, upid: str) -> int | None:
 
 def last_pbs_backup_times(snapshots: Iterable[dict]) \
         -> dict[tuple[str, str], int]:
-    """(backup-type, backup-id) → время последнего бэкапа.
+    """(backup-type, backup-id) → time of the last backup.
 
-    Снапшоты с verify-state 'failed' исключаются: сломанная копия не
-    считается успешным бэкапом. Отсутствие верификации ('none', '') —
-    копия учитывается (её просто не проверяли).
+    Snapshots with verify-state 'failed' are excluded: a broken copy is
+    not a successful backup. Missing verification ('none', '') — the
+    copy still counts (it was simply never checked).
     """
     out: dict[tuple[str, str], int] = {}
     for snap in snapshots:
@@ -198,11 +199,11 @@ def last_pbs_backup_times(snapshots: Iterable[dict]) \
 def build_backup_states(tasks: Sequence[dict], guests: Sequence[Guest],
                         pbs_times: Mapping[tuple[str, str], int]
                         ) -> dict[int, GuestBackupState]:
-    """Состояние бэкапов на гостя: task history + опционально PBS.
+    """Per-guest backup state: task history + optional PBS.
 
-    Включает каждого гостя сцены (и «никогда не бэкапился» — тоже
-    состояние). ВМ, виденная в тасках, но отсутствующая в resources
-    (удалена между запусками), получает состояние по таскам.
+    Includes every scene guest ("never backed up" is a state too). A VM
+    seen in tasks but missing from resources (removed between runs) gets
+    its state from tasks alone.
     """
     by_vmid = {g.vmid: g for g in guests}
     states: dict[int, GuestBackupState] = {}
@@ -228,11 +229,11 @@ def build_cluster_report(
     pbs_last_backups: Mapping[tuple[str, str], int] | None = None,
     errors: Sequence[CollectError] = (),
 ) -> ClusterFleetReport:
-    """Собрать отчёт кластера из собранных данных (чистая функция).
+    """Assemble a cluster report from collected data (pure function).
 
-    ``resources is None`` или ``backup_jobs is None`` (источник упал) →
-    coverage не считается вовсе, чтобы не предъявлять ложный отчёт о
-    покрытии на неполных данных.
+    ``resources is None`` or ``backup_jobs is None`` (source failed) →
+    coverage is not computed at all, to avoid presenting a false coverage
+    report based on incomplete data.
     """
     guests: tuple[Guest, ...] = ()
     coverage: Coverage | None = None

@@ -1,4 +1,4 @@
-"""Бренд: ассеты дизайнера рендерятся, локап и трей-состояния."""
+"""Brand: designer assets render, locale and tray states."""
 
 import pytest
 
@@ -78,7 +78,7 @@ class TestBrandWidget:
         assert w._variant == "light"
 
     def test_toolbar_lockup(self, main_window):
-        """Локап заменяет текстовую надпись справа в тулбаре."""
+        """Locale replaces the text label on the right of the toolbar."""
         widget = main_window._brand
         assert isinstance(widget, brand.BrandWidget)
         assert not widget._label.pixmap().isNull()

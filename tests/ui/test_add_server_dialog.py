@@ -1,6 +1,6 @@
-"""Тесты AddServerDialog: порты PVE/PBS, кнопка токена, автоопределение кластера.
+"""AddServerDialog tests: PVE/PBS ports, token button, cluster detection.
 
-Регрессии первого запуска v3.0 (docs/FIRST_RUN_ISSUES.md #1-#3).
+Regressions from the v3.0 first run (docs/FIRST_RUN_ISSUES.md #1-#3).
 """
 
 import pytest
@@ -46,7 +46,7 @@ class TestPorts:
 
 class TestTokenShowButton:
     def test_button_sized_to_content(self, dialog):
-        """Кнопка без фиксированной ширины: «Показать» не обрезается."""
+        """Button without fixed width: "Show" is not clipped."""
         assert dialog._token_show_btn.minimumWidth() <= 0 or \
             dialog._token_show_btn.minimumWidth() < 60
         dialog._token_show_btn.setText("Показать")
@@ -92,7 +92,7 @@ class TestClusterAutoDetect:
         assert cfg["cluster"] is False
 
     def test_single_node_cluster_is_standalone(self, dialog):
-        """Ответ без записи type=cluster (одиночная нода) — не кластер."""
+        """Response without a type=cluster entry (single node) — not a cluster."""
         dialog._on_token_ready({
             "token_name": "virtdeck-abc123", "token_value": "v",
             "user": "root@pam",

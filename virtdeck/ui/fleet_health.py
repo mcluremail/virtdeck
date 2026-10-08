@@ -1,10 +1,11 @@
-"""Fleet Health (M4.5): сводный отчёт по всем кластерам парка.
+"""Fleet Health (M4.5): summary report across all fleet clusters.
 
-«Весь парк одним взглядом»: backup compliance, version drift, storage
-runway и (по кнопке) snapshot sprawl. Отчёт показывает «что где красное»:
-цвет строки по серьёзности; двойной клик по гостю — переход к объекту
-в дереве. Частичный сбор не опустошает отчёт: плашка «данные от HH:MM»
-у кластера, у которого не все источники собрались.
+"The whole fleet at a glance": backup compliance, version drift,
+storage runway and (on demand) snapshot sprawl. The report shows
+"what is red where": row color by severity; double-click on a guest —
+navigate to the object in the tree. A partial collection does not empty
+the report: a "data as of HH:MM" badge on a cluster whose sources did
+not all collect.
 """
 
 from __future__ import annotations
@@ -39,7 +40,7 @@ RUNWAY_WARN_DAYS = 30
 RUNWAY_DANGER_DAYS = 7
 SPRAWL_DANGER_DAYS = 90
 
-# severity строки: 2 — красная, 1 — жёлтая, 0 — нейтральная
+# row severity: 2 — red, 1 — yellow, 0 — neutral
 _SEV_RED, _SEV_WARN, _SEV_PLAIN = 2, 1, 0
 
 _SECTIONS = (
@@ -56,7 +57,7 @@ class _ScanSignals(QObject):
 
 
 class FleetHealthDialog(QDialog):
-    """Сводный отчёт по парку; emits the tree key of a chosen object."""
+    """Fleet-wide summary report; emits the tree key of a chosen object."""
 
     object_selected = Signal(tuple)
 
@@ -111,11 +112,11 @@ class FleetHealthDialog(QDialog):
         enable_table_autofit(self._tree, [0, 1, 2], max_width=360)
         self._tree.header().setStretchLastSection(True)
 
-    # ── Загрузка отчёта ─────────────────────────────────────────────
+    # ── Report loading ──────────────────────────────────────────────
 
     def _load(self) -> None:
         if self._worker is not None:
-            return  # сбор уже идёт
+            return  # collection already running
         self._refresh_btn.setEnabled(False)
         self._scan_btn.setEnabled(False)
         self._status.setText(tr("Loading fleet data..."))
@@ -130,7 +131,7 @@ class FleetHealthDialog(QDialog):
         self._scan_btn.setEnabled(True)
         self._render()
 
-    # ── Snapshot sprawl по кнопке ───────────────────────────────────
+    # ── Snapshot sprawl on demand ───────────────────────────────────
 
     def _scan_snapshots(self) -> None:
         if self._scan_thread is not None or not self._bundles:
@@ -160,7 +161,7 @@ class FleetHealthDialog(QDialog):
             self._scan_btn.setEnabled(True)
             self._render()
 
-    # ── Рендер ──────────────────────────────────────────────────────
+    # ── Rendering ───────────────────────────────────────────────────
 
     def _render(self) -> None:
         self._tree.clear()
@@ -180,7 +181,7 @@ class FleetHealthDialog(QDialog):
         if report.complete:
             status = "OK"
         elif report.coverage is None:
-            status = "error"  # основной сбор не состоялся вовсе
+            status = "error"  # main collection never happened
         else:
             status = "warning"
         label = bundle.display or report.cluster
@@ -188,7 +189,7 @@ class FleetHealthDialog(QDialog):
         if not report.complete:
             label += "  ·  " + tr("Data from {}").format(
                 _fmt_time(report.generated_at))
-            # неполнота данных — сигнальный цвет, не тихий серый
+            # incomplete data — signal color, not a quiet grey
             cluster_item.setText(0, label)
             cluster_item.setForeground(0, QColor(Color.WARNING))
         cluster_item.setIcon(0, get_icon("cluster", status=status))
@@ -218,8 +219,8 @@ class FleetHealthDialog(QDialog):
             issues += sum(1 for _r, sev in rows if sev >= 1)
         self._tree.addTopLevelItem(cluster_item)
         cluster_item.setExpanded(True)
-        # раскрытие секций — только после вставки в дерево: до insert
-        # setExpanded у Qt не фиксируется, строки остались бы скрыты
+        # section expansion — only after insertion into the tree: before
+        # insert, Qt does not persist setExpanded and rows would stay hidden
         for section_item in section_items:
             section_item.setExpanded(True)
         return cluster_item, issues
@@ -260,8 +261,9 @@ class FleetHealthDialog(QDialog):
         return rows
 
     def _drift_rows(self, bundle: ClusterBundle) -> list:
-        """Все ноды кластера с их версиями: ok — нейтрально, отставшие —
-        цветом. Так версии видны всегда, а не только при проблемах."""
+        """All cluster nodes with their versions: ok — neutral, lagging
+        ones colored. That way versions are always visible, not only
+        when there are problems."""
         report = bundle.report
         rows: list = []
         for drift in detect_drift(report.node_versions):
@@ -326,7 +328,7 @@ class FleetHealthDialog(QDialog):
 
     def _issue_row(self, obj: str, issue: str, detail: str,
                    sev: int, key, icon: str = "vm") -> QTreeWidgetItem:
-        # колонка 0 пуста: имя кластера уже на родительском узле дерева
+        # column 0 empty: the cluster name is already on the parent tree node
         item = QTreeWidgetItem(["", obj, issue, detail])
         item.setIcon(1, get_icon(icon))
         if key is not None:
@@ -344,7 +346,7 @@ class FleetHealthDialog(QDialog):
         item.setForeground(2, color)
         item.setForeground(3, color)
 
-    # ── Навигация ───────────────────────────────────────────────────
+    # ── Navigation ──────────────────────────────────────────────────
 
     def _activate_item(self, item, _column: int = 0) -> None:
         key = item.data(0, KEY_ROLE)
@@ -363,7 +365,7 @@ def _vmid_label(row) -> str:
 
 
 def _version_label(raw: str) -> str:
-    """'pve-manager/8.2.4/1ac2f4b' → '8.2.4' (как _fmt_pveversion)."""
+    """'pve-manager/8.2.4/1ac2f4b' → '8.2.4' (like _fmt_pveversion)."""
     parts = str(raw).split("/")
     return parts[1] if len(parts) > 1 else str(raw)
 

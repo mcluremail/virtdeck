@@ -123,10 +123,10 @@ class StorageDownloadUrlSignals(QObject):
     error = Signal(str)
     finished = Signal()
 class StorageDownloadUrlWorker(QRunnable):
-    """Скачивает файл с URL на storage через PVE API.
+    """Downloads a file from a URL onto storage via the PVE API.
 
     POST /nodes/{node}/storage/{storage}/download-url
-    Параметры: url, content (iso/vztmpl), filename (optional), checksum (optional),
+    Parameters: url, content (iso/vztmpl), filename (optional), checksum (optional),
     verify-certificates (optional, default 1).
     """
     def __init__(self, host_cfg, node_name, storage_name, content_type, url,

@@ -1,9 +1,10 @@
-"""M4.0: переиспользуемые сценарии фейков (форма парка для Fleet Health).
+"""M4.0: reusable fake scenarios (the fleet shape for Fleet Health).
 
-Сценарий сымитирован под фактуру B24: разнородные ноды (drift по версии
-PVE), qemu/lxc/шаблон, три backup-джоба всех семантик (all:1+exclude /
-pool / vmid[]), хранилище с usage и rrddata-трендом, снапшоты, таски —
-плюс PBS с двумя бэкапами vm/101 (свежий/старый) и host-группой.
+The scenario mimics the B24 data: heterogeneous nodes (PVE version
+drift), qemu/lxc/template, three backup jobs covering all semantics
+(all:1+exclude / pool / vmid[]), a storage with usage and an rrddata
+trend, snapshots, tasks — plus a PBS with two vm/101 backups (fresh/
+old) and a host group.
 """
 
 from __future__ import annotations

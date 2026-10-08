@@ -48,7 +48,7 @@ class VmPoolWidget(QWidget):
             tr("CPU %"), tr("Uptime")
         ])
         enable_table_autofit(self.table, [0, 1, 2, 3, 4], max_width=480)
-        # Uptime — заполнитель (Interactive + stretchLastSection).
+        # Uptime is a filler column (Interactive + stretchLastSection).
         self.table.horizontalHeader().setStretchLastSection(True)
 
         self.table.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)

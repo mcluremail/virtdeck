@@ -101,8 +101,8 @@ class CardRow(QFrame):
             else:
                 self._title_label.setMinimumWidth(120)
             if val:
-                # фиксированная колонка клипает длинное значение молча —
-                # полное имя доступно в tooltip
+                # the fixed-width column clips long values silently —
+                # the full name is available in the tooltip
                 self._title_label.setToolTip(str(val))
             layout.addWidget(self._title_label)
 

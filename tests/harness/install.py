@@ -1,14 +1,14 @@
-"""M4.0: швы монтирования фейков в реальный код провайдера и PBS-клиента.
+"""M4.0: seams for mounting fakes into the real provider and PBS client.
 
-PVE: `install_fake_pve` патчит имя `ProxmoxAPI` в модуле
-`virtdeck.provider._session`. Фабрика создаёт настоящий объект proxmoxer
-(token-auth — сетевого round-trip'а нет) и монтирует `FakeApiAdapter`
-на его внутреннюю `requests.Session` (`_store["session"]` — тот же шов,
-которым прод-код пользуется для явного прокси). Маршрутизация фейков по
-host: `cfg["host"]` должен совпадать с `api.name`.
+PVE: `install_fake_pve` patches the `ProxmoxAPI` name in the
+`virtdeck.provider._session` module. The factory builds a real proxmoxer
+object (token-auth — no network round-trip) and mounts `FakeApiAdapter`
+on its internal `requests.Session` (`_store["session"]` — the same seam
+production code uses for explicit proxies). Fakes are routed by host:
+`cfg["host"]` must match `api.name`.
 
-PBS: `pbs_session` — requests.Session с адаптером фейка; передаётся в
-`PbsClient(cfg, http=...)` (DI-параметр, добавлен для харнесса).
+PBS: `pbs_session` — a requests.Session with the fake's adapter; passed
+to `PbsClient(cfg, http=...)` (a DI parameter added for the harness).
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 def fake_pve_cfg(name: str = "fake1", **extra) -> dict:
-    """cfg провайдера, указывающий на фейк (host = api.name)."""
+    """Provider cfg pointing at the fake (host = api.name)."""
     cfg = {
         "name": name,
         "host": name,
@@ -40,7 +40,7 @@ def fake_pve_cfg(name: str = "fake1", **extra) -> dict:
 
 def _install_proxmox_patch(monkeypatch,
                            make_adapter: Callable[[str], BaseAdapter]) -> None:
-    """Патчит ProxmoxAPI в provider._session: адаптер по host."""
+    """Patches ProxmoxAPI in provider._session: adapter by host."""
     import virtdeck.provider._session as session_mod
 
     real_proxmox_api = session_mod.ProxmoxAPI
@@ -59,10 +59,10 @@ def _install_proxmox_patch(monkeypatch,
 
 def install_fake_pve(monkeypatch, *apis, record_into: list | None = None) \
         -> None:
-    """Маршрутизирует запросы провайдеров в FakePveApi по host.
+    """Routes provider requests to FakePveApi by host.
 
-    `record_into` — общий список entry (формат фиксстуры): каждый запрос
-    любого провайдера дописывается туда (запись сценария для replay).
+    `record_into` — a shared entry list (fixture format): every request
+    of any provider is appended there (scenario recording for replay).
     """
     by_host = {api.name: api for api in apis}
 
@@ -70,21 +70,21 @@ def install_fake_pve(monkeypatch, *apis, record_into: list | None = None) \
         api = by_host.get(host)
         if api is None:
             raise AssertionError(
-                f"нет FakePveApi для host={host!r} "
-                f"(есть: {sorted(by_host)})")
+                f"no FakePveApi for host={host!r} "
+                f"(have: {sorted(by_host)})")
         return FakeApiAdapter(api.handle, record_into=record_into)
 
     _install_proxmox_patch(monkeypatch, make_adapter)
 
 
 def install_replay_pve(monkeypatch, entries: list[dict]) -> None:
-    """Обслуживает все провайдеров из записанных entry (replay)."""
+    """Serves all providers from recorded entries (replay)."""
     adapter = ReplayAdapter(entries)
     _install_proxmox_patch(monkeypatch, lambda _host: adapter)
 
 
 def pbs_session(api) -> requests.Session:
-    """Session с адаптером FakePbsApi — в `PbsClient(cfg, http=...)`."""
+    """Session with a FakePbsApi adapter — for `PbsClient(cfg, http=...)`."""
     sess = requests.Session()
     adapter = FakeApiAdapter(api.handle)
     sess.mount("https://", adapter)

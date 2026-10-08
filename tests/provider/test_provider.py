@@ -94,7 +94,7 @@ class TestErrors:
 
 
 class FakeResourceException(Exception):
-    """Имитация proxmoxer ResourceException (status_code + сообщение)."""
+    """Mimic of the proxmoxer ResourceException (status_code + message)."""
 
     def __init__(self, status_code, status_message, content=""):
         self.status_code = status_code
@@ -102,7 +102,7 @@ class FakeResourceException(Exception):
 
 
 class TestAnyeventErrors:
-    """595-599 — ответы pveproxy: классифицируются как сетевые, с подсказкой."""
+    """595-599 — pveproxy replies: classified as network, with a hint."""
 
     def test_595_by_status_code_attr(self):
         exc = FakeResourceException(595, "Errors during connection establishment, proxy handshake", "ENXIO")

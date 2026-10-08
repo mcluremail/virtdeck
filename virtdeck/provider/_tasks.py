@@ -24,7 +24,7 @@ class TaskAPI:
         )
 
     def list_cluster(self, limit: int = 100, **params) -> list[dict]:
-        """GET /cluster/tasks — недавние задачи кластера (Fleet Health)."""
+        """GET /cluster/tasks — recent cluster tasks (Fleet Health)."""
         return self._s.call(self._s.proxmox.cluster.tasks.get,
                             limit=limit, **params)
 

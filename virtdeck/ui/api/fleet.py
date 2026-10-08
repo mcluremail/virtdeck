@@ -1,7 +1,7 @@
-"""Fleet Health sprawl-скан: sync-вызовы вне UI-потока (шов ui/api).
+"""Fleet Health sprawl scan: sync calls off the UI thread (ui/api seam).
 
-Модуль без Qt-виджетов (контракт sync-contract): функция запускается из
-фонового потока диалога и возвращает готовые результаты скана.
+Module without Qt widgets (sync-contract): the function runs from the
+dialog's background thread and returns ready scan results.
 """
 
 from __future__ import annotations
@@ -13,14 +13,14 @@ from ...plugins import create_provider
 def scan_fleet_snapshots(targets, bundles: list,
                          stale_days: int = DEFAULT_STALE_DAYS,
                          on_progress=None) -> dict:
-    """Собрать снапшоты всех гостей всех таргетов (1 запрос/ВМ).
+    """Collect snapshots of every guest of every target (1 request/VM).
 
-    ``targets`` — FleetTarget-подобные объекты (``.name``/``.cfg``),
-    ``bundles`` — собранные ClusterBundle. Возвращает
-    cluster → SprawlScan | None (ошибка кластера глушится: скан не должен
-    рушить отчёт). Использует гостей из собранных отчётов.
-    ``on_progress(done, total)`` — агрегированный прогресс по всем
-    кластерам (общий счётчик гостей).
+    ``targets`` — FleetTarget-like objects (``.name``/``.cfg``),
+    ``bundles`` — collected ClusterBundle. Returns
+    cluster → SprawlScan | None (a cluster error is muted: the scan must
+    not break the report). Uses guests from the collected reports.
+    ``on_progress(done, total)`` — aggregated progress across all
+    clusters (a shared guest counter).
     """
     cfg_by_name = {t.name: t.cfg for t in targets}
     scan_list = [(b, cfg_by_name[b.report.cluster]) for b in bundles

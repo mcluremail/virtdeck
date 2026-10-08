@@ -1,7 +1,7 @@
-"""M4.3: storage runway — прогноз по дырявому rrddata.
+"""M4.3: storage runway — forecast from gappy rrddata.
 
-Каждый кейс — одно правило: дыры отбрасываются, окно ограничивает,
-CI появляется только на плотном ряде, наклон <= 0 — «не кончится»,
+Each case is one rule: gaps are dropped, the window bounds,
+CI appears only on a dense series, slope <= 0 means "won't run out",
 unknown total — «no-capacity».
 """
 
@@ -41,7 +41,7 @@ def test_rising_series_point_estimate():
     est = estimate_runway(series(48), node="pve01", storage="local")
     assert est.quality == OK
     used_last = 5 * GIB + 47 * (GIB // 24)
-    expected = (10 * GIB - used_last) / GIB  # темп = 1 GiB/день
+    expected = (10 * GIB - used_last) / GIB  # rate = 1 GiB/day
     assert est.days_left == pytest.approx(expected, rel=1e-6)
     assert est.points_used == 48
     assert est.total_bytes == 10 * GIB
@@ -82,7 +82,7 @@ def test_all_gaps_no_data():
 
 def test_window_limits_points():
     est = estimate_runway(series(60), window_days=1)
-    # последним 24 часам соответствуют 25 точек (включительно)
+    # the last 24 hours map to 25 points (inclusive)
     assert est.points_used == 25
 
 
@@ -101,7 +101,7 @@ def test_no_capacity():
 
 
 def test_total_from_newest_known_point():
-    # total вырос до 20 GiB начиная с точки 10 — берётся самая свежая
+    # total grows to 20 GiB from point 10 on — the freshest wins
     est = estimate_runway(series(48, total_at={i: 20 * GIB
                                                for i in range(10, 48)}))
     assert est.total_bytes == 20 * GIB

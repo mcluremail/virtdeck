@@ -1,9 +1,9 @@
-"""Бренд VirtDeck: фирменный кит дизайнера (монограмма V+D, 2026-09-15).
+"""VirtDeck brand: the designer brand kit (V+D monogram, 2026-09-15).
 
-Ассеты — векторные SVG из `virtdeck/ui/brand_assets/`: иконки приложения
-(светлая/тёмная плитка), локапы, знаки (в т.ч. монохромные) и трей-набор
-с состояниями ok/error/offline/update. Цвета бренда фиксированы; тема
-выбирает только светлый/тёмный вариант (по яркости Color.BG).
+Assets are vector SVGs from `virtdeck/ui/brand_assets/`: app icons
+(light/dark tiles), brand lockups, marks (including monochrome) and a
+tray set with ok/error/offline/update states. Brand colors are fixed;
+the theme only picks the light/dark variant (by Color.BG luminance).
 """
 
 from __future__ import annotations
@@ -15,14 +15,16 @@ from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
+from .icons import base_size
+
 ASSETS = Path(__file__).parent / "brand_assets"
 TRAY_STATES = ("ok", "error", "offline", "update")
 MARK_VARIANTS = ("light", "dark", "mono", "mono-white")
 
-# Кэш иконок: трей перерисовывается каждый цикл refresh, рендер SVG не нужен
+# Icon cache: the tray redraws on every refresh cycle, no need to re-render SVG
 _ICON_CACHE: dict[tuple, QIcon] = {}
 
-_LOCKUP_ASPECT = 1240 / 320  # viewBox локапа дизайнера
+_LOCKUP_ASPECT = 1240 / 320  # designer lockup viewBox
 
 
 def _svg_bytes(name: str) -> QByteArray:
@@ -40,7 +42,7 @@ def _render(name: str, width: int, height: int) -> QPixmap:
 
 
 def is_dark() -> bool:
-    """Текущая тема тёмная? Эвристика по яркости фона Color.BG."""
+    """Is the current theme dark? Heuristic based on Color.BG luminance."""
     from .theme import Color
 
     hexval = Color.BG.lstrip("#")
@@ -52,7 +54,7 @@ def is_dark() -> bool:
 
 
 def _variant(variant: str | None) -> str:
-    """Разрешение варианта: 'light'|'dark' (None → по теме)."""
+    """Resolve the variant: 'light'|'dark' (None -> by theme)."""
     v = variant or ("dark" if is_dark() else "light")
     if v not in ("light", "dark"):
         raise ValueError(f"unknown brand variant: {variant!r}")
@@ -60,9 +62,9 @@ def _variant(variant: str | None) -> str:
 
 
 def render_pixmap(size: int, variant: str = "light") -> QPixmap:
-    """Знак (монограмма без плитки) в виде QPixmap заданного размера.
+    """Mark (monogram without the tile) as a QPixmap of the given size.
 
-    Варианты знака: light/dark (цветные) и mono/mono-white (монохром).
+    Mark variants: light/dark (colored) and mono/mono-white (monochrome).
     """
     if variant not in MARK_VARIANTS:
         raise ValueError(f"unknown mark variant: {variant!r}")
@@ -70,13 +72,13 @@ def render_pixmap(size: int, variant: str = "light") -> QPixmap:
 
 
 def lockup_pixmap(height: int = 22, variant: str | None = None) -> QPixmap:
-    """Локап «знак + VirtDeck» с сохранением пропорций дизайнера."""
+    """Lockup "mark + VirtDeck" preserving the designer's aspect ratio."""
     width = max(1, round(height * _LOCKUP_ASPECT))
     return _render(f"lockup-{_variant(variant)}", width, height)
 
 
 def make_logo_icon(size: int = 256, variant: str | None = None) -> QIcon:
-    """Иконка приложения (плитка дизайнера: окно, панель задач)."""
+    """App icon (designer tile: window, taskbar)."""
     v = _variant(variant)
     key = ("logo", v, size)
     icon = _ICON_CACHE.get(key)
@@ -88,7 +90,7 @@ def make_logo_icon(size: int = 256, variant: str | None = None) -> QIcon:
 
 def tray_icon(state: str = "ok", variant: str | None = None,
               compact: bool = False) -> QIcon:
-    """Трей-иконка состояния: ok | error | offline | update."""
+    """Tray icon for a state: ok | error | offline | update."""
     if state not in TRAY_STATES:
         raise ValueError(f"unknown tray state: {state!r}")
     v = _variant(variant)
@@ -102,7 +104,7 @@ def tray_icon(state: str = "ok", variant: str | None = None,
 
 
 class BrandWidget(QWidget):
-    """Локап в тулбаре: векторный локап дизайнера, вариант по теме."""
+    """Brand lockup in the toolbar: the designer's vector lockup, themed variant."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -115,12 +117,15 @@ class BrandWidget(QWidget):
         self.restyle()
 
     def restyle(self):
-        """Переключение варианта локапа под активную тему (движок тем)."""
+        """Switch the lockup variant to the active theme (theme engine)."""
         v = _variant(None)
         if v == self._variant and not self._label.pixmap().isNull():
             return
         self._variant = v
-        self._label.setPixmap(lockup_pixmap(22, v))
+        # The lockup scales from the theme's base icon size (24px -> 42px,
+        # 1.75 factor per user request): mark and wordmark read well large.
+        height = max(22, round(base_size() * 1.75))
+        self._label.setPixmap(lockup_pixmap(height, v))
         self._label.setFixedSize(self._label.pixmap().size())
 
 

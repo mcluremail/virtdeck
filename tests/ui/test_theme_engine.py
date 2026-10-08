@@ -1,9 +1,8 @@
-"""M1.1 — движок тем: контракт токенов, ThemePlugin, активация.
+"""M1.1 — theme engine: token contract, ThemePlugin, activation.
 
-Проверяются инварианты, которые морозятся в docs/THEMES.md на 3.0:
-канонический набор токенов, валидация наборов, поток load_theme
-(фасад → QSS → иконки → графики → слушатели), переключатель в
-статус-баре.
+Checks the invariants frozen in docs/THEMES.md for 3.0: the canonical
+token set, set validation, the load_theme flow (facade → QSS → icons →
+charts → listeners), the switcher in the status bar.
 """
 
 import re
@@ -26,7 +25,7 @@ from virtdeck.ui.theme import (
 
 
 class FakeDark:
-    """Тестовая тема: полный набор light + подмены, extra_qss, 24px."""
+    """Test theme: full light set + overrides, extra_qss, 24px."""
 
     id = "fake_dark"
     name = "Fake Dark"
@@ -54,7 +53,7 @@ def dark_registry():
     return reg
 
 
-# ── Контракт набора ────────────────────────────────────────────────
+# ── Token set contract ─────────────────────────────────────────────
 
 
 class TestTokenContract:
@@ -69,18 +68,18 @@ class TestTokenContract:
             assert re.fullmatch(r"#[0-9a-fA-F]{6}", value)
 
     def test_light_tokens_match_default_color_palette(self):
-        """Светлая тема = дефолтная палитра фасада (до подмен)."""
+        """Light theme = the facade's default palette (before overrides)."""
         for name, value in LIGHT_TOKENS.items():
             assert getattr(Color, name) == value, name
 
     def test_qss_template_uses_only_known_tokens(self):
-        """Все ссылки на токены в theme.py — канонические имена или шрифты."""
+        """Every token reference in theme.py is a canonical name or a font."""
         source = Path(theme.__file__).read_text(encoding="utf-8")
         names = set(re.findall(r"Color\.([A-Z][A-Z0-9_]*)", source))
         assert names <= set(TOKENS) | set(FONT_TOKENS)
 
     def test_builtin_themes_are_pure(self):
-        """Плагины тем не тянут сеть/Qt — AST-скан импортов."""
+        """Theme plugins pull no network/Qt — AST scan of imports."""
         import ast
 
         src = Path(theme.__file__).parent.parent.parent / ("virtdeck/plugins/_themes.py")
@@ -94,7 +93,7 @@ class TestTokenContract:
         assert not roots & {"PySide6", "requests", "proxmoxer"}, roots
 
 
-# ── Валидация наборов ──────────────────────────────────────────────
+# ── Set validation ─────────────────────────────────────────────────
 
 
 class TestValidateTokens:
@@ -120,12 +119,12 @@ class TestValidateTokens:
 
     def test_deprecated_aliases_map_to_canonical(self):
         tokens = dict(LIGHT_TOKENS)
-        tokens["GRAY_400"] = "#123456"  # алиас TEXT_DIM перекрывает
+        tokens["GRAY_400"] = "#123456"  # TEXT_DIM alias overrides
         mapped = validate_tokens(tokens)
         assert mapped["TEXT_DIM"] == "#123456"
 
 
-# ── Активация (load_theme) ─────────────────────────────────────────
+# ── Activation (load_theme) ────────────────────────────────────────
 
 
 class TestLoadTheme:
@@ -145,7 +144,7 @@ class TestLoadTheme:
             from virtdeck.ui import icons
 
             assert icons._BASE_SIZE == 24
-            icon = icons.get_icon("vm")  # кэш пересобран под 24px
+            icon = icons.get_icon("vm")  # cache rebuilt for 24px
             assert QSize(24, 24) in icon.availableSizes()
         finally:
             unsubscribe_theme_changed(seen.append)
@@ -166,12 +165,12 @@ class TestLoadTheme:
             id = "broken"
 
             def tokens(self):
-                return {"BG": "#ffffff"}  # неполный набор
+                return {"BG": "#ffffff"}  # incomplete set
 
         dark_registry.register_theme(Broken())
         with pytest.raises(PluginError):
             load_theme("broken", registry=dark_registry, persist=False)
-        assert Color.BG == LIGHT_TOKENS["BG"]  # фасад не тронут
+        assert Color.BG == LIGHT_TOKENS["BG"]  # facade untouched
 
 
 # ── E2E: MainWindow ────────────────────────────────────────────────
@@ -185,7 +184,8 @@ class TestMainWindowSwitcher:
         assert combo.currentData() == "light" or "light" in ids
 
     def test_switch_via_combo_recolors_tree(self, qtbot, monkeypatch, tmp_path, offline):
-        """Тема регистрируется ДО MainWindow — комбо её уже содержит."""
+        """The theme is registered BEFORE MainWindow — the combo already
+        has it."""
         from virtdeck.plugins import get_registry
 
         reg = get_registry()
@@ -199,13 +199,13 @@ class TestMainWindowSwitcher:
 
             combo = mw._theme_combo
             idx = next(i for i in range(combo.count()) if combo.itemData(i) == "fake_dark")
-            combo.setCurrentIndex(idx)  # сигнал → load_theme → listeners
+            combo.setCurrentIndex(idx)  # signal → load_theme → listeners
 
             assert Color.BG == "#232629"
             assert "/* fake dark extra */" in theme.QSS
-            # дерево перестроено слушателем (кэш QColor обновлён)
+            # tree rebuilt by the listener (QColor cache refreshed)
             assert mw.tree_panel.tree.topLevelItemCount() >= 0
-            # возврат
+            # switch back
             light_idx = next(i for i in range(combo.count()) if combo.itemData(i) == "light")
             combo.setCurrentIndex(light_idx)
             assert Color.BG == LIGHT_TOKENS["BG"]
@@ -220,7 +220,7 @@ class TestMainWindowSwitcher:
         assert "light" in get_registry().theme_ids()
 
 
-# ── M1.2: встроенные темы KDE / Graphite / System ──────────────────
+# ── M1.2: builtin themes KDE / Graphite / System ───────────────────
 
 
 class TestBuiltinThemePlugins:
@@ -234,7 +234,7 @@ class TestBuiltinThemePlugins:
         assert all(re.fullmatch(r"#[0-9a-fA-F]{6}", v) for v in tokens.values())
 
     def test_breeze_palettes_exact(self):
-        """Точные значения из схем KDE breeze (не derived)."""
+        """Exact values from the KDE breeze schemes (not derived)."""
         from virtdeck.plugins import get_registry
 
         light = get_registry().get_theme("breeze").tokens()
@@ -255,12 +255,13 @@ class TestBuiltinThemePlugins:
         assert tokens["ACCENT_HOVER"] == "#6ed6ff"
         assert tokens["TOAST_BG"] == "#181513"
         assert tokens["DANGER_SOLID_PRESSED"] == "#9c0e0e"
-        # WARNING затемнён относительно схемы Oxygen: контраст текста >=4.5
+        # WARNING darkened vs the Oxygen scheme: text contrast >=4.5
         assert tokens["WARNING"] == "#6e4a08"
 
     def test_breeze_activates_24px_with_overrides(self, qtbot):
-        """Breeze даёт 24px + оверрайды; после унификации (2026-10-07)
-        24px — базовый размер всех тем, но оверрайды только у Breeze."""
+        """Breeze ships 24px + overrides; after the unification
+        (2026-10-07) 24px is the base size of all themes, but only
+        Breeze has overrides."""
         from PySide6.QtCore import QSize
 
         from virtdeck.ui import icons
@@ -270,7 +271,7 @@ class TestBuiltinThemePlugins:
             assert icons._BASE_SIZE == 24
             assert {"vm", "host", "cluster", "pool", "storage",
                     "backup", "refresh", "search"} <= set(icons._THEME_ICONS)
-            # все иконки рендерятся ровно в базовом размере, без уменьшения
+            # every icon renders exactly at the base size, no downscaling
             assert QSize(24, 24) in icons.get_icon("vm").availableSizes()
             assert QSize(24, 24) in icons.get_icon("refresh").availableSizes()
         finally:
@@ -280,8 +281,8 @@ class TestBuiltinThemePlugins:
         assert QSize(24, 24) in icons.get_icon("vm").availableSizes()
 
     def test_all_themes_use_24px_base(self):
-        """Унификация (2026-10-07): базовый размер иконок — 24px во всех
-        темах, включая System (разрешается через Breeze)."""
+        """Unification (2026-10-07): the base icon size is 24px in all
+        themes, including System (resolved through Breeze)."""
         from virtdeck.plugins import default_registry
 
         for theme_id in default_registry().theme_ids():
@@ -289,13 +290,13 @@ class TestBuiltinThemePlugins:
                 theme_id
 
     def test_style_installs_base_icon_size(self, qtbot):
-        """Прокси-стиль задаёт иконочные метрики = base_size().
+        """The proxy style sets icon metrics = base_size().
 
-        Иначе виджеты без явного setIconSize (детальная панель, вкладки,
-        таблицы) рисуют иконки в дефолте Qt 16px (репорт 2026-10-07).
-        Проверка поведенческая: Shiboken не восстанавливает Python-тип
-        прокси при повторной обёртке, но виртуальный pixelMetric
-        маршрутизируется в питоновский override стабильно.
+        Otherwise widgets without an explicit setIconSize (detail panel,
+        tabs, tables) draw icons at the Qt default 16px (report
+        2026-10-07). Behavioral check: Shiboken does not restore the
+        Python type of the proxy on re-wrapping, but the virtual
+        pixelMetric is reliably routed to the Python override.
         """
         from PySide6.QtWidgets import QApplication, QStyle
 
@@ -309,7 +310,8 @@ class TestBuiltinThemePlugins:
         assert style.pixelMetric(QStyle.PM_TabBarIconSize) == 24
 
     def test_breeze_icons_cover_full_registry(self):
-        """Breeze перекрывает весь реестр иконок, кроме брендового 'app'."""
+        """Breeze covers the whole icon registry except the branded
+        'app'."""
         from virtdeck.plugins._themes import BREEZE_ICONS
         from virtdeck.ui import icons
 
@@ -318,11 +320,12 @@ class TestBuiltinThemePlugins:
         assert "app" not in BREEZE_ICONS
         for name, svg in BREEZE_ICONS.items():
             assert 'viewBox="0 0 24 24"' in svg, name
-            # шаблон с токенами темы ИЛИ осознанно фиксированные цвета (filled-стиль)
+            # theme-token template OR deliberately fixed colors (filled style)
             assert "{c}" in svg or 'fill="#' in svg or 'stroke="#' in svg, name
 
     def test_breeze_icons_apply_to_all_names(self, qtbot):
-        """Оверрайды применяются ко всему кэшу init_icons (не только 7 имён)."""
+        """Overrides apply to the whole init_icons cache (not only 7
+        names)."""
         from PySide6.QtCore import QSize
 
         from virtdeck.ui import icons
@@ -333,13 +336,13 @@ class TestBuiltinThemePlugins:
             for name in icons._BUILTINS:
                 icon = icons.get_icon(name)
                 assert icon is not None and not icon.isNull(), name
-            # регрессия: search раньше игнорировал оверрайд в кэше
+            # regression: search used to ignore the override in the cache
             assert QSize(24, 24) in icons.get_icon("search").availableSizes()
         finally:
             load_theme("light", persist=False)
 
     def test_charts_retheme_live(self, qtbot):
-        """Уже построенный график перекрашивается при смене темы."""
+        """An already built plot is recolored on theme change."""
         pytest.importorskip("pyqtgraph")
 
         from virtdeck.ui.theme import Color
@@ -360,7 +363,7 @@ class TestBuiltinThemePlugins:
             load_theme("light", persist=False)
 
     def test_retheme_plots_registry(self, qtbot):
-        """Реестр перекрашивает чужой PlotWidget по _vd_token."""
+        """The registry recolors a foreign PlotWidget by _vd_token."""
         pytest.importorskip("pyqtgraph")
 
         import pyqtgraph as pg
@@ -382,7 +385,7 @@ class TestBuiltinThemePlugins:
             load_theme("light", persist=False)
 
     def test_theme_text_contrast(self):
-        """WCAG-контраст надписей во всех темах: текст >=4.5, dim >=3.0."""
+        """WCAG contrast of labels in all themes: text >=4.5, dim >=3.0."""
         from virtdeck.plugins import _themes as bt
 
         def _ratio(fg, bg):
@@ -437,14 +440,14 @@ class TestBuiltinThemePlugins:
         load_theme("light", persist=False)
 
     def test_system_reacts_to_scheme_change_event(self, monkeypatch):
-        """Сигнал colorSchemeChanged перезагружает активную system-тему."""
+        """The colorSchemeChanged signal reloads the active system theme."""
         from virtdeck.plugins import _themes as bt
 
         load_theme("system", persist=False)
         monkeypatch.setattr(bt, "_scheme_resolver", lambda: "dark")
         theme._on_scheme_changed(None)
         assert Color.BG == "#202326"
-        # не-system тема: событие игнорируется
+        # non-system theme: the event is ignored
         monkeypatch.setattr(bt, "_scheme_resolver", lambda: "light")
         load_theme("light", persist=False)
         theme._on_scheme_changed(None)
@@ -485,5 +488,5 @@ class TestBuiltinThemePlugins:
     def test_combo_lists_all_builtin_themes(self, main_window):
         combo = main_window._theme_combo
         ids = [combo.itemData(i) for i in range(combo.count())]
-        assert ids[:2] == ["light", "breeze"]  # UX-порядок
+        assert ids[:2] == ["light", "breeze"]  # UX order
         assert ids[-1] == "system"

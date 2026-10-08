@@ -1,17 +1,18 @@
-"""UI-аудит 2026-10-08: вместимость контента во всех локалях.
+"""UI audit 2026-10-08: content fit in every locale.
 
-Инвариант (решение о выпуске 3.0): виджет должен вмещать свой контент
-в каждой из 6 локалей. Всё, что ограничивает размер сверху
-(setFixedWidth/Height, setMaximumWidth/Height), обязано пропускать
-sizeHint; иначе — клип без скролла (QScrollArea в коде).
+Invariant (the 3.0 release decision): a widget must fit its content in
+each of the 6 locales. Anything that caps the size from above
+(setFixedWidth/Height, setMaximumWidth/Height) must let the sizeHint
+through; otherwise content clips with no scroll (QScrollArea in code).
 
-Проверка поведенческая: для каждого диалога × локали собираем дочерние
-виджеты и сверяем maximum-ограничения с sizeHint. setFixedWidth(N)
-выражается как maximumWidth == N, поэтому регрессия вида
-«setFixedWidth на текстовой кнопке» ловится автоматически.
+Behavioral check: for each dialog × locale we collect child widgets and
+compare maximum constraints with sizeHint. setFixedWidth(N) shows up as
+maximumWidth == N, so a "setFixedWidth on a text button" regression is
+caught automatically.
 
-seed_translations замокан: set_language() в тестах не пишет в реальный
-config.sqlite (изоляция — см. AUDIT_PROCESS, чеклист «Тесты»).
+seed_translations is mocked: set_language() in tests does not write to
+the real config.sqlite (isolation — see AUDIT_PROCESS, the "Tests"
+checklist).
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ def _no_db_seeding(monkeypatch):
 
 @pytest.fixture()
 def factories():
-    """Диалоги, строимые без сети: фабрика → QDialog."""
+    """Dialogs buildable without network: factory → QDialog."""
     from virtdeck.ui.about_dialog import AboutDialog
     from virtdeck.ui.acl_dialog import AclDialog
     from virtdeck.ui.add_server_dialog import AddServerDialog
@@ -73,10 +74,10 @@ def factories():
 
 
 def _violations(widget: QWidget) -> list[str]:
-    """Виджеты, которым теснее максимума, чем хочет их sizeHint.
+    """Widgets whose maximum is tighter than their sizeHint wants.
 
-    QFrame пропускается: декоративные линии (сепараторы 1px) не содержат
-    контента, их hint 3px — ложное срабатывание.
+    QFrame is skipped: decorative lines (1px separators) carry no
+    content and their 3px hint is a false positive.
     """
     from PySide6.QtWidgets import QFrame, QScrollArea
 
@@ -103,7 +104,7 @@ def test_dialogs_fit_content_in_locale(qtbot, factories, locale):
         assert isinstance(dlg, QDialog), name
         for line in _violations(dlg):
             problems.append(f"{name} [{locale}]: {line}")
-    # виджеты вне диалогов (вкладки детальной панели)
+    # widgets outside dialogs (detail panel tabs)
     from virtdeck.ui.widgets.cluster_tasks_widget import ClusterTasksWidget
 
     tasks = ClusterTasksWidget()
@@ -115,10 +116,10 @@ def test_dialogs_fit_content_in_locale(qtbot, factories, locale):
 
 
 def test_i18n_parity():
-    """Паритет ключей 5 локалей (механика из AUDIT_PROCESS.md)."""
+    """Key parity of 5 locales (mechanics from AUDIT_PROCESS.md)."""
     import json
     import pathlib
 
     sets = [set(json.loads(pathlib.Path(
         f"virtdeck/ui/i18n/{lang}.json").read_text())) for lang in LOCALES[1:]]
-    assert all(s == sets[0] for s in sets), "локали разошлись по ключам"
+    assert all(s == sets[0] for s in sets), "locales diverged by keys"

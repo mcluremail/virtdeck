@@ -1,7 +1,7 @@
-"""Общие фикстуры UI-тестов.
+"""Shared fixtures for UI tests.
 
-offline/main_window определены в M0.2 (runtime-контракт) и используются
-несколькими файлами (test_runtime_contract, test_optimistic).
+offline/main_window were introduced in M0.2 (the runtime contract) and
+are used by several files (test_runtime_contract, test_optimistic).
 """
 
 import pytest
@@ -16,7 +16,7 @@ from tests.ui.runtime_contract import (
 
 @pytest.fixture()
 def offline(monkeypatch):
-    """Полный офлайн-режим: guard + fake pool + autofire диалоги."""
+    """Full offline mode: guard + fake pool + autofire dialogs."""
     violations = install_guard(monkeypatch)
     pool = install_fake_pool(monkeypatch)
     install_autofire_dialogs(monkeypatch)
@@ -26,7 +26,7 @@ def offline(monkeypatch):
 
 @pytest.fixture()
 def main_window(qtbot, monkeypatch, tmp_path, offline):
-    """MainWindow как в tests/ui/test_refresh_tracking.py + офлайн."""
+    """MainWindow as in tests/ui/test_refresh_tracking.py + offline."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     from virtdeck.ui.mainwindow import MainWindow
 

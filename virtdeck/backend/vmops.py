@@ -101,7 +101,7 @@ class DeleteVmSignals(QObject):
     vm_error = Signal(str)    # error message
     finished = Signal()
 class DeleteVmWorker(QRunnable):
-    """Удаляет QEMU VM или LXC контейнер через DELETE /nodes/{node}/{qemu|lxc}/{vmid}."""
+    """Deletes a QEMU VM or LXC container via DELETE /nodes/{node}/{qemu|lxc}/{vmid}."""
     def __init__(self, host_cfg, node_name, vmid, vm_type="qemu"):
         super().__init__()
         self.host_cfg = host_cfg

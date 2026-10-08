@@ -1,7 +1,7 @@
-"""M2.1: тесты ядра реестра действий (чистый Python, без Qt).
+"""M2.1: action registry core tests (pure Python, no Qt).
 
-fuzzy_score — ранжирование совпадений; ActionRegistry — фильтрация по
-scope/enabled и поиск; ActionSpec — декларативное описание действия.
+fuzzy_score ranks matches; ActionRegistry filters by scope/enabled
+and searches; ActionSpec is a declarative action description.
 """
 from virtdeck.ui.action_registry import (
     SCOPE_GLOBAL,
@@ -24,22 +24,22 @@ class TestFuzzyScore:
 
     def test_prefix_beats_word_start_beats_substring(self):
         assert fuzzy_score("start", "Start VM") == 100
-        # «start» внутри «Restart» — не с границы слова
+        # "start" inside "Restart" — not a word boundary
         assert fuzzy_score("start", "Restart") == 60
-        # «IO» после границы слова («Network IO»)
+        # "IO" after a word boundary ("Network IO")
         assert fuzzy_score("io", "Network IO") == 80
 
     def test_subsequence_with_gap_penalty(self):
-        # подпоследовательность совпадает, но ценится ниже подстроки
+        # a subsequence matches but scores below a substring
         score = fuzzy_score("svm", "Start VM")
         assert 0 < score < 60
-        # больше «дырок» — ниже счёт: a..c..e (2 дырки) против a..de (1)
+        # more gaps — lower score: a..c..e (2 gaps) vs a..de (1)
         assert fuzzy_score("ace", "abcde") == 30
         assert fuzzy_score("ade", "abcde") == 35
 
     def test_no_match(self):
         assert fuzzy_score("xyz", "Start VM") == 0
-        assert fuzzy_score("sm", "Start") == 0  # m нет после s
+        assert fuzzy_score("sm", "Start") == 0  # no m after s
 
     def test_case_insensitive(self):
         assert fuzzy_score("ST", "start") == 100
@@ -70,7 +70,7 @@ class TestRegistry:
     def test_global_scope_always_applicable(self):
         reg = ActionRegistry()
         reg.register(_spec("g", "Refresh", scopes=frozenset({SCOPE_GLOBAL})))
-        # глобальные действия видны и когда выделена ВМ
+        # global actions visible even with a VM selected
         assert [s.action_id for s in reg.actions_for(Selection(kind=SCOPE_VM))] == ["g"]
 
     def test_actions_for_applies_enabled_predicate(self):
@@ -110,7 +110,7 @@ class TestSearch:
         for i in range(10):
             reg.register(_spec(f"a{i}", f"Action {i:02} prefix"))
         assert len(reg.search("action", Selection(), limit=3)) == 3
-        # лучшие (по порядку регистрации при равном счёте) остаются
+        # best ones stay (registration order breaks ties)
         assert [s.action_id for s in reg.search("action", Selection(), limit=3)] == [
             "a0", "a1", "a2",
         ]

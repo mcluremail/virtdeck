@@ -1,7 +1,9 @@
-"""M4.5: Fleet Health — рендер отчёта, partial failure, навигация, worker.
+"""M4.5: Fleet Health — report rendering, partial failure, navigation,
+worker.
 
-Транспорт подменён харнессом: диалог собирает реальный отчёт по fake
-кластеру через FleetHealthWorker (настоящий провайдер + fake-адаптер).
+The transport is swapped by the harness: the dialog builds a real
+report against a fake cluster through FleetHealthWorker (the real
+provider + the fake adapter).
 """
 
 from __future__ import annotations
@@ -60,7 +62,7 @@ def walk_rows(tree):
 
 
 def _freeze_now(bundle: ClusterBundle) -> ClusterBundle:
-    """Переставить generated_at отчёта на NOW сцены (детерминизм)."""
+    """Shift the report's generated_at to the scene NOW (determinism)."""
     return ClusterBundle(
         report=replace(bundle.report, generated_at=NOW),
         runway=bundle.runway)
@@ -83,34 +85,35 @@ def find_issue(tree, issue_text: str):
 def test_render_issues_and_status(qtbot, api):
     dlg = make_dialog(qtbot)
     wait_loaded(qtbot, dlg)
-    # фиксируем время отчёта сценой (иначе возраст бэкапов — в годах)
+    # freeze the report time to the scene's (otherwise backup ages are in years)
     dlg._bundles = [_freeze_now(dlg._bundles[0])]
     dlg._render()
-    # 301: task failed, успехов нет → красный
+    # 301: task failed, no successes → red
     row = find_issue(dlg._tree, "Never backed up")
     assert row is not None
     assert row.text(1) == "cache01 (301)"
     assert row.data(0, KEY_ROLE) == ("alpha", 301, "pve02")
     assert row.foreground(2).color() == QColor(Color.DANGER)
-    # drift: 7.4.3 против 8.2.4 → major
+    # drift: 7.4.3 vs 8.2.4 → major
     drift = find_issue(dlg._tree, "Behind by major version")
     assert drift is not None
     assert drift.text(1) == "pve02"
-    assert drift.text(3) == "7.4.3"  # версия человекочитаемая, не хэш
-    # актуальная нода видна в той же секции — нейтральной строкой
+    assert drift.text(3) == "7.4.3"  # human-readable version, not a hash
+    # the up-to-date node is visible in the same section — a neutral row
     ok = find_issue(dlg._tree, "Up to date")
     assert ok is not None
     assert ok.text(1) == "pve01"
     assert ok.text(3) == "8.2.4"
     assert ok.foreground(2).color() != QColor(Color.DANGER)
-    # секции раскрыты (иначе строки скрыты), колонка кластера у строк пуста
+    # sections are expanded (otherwise rows are hidden), the cluster
+    # column of rows is empty
     top = dlg._tree.topLevelItem(0)
     for j in range(top.childCount()):
         section = top.child(j)
         assert section.isExpanded()
         for k in range(section.childCount()):
             assert section.child(k).text(0) == ""
-    # runway: rrddata сцены растёт → хранилище local попадает в отчёт
+    # runway: the scene's rrddata grows → the local storage lands in the report
     assert find_issue(dlg._tree, "Storage filling up") is not None
     assert dlg._status.text() == "3 issues on 1 clusters"
 
@@ -124,16 +127,16 @@ def test_no_issues_status(qtbot, api):
 
 
 def test_data_from_plate_on_partial_failure(qtbot, api):
-    # pveversion из статуса с фолбэком /version — для ошибки валим оба
+    # pveversion from status with a /version fallback — fail both on error
     api.fail["nodes/pve02/status"] = (500, "boom")
     api.fail["nodes/pve02/version"] = (500, "boom")
     dlg = make_dialog(qtbot)
     wait_loaded(qtbot, dlg)
     top = dlg._tree.topLevelItem(0)
     assert "Data from" in top.text(0)
-    # неполнота данных — сигнальный цвет плашки кластера
+    # data incompleteness — signal color of the cluster plate
     assert top.foreground(0).color() == QColor(Color.WARNING)
-    # drift-строки нет (версия pve02 не собралась), compliance живо
+    # no drift row (pve02 version not collected), compliance alive
     assert find_issue(dlg._tree, "Behind by major version") is None
     assert find_issue(dlg._tree, "Never backed up") is not None
 
@@ -198,12 +201,12 @@ def test_sprawl_section_after_scan(qtbot, api):
 def test_scan_progress_in_status(qtbot, api):
     dlg = make_dialog(qtbot)
     wait_loaded(qtbot, dlg)
-    # прогресс из фонового потока попадает в статус «Сканирование... d/t»
+    # progress from the background thread lands in the "Scanning... d/t" status
     dlg._scan_thread = threading.Thread(target=lambda: None)
     dlg._scan_thread.start()
     dlg._on_scan_progress(45, 120)
     assert "45/120" in dlg._status.text()
-    # после завершения скана запоздалые апдейты статус не трогают
+    # after the scan finishes, late updates leave the status alone
     dlg._scan_thread.join()
     dlg._scan_thread = None
     dlg._status.setText("done")
@@ -224,11 +227,12 @@ def test_worker_multi_cluster(qtbot, monkeypatch):
     bundles = blocker.args[0]
     assert {b.report.cluster for b in bundles} == {"alpha", "beta"}
     assert all(b.report.complete for b in bundles)
-    assert all(b.runway for b in bundles)  # rrddata сцены → оценки
+    assert all(b.runway for b in bundles)  # scene rrddata → estimates
 
 
 def test_cluster_display_label(qtbot, monkeypatch):
-    """Кластер подписывается именем кластера, ключи ВМ — именем конфига."""
+    """The cluster is labeled with the cluster name, VM keys use the
+    config name."""
     api = make_pve_cluster("pve01")
     install_fake_pve(monkeypatch, api)
     dlg = FleetHealthDialog(
@@ -238,11 +242,11 @@ def test_cluster_display_label(qtbot, monkeypatch):
     top = dlg._tree.topLevelItem(0)
     assert top.text(0) == "mycluster"
     row = find_by_key(dlg._tree, ("pve01", 301, "pve02"))
-    assert row is not None  # ключ перехода — по имени конфига-эндпоинта
+    assert row is not None  # navigation key — by the config-endpoint name
 
 
 class TestBuildFleetTargets:
-    """Группировка конфигов — семантика дерева (создатель = cluster_rep)."""
+    """Config grouping — tree semantics (creator = cluster_rep)."""
 
     def test_cluster_grouped_by_name(self):
         creator = {"name": "pve01", "cluster": "mylab",
@@ -251,8 +255,8 @@ class TestBuildFleetTargets:
         targets = build_fleet_targets([creator, joinee])
         assert len(targets) == 1
         t = targets[0]
-        assert t.name == "pve01"        # эндпоинт — представитель
-        assert t.display == "mylab"     # подпись — имя кластера
+        assert t.name == "pve01"        # the endpoint is the representative
+        assert t.display == "mylab"     # the label is the cluster name
         assert t.cfg is creator
 
     def test_cluster_without_rep_first_member(self):
@@ -276,7 +280,7 @@ class TestBuildFleetTargets:
         assert [t.name for t in targets] == ["solo"]
 
     def test_standalone_word_is_not_cluster(self):
-        """cluster='Standalone' — служебное значение, это одиночный хост."""
+        """cluster='Standalone' — a service value; it is a single host."""
         t = build_fleet_targets([{"name": "solo",
                                   "cluster": "Standalone"}])
         assert [(x.name, x.display) for x in t] == [("solo", "solo")]
@@ -289,7 +293,7 @@ class TestBuildFleetTargets:
 
 
 def test_stale_compliance_warning(qtbot, api):
-    """Бэкап был, но старше порога — жёлтая строка."""
+    """A backup exists but is older than the threshold — a yellow row."""
     dlg = make_dialog(qtbot)
     wait_loaded(qtbot, dlg)
     report = dlg._bundles[0].report

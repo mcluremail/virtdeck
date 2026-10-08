@@ -1,18 +1,18 @@
-"""M0.2: runtime-контракт «ни одного сетевого вызова в UI-потоке»
-(ROADMAP v3.0). Инфраструктура для офлайн-прогонов action-слотов:
-- guard-провайдер подменяет PluginRegistry.create_provider: любой вызов
-  или доступ к атрибутам провайдера из main-потока фиксируется как
-  нарушение (в фоновых потоках — тихая заглушка);
-- fake QThreadPool не выполняет воркеры вовсе — слоты спокойно создают
-  воркеры, никто не лезет в сеть;
-- autofire-патчи статических фабрик диалогов (QMessageBox/QInputDialog/
-  QFileDialog) дают дефолтные ответы;
-- modal-closer закрывает любой popup/modal, открытый instance-exec
-  (QDialog.exec, QMenu.exec — PySide6 не даёт перехватить их патчем
-  класса): таймер в event loop самого exec закрывает окно.
+"""M0.2: runtime contract "no network calls in the UI thread"
+(ROADMAP v3.0). Infrastructure for offline runs of action slots:
+- guard provider replaces PluginRegistry.create_provider: any call
+  or attribute access on the provider from the main thread is recorded
+  as a violation (background threads get a silent stub);
+- fake QThreadPool never runs workers — slots freely create workers,
+  nobody touches the network;
+- autofire patches of static dialog factories (QMessageBox/QInputDialog/
+  QFileDialog) return default answers;
+- modal-closer closes any popup/modal opened by instance-exec
+  (QDialog.exec, QMenu.exec — PySide6 does not let you intercept those
+  with a class patch): a timer in exec's own event loop closes the window.
 
-Нарушения накапливаются в списке, который выдаёт install_guard():
-тест после обхода слотов проверяет его пустоту и печатает отчёт.
+Violations accumulate in the list returned by install_guard():
+after walking the slots the test asserts it is empty and prints a report.
 """
 
 import threading
@@ -27,10 +27,10 @@ from PySide6.QtWidgets import (
 
 
 class RuntimeContractViolation(BaseException):
-    """Вызов sync-клиента в main-потоке.
+    """Sync-client call in the main thread.
 
-    Наследует BaseException намеренно: слоты с ``except Exception``
-    не должны проглатывать нарушение (для режима raise)."""
+    Inherits BaseException on purpose: slots with ``except Exception``
+    must not swallow the violation (raise mode)."""
 
 
 def _in_main_thread():
@@ -38,12 +38,12 @@ def _in_main_thread():
 
 
 class _SyncTrap:
-    """Ловушка на пути DataProvider.
+    """Trap on the DataProvider path.
 
-    Любой вызов или доступ к атрибуту из main-потока — нарушение
-    (запись в collect и/или RuntimeContractViolation); из фонового
-    потока — тихая заглушка (воркер получит пустоту и деградирует
-    штатным error_occurred)."""
+    Any call or attribute access from the main thread is a violation
+    (appended to collect and/or RuntimeContractViolation); from a
+    background thread — a silent stub (the worker gets nothing and
+    degrades via the regular error_occurred)."""
 
     __slots__ = ("_path", "_collect", "_raise_in_main")
 
@@ -53,7 +53,7 @@ class _SyncTrap:
         self._raise_in_main = raise_in_main
 
     def _violation(self, what):
-        message = f"{self._path}: {what} в UI-потоке"
+        message = f"{self._path}: {what} in the UI thread"
         if self._collect is not None:
             if isinstance(self._collect, list):
                 self._collect.append(message)
@@ -64,7 +64,7 @@ class _SyncTrap:
 
     def __call__(self, *args, **kwargs):
         if _in_main_thread():
-            self._violation("вызов")
+            self._violation("call")
             return None
         return None
 
@@ -72,19 +72,19 @@ class _SyncTrap:
         if name.startswith("__"):
             raise AttributeError(name)
         if _in_main_thread():
-            self._violation(f"доступ к .{name}")
+            self._violation(f"access to .{name}")
         return _SyncTrap(f"{self._path}.{name}", self._collect, self._raise_in_main)
 
-    def __repr__(self):  # pragma: no cover — отладочное
+    def __repr__(self):  # pragma: no cover — debugging aid
         return f"<SyncTrap {self._path}>"
 
 
 def install_guard(monkeypatch, collect=None, raise_in_main=False):
-    """Патчит PluginRegistry.create_provider на guard-провайдер.
+    """Patches PluginRegistry.create_provider with the guard provider.
 
-    Единая точка: все импорты create_provider (backend/*, ui/api/*)
-    доходят до реестра. Возвращает список нарушений (если collect
-    не передан явно)."""
+    Single choke point: every import of create_provider (backend/*,
+    ui/api/*) reaches the registry. Returns the violation list (if
+    collect is not passed explicitly)."""
     import virtdeck.plugins as plugins_mod
 
     if collect is None:
@@ -99,7 +99,7 @@ def install_guard(monkeypatch, collect=None, raise_in_main=False):
 
 
 class _RecordingPool:
-    """QThreadPool-заглушка: воркеры собираются, но не выполняются."""
+    """QThreadPool stub: workers are collected but never run."""
 
     def __init__(self):
         self.started = []
@@ -128,21 +128,22 @@ class _RecordingPool:
 
 
 def install_fake_pool(monkeypatch):
-    """Подменяет QThreadPool.globalInstance на собирающую заглушку —
-    паттерн tests/ui/test_worker_manager.py, один патч закрывает все
-    точки старта воркеров (mainwindow, WorkerManager, ui/api)."""
+    """Swaps QThreadPool.globalInstance for the collecting stub —
+    pattern of tests/ui/test_worker_manager.py; one patch covers every
+    worker start site (mainwindow, WorkerManager, ui/api)."""
     pool = _RecordingPool()
     monkeypatch.setattr(QThreadPool, "globalInstance", staticmethod(lambda: pool))
     return pool
 
 
 def install_modal_closer(interval_ms=20):
-    """QTimer, закрывающий popup/modal-окна, открытые триггером действия.
+    """QTimer closing popup/modal windows opened by an action trigger.
 
-    PySide6 не даёт перехватить instance-exec (QDialog.exec, QMenu.exec)
-    патчем класса — реальный exec блокирует UI-поток. Таймер крутится в
-    event loop самого exec и закрывает активное окно, exec немедленно
-    возвращается (Rejected/None). Остановить после прогона: stop()."""
+    PySide6 does not let you intercept instance-exec (QDialog.exec,
+    QMenu.exec) with a class patch — the real exec blocks the UI
+    thread. The timer spins in exec's own event loop and closes the
+    active window, so exec returns immediately (Rejected/None). Stop
+    after the run: stop()."""
     timer = QTimer()
     timer.setInterval(interval_ms)
 
@@ -159,13 +160,13 @@ def install_modal_closer(interval_ms=20):
 
 
 def install_pyqtgraph_shims(monkeypatch):
-    """pyqtgraph-экспорт нестабилен в offscreen: showExportDialog падает
-    с AttributeError (contextMenuItem назначается только по реальному
-    mouse-событию). Экспорт графиков — вне предмета сетевого контракта,
-    шим глушит только этот внешний путь."""
+    """pyqtgraph export is unstable under offscreen: showExportDialog
+    raises AttributeError (contextMenuItem is assigned only by a real
+    mouse event). Chart export is outside the network contract; the
+    shim mutes only that side path."""
     try:
         from pyqtgraph.GraphicsScene.GraphicsScene import GraphicsScene
-    except ImportError:  # pragma: no cover — pyqtgraph в deps проекта
+    except ImportError:  # pragma: no cover — pyqtgraph is a project dep
         return
     monkeypatch.setattr(
         GraphicsScene,
@@ -176,10 +177,10 @@ def install_pyqtgraph_shims(monkeypatch):
 
 
 def install_autofire_dialogs(monkeypatch):
-    """Статические фабрики диалогов отвечают «отменено»: QMessageBox →
-    Yes/Ok, QInputDialog → ("", False), QFileDialog → ("", ""). Модальные
-    exec кастомных диалогов закрывает install_modal_closer. Всё, что
-    пошло в сеть, ловит guard-провайдер."""
+    """Static dialog factories answer "cancelled": QMessageBox →
+    Yes/Ok, QInputDialog → ("", False), QFileDialog → ("", ""). Modal
+    exec of custom dialogs is closed by install_modal_closer. Anything
+    that reached the network is caught by the guard provider."""
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
     monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: QMessageBox.Ok))
     monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: QMessageBox.Ok))

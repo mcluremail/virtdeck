@@ -1,14 +1,14 @@
-"""Лёгкая шина событий — seed для ROADMAP v3.0 (Event Bus).
+"""Lightweight event bus — seed for ROADMAP v3.0 (Event Bus).
 
-Минималистичный pub/sub без зависимостей от Qt. Потокобезопасность:
-мутации подписок под lock; обработчики вызываются в потоке издателя —
-из worker-потока публикуйте через QueuedConnection/InvokeMethod.
+Minimalist pub/sub with no Qt dependencies. Thread safety: subscription
+mutations are under a lock; handlers run in the publisher's thread —
+publish from worker threads via QueuedConnection/InvokeMethod.
 
-Использование:
+Usage:
     bus = EventBus()
     off = bus.subscribe("node.status_changed", lambda e: ...)
     bus.publish(Event("node.status_changed", {"node": "n1", "status": "online"}))
-    off()  # отписка
+    off()  # unsubscribe
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Event:
-    """Иммутабельное событие шины: топик + произвольный payload."""
+    """Immutable bus event: topic + arbitrary payload."""
 
     topic: str
     payload: Any = None
@@ -34,10 +34,10 @@ Handler = Callable[[Event], None]
 
 
 class EventBus:
-    """Реестр подписчиков по топикам с изолированной доставкой.
+    """Registry of subscribers by topic with isolated delivery.
 
-    Исключение в одном обработчике логируется и не мешает доставке
-    остальным подписчикам того же события.
+    An exception in one handler is logged and does not prevent delivery
+    to the remaining subscribers of the same event.
     """
 
     def __init__(self) -> None:
@@ -45,7 +45,7 @@ class EventBus:
         self._lock = threading.Lock()
 
     def subscribe(self, topic: str, handler: Handler) -> Callable[[], None]:
-        """Подписаться; возвращает функцию отписки (идемпотентна)."""
+        """Subscribe; returns an unsubscribe function (idempotent)."""
         with self._lock:
             self._subs.setdefault(topic, []).append(handler)
 
@@ -60,7 +60,7 @@ class EventBus:
         return unsubscribe
 
     def publish(self, event: Event) -> int:
-        """Доставить событие подписчикам топика. Возвращает число доставок."""
+        """Deliver an event to the topic's subscribers. Returns delivery count."""
         with self._lock:
             handlers = list(self._subs.get(event.topic, ()))
         delivered = 0
@@ -77,6 +77,6 @@ class EventBus:
             return len(self._subs.get(topic, ()))
 
     def clear(self) -> None:
-        """Снять все подписки (для тестов)."""
+        """Drop all subscriptions (for tests)."""
         with self._lock:
             self._subs.clear()

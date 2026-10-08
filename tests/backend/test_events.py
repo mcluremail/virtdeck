@@ -1,4 +1,4 @@
-"""Тесты Event Bus (seed v3.0)."""
+"""Event Bus tests (seed v3.0)."""
 
 import threading
 
@@ -28,7 +28,7 @@ class TestSubscribe:
         off = bus.subscribe("t", seen.append)
         assert off() is None
         assert bus.publish(Event("t")) == 0
-        off()  # идемпотентна
+        off()  # idempotent
 
     def test_multiple_subscribers_all_delivered(self):
         bus = EventBus()

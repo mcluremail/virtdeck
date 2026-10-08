@@ -105,7 +105,7 @@ class VmConfigUpdateSignals(QObject):
     config_update_error = Signal(int, str)
     finished = Signal()
 class VmConfigUpdateWorker(QRunnable):
-    """Обновляет параметры VM через PUT /nodes/{node}/qemu/{vmid}/config."""
+    """Updates VM parameters via PUT /nodes/{node}/qemu/{vmid}/config."""
     def __init__(self, host_cfg, node_name, vmid, params, vm_type='qemu'):
         super().__init__()
         self.host_cfg = host_cfg
@@ -233,11 +233,11 @@ class VmDiskMoveWorker(QRunnable):
 # VmTaskHistoryWorker
 # ----------------------------------------------------------------------
 class VmTaskHistorySignals(QObject):
-    tasks_ready = Signal(int, list)   # vmid, список задач
+    tasks_ready = Signal(int, list)   # vmid, task list
     tasks_error = Signal(int, str)
     finished = Signal()
 class VmTaskHistoryWorker(QRunnable):
-    """Загружает историю задач для конкретной ВМ."""
+    """Loads the task history for a specific VM."""
     def __init__(self, host_cfg, node_name, vmid, limit=50):
         super().__init__()
         self.host_cfg = host_cfg
@@ -276,7 +276,7 @@ class VmTaskHistoryWorker(QRunnable):
 # VmSnapshotsWorker
 # ----------------------------------------------------------------------
 class VmSnapshotsSignals(QObject):
-    snapshots_ready = Signal(int, list)   # vmid, список снапшотов
+    snapshots_ready = Signal(int, list)   # vmid, snapshot list
     snapshots_error = Signal(int, str)
     finished = Signal()
 _DISK_KEYS = ("scsi", "ide", "sata", "virtio", "efidisk")
@@ -314,7 +314,7 @@ def _parse_disk_size(val_str):
             pass
     return int(total)
 class VmSnapshotsWorker(QRunnable):
-    """Загружает список снапшотов для конкретной ВМ (с доп. запросом размера)."""
+    """Loads the snapshot list for a specific VM (with an extra size request)."""
     def __init__(self, host_cfg, node_name, vmid, vm_type="qemu"):
         super().__init__()
         self.host_cfg = host_cfg
@@ -374,7 +374,7 @@ class VmSnapshotsWorker(QRunnable):
                 pass
 
 # ----------------------------------------------------------------------
-# Удаление токена с сервера
+# Delete token from the server
 # ----------------------------------------------------------------------
 class VmActionSignals(QObject):
     action_result = Signal(str)

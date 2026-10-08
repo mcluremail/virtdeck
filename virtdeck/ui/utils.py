@@ -31,8 +31,8 @@ def parse_pve_error(err):
     if not err:
         return ""
     err_lower = err.lower()
-    # Псевдо-статусы 595-599 (AnyEvent::HTTP): это ОТВЕТЫ pveproxy —
-    # проблема на стороне сервера, а не клиента или его прокси.
+    # Pseudo-statuses 595-599 (AnyEvent::HTTP): these are pveproxy RESPONSES —
+    # a server-side problem, not the client or its proxy.
     m = re.match(r"^(59[5-9])\b", err.strip())
     if m:
         hints = {

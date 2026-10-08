@@ -20,7 +20,7 @@ class VmTaskHistoryWidget(QWidget):
             tr("User"), tr("Description")
         ])
         enable_table_autofit(self.table, [0, 1, 2, 3])
-        # Description — заполнитель (Interactive + stretchLastSection).
+        # Description is a filler column (Interactive + stretchLastSection).
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.table.horizontalHeader().setStyleSheet("QHeaderView::section { padding-left: 4px; }")

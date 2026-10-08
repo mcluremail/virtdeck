@@ -13,8 +13,8 @@ class FetchSignals(QObject):
     result_ready = Signal(dict)
     finished = Signal()
 class FetchWorker(QRunnable):
-    """Загружает сводку по узлу через QThreadPool.
-    Независимые API-запросы выполняются параллельно через threading.Thread."""
+    """Fetches the node summary via QThreadPool.
+    Independent API requests run in parallel via threading.Thread."""
     def __init__(self, node_cfg):
         super().__init__()
         self.node_cfg = node_cfg
@@ -152,7 +152,7 @@ class FetchWorker(QRunnable):
                     s["host_name"] = self.node_cfg["name"]
                     s["cluster"] = cluster_name
 
-                # Подтягиваем used/total с каждой ноды параллельно
+                # Pull used/total from each node in parallel
                 detail_lock = threading.Lock()
                 detail_by_node = {}
 
@@ -177,7 +177,7 @@ class FetchWorker(QRunnable):
                 if self._cancelled:
                     return
 
-                # Подтягиваем версии с каждой ноды параллельно
+                # Pull versions from each node in parallel
                 version_lock = threading.Lock()
 
                 def fetch_node_version(n):
@@ -193,14 +193,14 @@ class FetchWorker(QRunnable):
                                 n["lxctype"] = lxc
                     except Exception:
                         pass
-                    # pveversion и kernel из статуса ноды
+                    # pveversion and kernel from node status
                     try:
                         st = node_api.get_status(node_name)
                         with version_lock:
                             pve = st.get("pveversion")
                             if pve:
                                 n["pveversion"] = pve
-                                # M0.5: версии нод для compat-матрицы
+                                # M0.5: node versions for the compat matrix
                                 provider.report_version(node_name, pve)
                             n["kernel"] = st.get("kversion", "")
                     except Exception:
@@ -227,7 +227,7 @@ class FetchWorker(QRunnable):
                     if not vm.get("pool"):
                         vm["pool"] = vmid_to_pool.get(vm["vmid"])
             else:
-                # Standalone: получаем имя ноды и данные параллельно
+                # Standalone: get the node name and data in parallel
                 def fetch_standalone():
                     nonlocal node_name, nodes, vms, storages
                     try:
@@ -238,7 +238,7 @@ class FetchWorker(QRunnable):
                     node_name = nn
                     try:
                         node_status = node_api.get_status(node_name)
-                        # M0.5: версия ноды для compat-матрицы
+                        # M0.5: node version for the compat matrix
                         provider.report_version(node_name,
                                                 node_status.get("pveversion"))
                     except Exception as e:
@@ -300,13 +300,15 @@ class FetchWorker(QRunnable):
                     return
                 standalone_thread.join(timeout=30)
 
-                # Повторно применяем pool после завершения pool-потоков
-                # (fetch_pools может ещё работать, когда fetch_standalone уже забрал vms)
+                # Re-apply pool after the pool threads finish
+                # (fetch_pools may still be running when fetch_standalone
+                # has already taken the vms)
                 for vm in vms:
                     if not vm.get("pool"):
                         vm["pool"] = vmid_to_pool.get(vm.get("vmid"))
 
-                # Версии для standalone ноды (pveversion/kernel уже в node_status)
+                # Versions for the standalone node (pveversion/kernel are
+                # already in node_status)
                 if nodes:
                     try:
                         ver = node_api.get_version(node_name)
@@ -394,5 +396,5 @@ class FetchWorker(QRunnable):
                 pass
 
 # ----------------------------------------------------------------------
-# VmDetailWorker (остаётся без изменений)
+# VmDetailWorker (unchanged)
 # ----------------------------------------------------------------------

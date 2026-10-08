@@ -1,8 +1,8 @@
-"""HTML-страница noVNC для QWebEngineView.
+"""noVNC HTML page for QWebEngineView.
 
-Страница подключается к локальному WsBridge (ws://127.0.0.1:{port}) и
-запускает RFB из вендоренного noVNC. Авторизация VNC — одноразовый ticket
-(vncproxy), передаётся как RFB-пароль (PVE делает set_password на qemu).
+The page connects to the local WsBridge (ws://127.0.0.1:{port}) and runs
+RFB from the vendored noVNC. VNC auth is a one-time ticket (vncproxy),
+passed as the RFB password (PVE does set_password on qemu).
 """
 
 import json
@@ -54,22 +54,22 @@ window.rfb = rfb;
 
 
 def build_console_html(port: int, ticket: str) -> str:
-    r"""Собирает страницу, безопасно подставляя порт и ticket.
+    r"""Builds the page, safely injecting port and ticket.
 
-    Внутри <script> HTML-entities не декодируются, поэтому ticket подставляется
-    как JSON-строка; от выхода из script-контекста защищает разрыв "</"
-    (стандартный приём: `</` → `<\/`).
+    Inside <script> HTML entities are not decoded, so the ticket is inserted
+    as a JSON string; escaping the script context is prevented by breaking
+    "</" (the standard trick: `</` -> `<\/`).
     """
     ticket_js = json.dumps(str(ticket)).replace("</", "<\\/")
     return _PAGE.replace("{port}", str(int(port))).replace("{ticket}", ticket_js)
 
 
 def sticky_key_js(keysym: int, code: str, down: bool) -> str:
-    r"""JS для зажатия/отпускания клавиши-модификатора в RFB-сессии страницы.
+    r"""JS to press/release a sticky modifier key in the page's RFB session.
 
-    down=True — «залипающая» клавиша нажата (key-down) и удерживается в
-    госте до обратного события; down=False — отпускается. Остальные клавиши
-    сочетания пользователь вводит прямо в консоли.
+    down=True — the sticky key is pressed (key-down) and held in the guest
+    until the reverse event; down=False — released. The user types the rest
+    of the combo directly in the console.
     """
     payload = json.dumps([int(keysym), str(code), bool(down)])
     return f"if (window.rfb) rfb.sendKey({payload[1:-1]});"

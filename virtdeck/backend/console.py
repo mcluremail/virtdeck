@@ -17,10 +17,11 @@ class VmConsoleSignals(QObject):
     console_error = Signal(str)
     finished = Signal()
 class VmConsoleWorker(QRunnable):
-    """Запрашивает SPICE/VNC proxy у PVE, пишет .vv файл и запускает remote-viewer.
+    """Requests a SPICE/VNC proxy from PVE, writes the .vv file and launches
+    remote-viewer.
 
-    QEMU: сначала SPICE, при ошибке — fallback на VNC.
-    LXC:  всегда VNC.
+    QEMU: SPICE first, falling back to VNC on error.
+    LXC:  always VNC.
     """
     def __init__(self, host_cfg, node_name, vmid, vm_type="qemu"):
         super().__init__()
@@ -32,7 +33,7 @@ class VmConsoleWorker(QRunnable):
 
     @staticmethod
     def _build_vv_lines(config, host_fallback):
-        """Строит строки .vv файла для VNC-подключения."""
+        """Builds .vv file lines for a VNC connection."""
         lines = ["[virt-viewer]", "type=vnc"]
         port = config.get("port")
         if port:
@@ -50,7 +51,7 @@ class VmConsoleWorker(QRunnable):
 
     @staticmethod
     def _build_spice_vv_lines(config):
-        """Строит строки .vv файла для SPICE-подключения."""
+        """Builds .vv file lines for a SPICE connection."""
         lines = ["[virt-viewer]"]
         host_raw = config.get("host", "")
         if host_raw:
@@ -231,17 +232,17 @@ class VmConsoleWorker(QRunnable):
                 pass
 
 # ----------------------------------------------------------------------
-# NoVncWorker — встроенная noVNC-консоль (websocket)
+# NoVncWorker — built-in noVNC console (websocket)
 # ----------------------------------------------------------------------
 class NoVncSignals(QObject):
     ready = Signal(str, str)  # ws_url, vnc ticket (RFB password)
     error = Signal(str)
     finished = Signal()
 class NoVncWorker(QRunnable):
-    """Готовит параметры для встроенной noVNC-консоли.
+    """Prepares parameters for the built-in noVNC console.
 
-    POST vncproxy → GET vncwebsocket (валидация vncticket) → ws_url.
-    Подключение выполняет WsBridge в UI-потоке окна консоли.
+    POST vncproxy -> GET vncwebsocket (vncticket validation) -> ws_url.
+    The connection is made by WsBridge in the console window's UI thread.
     """
     def __init__(self, host_cfg, node_name, vmid, vm_type="qemu"):
         super().__init__()
@@ -253,7 +254,7 @@ class NoVncWorker(QRunnable):
 
     @staticmethod
     def build_ws_url(host, node, vmid, vm_type, port, ticket):
-        """Строит wss:// URL websocket-эндпоинта PVE (порт API 8006)."""
+        """Builds the wss:// URL of the PVE websocket endpoint (API port 8006)."""
         from urllib.parse import quote
         return (
             f"wss://{quote(host, safe='')}:{PVE_PORT}"
@@ -265,8 +266,8 @@ class NoVncWorker(QRunnable):
 
     @staticmethod
     def extract_ticket(config):
-        """VNCTicket из ответа vncproxy: password (патченные 8.4.19+/9.1.9+)
-        или ticket (PVE 7/старые)."""
+        """VNCTicket from the vncproxy response: password (patched
+        8.4.19+/9.1.9+) or ticket (PVE 7/older)."""
         return config.get("password") or config.get("ticket") or ""
 
     def run(self):
@@ -284,7 +285,7 @@ class NoVncWorker(QRunnable):
             ticket = self.extract_ticket(config)
             if not port or not ticket:
                 raise ValueError(tr("VNC proxy returned no port/ticket"))
-            # Валидирует vncticket и «взводит» websocket-эндпоинт на сервере.
+            # Validates the vncticket and "arms" the websocket endpoint on the server.
             try:
                 vm_api.get_vnc_websocket(
                     self.node_name, self.vmid, self.vm_type, port, ticket
@@ -305,10 +306,10 @@ class NoVncWorker(QRunnable):
                 err = tr("PVE permission denied for console (requires VM.Console)")
             elif ("not supported" in msg or "no console" in msg
                   or "unsupported" in msg):
-                # ВАЖНО: не матчить по подстроке "vnc" — префиксы
-                # "vncproxy:"/"vncwebsocket:" есть в любом сообщении,
-                # catch-all превращал таймаут/сбой сети в ложное
-                # «консоль не поддерживается».
+                # IMPORTANT: do not match the "vnc" substring — the
+                # "vncproxy:"/"vncwebsocket:" prefixes appear in every
+                # message, so a catch-all turned a timeout/network failure
+                # into a false "console not supported".
                 err = tr("Console not supported for this VM")
             else:
                 err = tr("Console proxy error: {}").format(e)
@@ -325,5 +326,5 @@ class NoVncWorker(QRunnable):
                 pass
 
 # ----------------------------------------------------------------------
-# CreateVmWorker — создание VM
+# CreateVmWorker — VM creation
 # ----------------------------------------------------------------------

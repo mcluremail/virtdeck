@@ -31,8 +31,8 @@ def main():
     sys.excepthook = _excepthook
     app = QApplication(sys.argv)
 
-    # PM_SmallIconSize = base_size() до создания виджетов: иначе все
-    # setIconSize-less места (детальная панель, вкладки) рисуют 16px
+    # PM_SmallIconSize = base_size() before widgets are created: otherwise
+    # all places without setIconSize (detail panel, tabs) draw 16px icons
     from .ui.theme import install_base_icon_style
     install_base_icon_style()
 

@@ -135,8 +135,8 @@ class ClusterTasksWidget(QWidget):
         h.setSectionResizeMode(QHeaderView.Interactive)
         h.setSectionResizeMode(0, QHeaderView.Interactive)
         h.setSectionResizeMode(1, QHeaderView.Interactive)
-        # Все колонки тянутся мышью; Status (последняя) — заполнитель,
-        # поэтому таблица по-прежнему всегда заполняет ширину панели.
+        # All columns resize by mouse; Status (last) is a filler column,
+        # so the table still always fills the panel width.
         h.setSectionResizeMode(5, QHeaderView.Interactive)
         enable_column_reorder(h)
         enable_table_autofit(self.table, [2, 3, 4], max_width=480)
@@ -180,7 +180,7 @@ class ClusterTasksWidget(QWidget):
         filter_bar.addWidget(self._filter_input)
 
         self._status_filter = QComboBox()
-        # ru «Выполняется» шире дефолтных 90px — клип в свёрнутом виде
+        # ru "Running" is wider than the default 90px — clipped when collapsed
         self._status_filter.setMaximumWidth(140)
         self._status_filter.addItem(tr("All"), "all")
         self._status_filter.addItem(tr("OK"), "OK")
@@ -446,8 +446,8 @@ class ClusterTasksWidget(QWidget):
             if isinstance(widths, list) and len(widths) == self.table.columnCount():
                 for c, w in enumerate(widths):
                     if c in (4, 5):
-                        # 4 — Description: автоподбор по содержимому;
-                        # 5 — Status: заполнитель (stretchLastSection).
+                        # 4 — Description: auto-sized to content;
+                        # 5 — Status: filler column (stretchLastSection).
                         continue
                     self.table.setColumnWidth(c, w)
         except (TypeError, ValueError):

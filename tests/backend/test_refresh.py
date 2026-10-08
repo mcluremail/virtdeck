@@ -1,4 +1,4 @@
-"""Тесты RefreshCoordinator: поколения, pending, guard-и, тайм-ауты."""
+"""RefreshCoordinator tests: generations, pending, guards, timeouts."""
 
 from virtdeck.backend.refresh import RefreshCoordinator
 
@@ -20,7 +20,7 @@ class TestHard:
         c.begin_hard()
         assert not c.hard_result_current(g1)
         assert c.hard_result_current(c.hard_gen)
-        # gen == 0 — legacy-вызов без поколения, всегда актуален
+        # gen == 0 — legacy call without a generation, always current
         assert c.hard_result_current(0)
 
     def test_hard_done_discards_only_current_gen(self):
@@ -28,7 +28,7 @@ class TestHard:
         g = c.begin_hard()
         w = object()
         c.track_hard(w)
-        c.hard_done(w, g + 5)  # воркер устаревшего поколения
+        c.hard_done(w, g + 5)  # worker from a stale generation
         assert c.hard_pending_count == 1
         c.hard_done(w, g)
         assert c.hard_pending_count == 0
@@ -37,7 +37,7 @@ class TestHard:
         c = RefreshCoordinator()
         sg = c.begin_soft(2, now=100.0)
         c.begin_hard()
-        # soft-поколение не инвалидируется самим begin_hard
+        # the soft generation is not invalidated by begin_hard itself
         assert c.soft_result_current(sg)
         assert c.soft_running
 
@@ -87,6 +87,6 @@ class TestSoft:
         assert not c.soft_timed_out(100.0 + 90)
         assert not c.soft_timed_out(189.9)
         assert c.soft_timed_out(190.1)
-        # не идущий цикл не «истекает»
+        # a non-running loop does not "expire"
         c.reset_soft()
         assert not c.soft_timed_out(9999.0)

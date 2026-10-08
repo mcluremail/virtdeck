@@ -1,10 +1,11 @@
-"""M2.2: командная палитра (Ctrl+K).
+"""M2.2: command palette (Ctrl+K).
 
-Немодальный фреймless-оверлей над главным окном: строка запроса +
-fuzzy-выдача ActionRegistry. Действия фильтруются по текущему выделению
-дерева (Selection от TreePanel.current_selection); Enter/клик выполняет
-invoke-замыкание. Палитра не знает о конкретных действиях — спеки
-подставляет action_specs.build_registry(mainwindow).
+A modeless frameless overlay above the main window: a query line +
+fuzzy output from ActionRegistry. Actions are filtered by the current
+tree selection (Selection from TreePanel.current_selection);
+Enter/click runs the invoke closure. The palette knows nothing about
+specific actions — specs are supplied by
+action_specs.build_registry(mainwindow).
 """
 
 import logging
@@ -35,7 +36,7 @@ _LIST_MAX_HEIGHT = 400
 
 
 class CommandPalette(QDialog):
-    """Fuzzy-палитра действий, применимых к выделенному объекту дерева."""
+    """Fuzzy palette of actions applicable to the selected tree object."""
 
     def __init__(self, registry, selection_provider, parent=None):
         super().__init__(parent)
@@ -53,7 +54,7 @@ class CommandPalette(QDialog):
         lay.setContentsMargins(10, 10, 10, 10)
         lay.setSpacing(8)
 
-        # Контекст: имя выделенного объекта («действия над…»)
+        # Context: name of the selected object ("actions on ...")
         self._header = QLabel("")
         self._header.hide()
         lay.addWidget(self._header)
@@ -71,9 +72,9 @@ class CommandPalette(QDialog):
         self._list.setRootIsDecorated(False)
         self._list.setUniformRowHeights(True)
         self._list.setAllColumnsShowFocus(True)
-        self._list.setFocusPolicy(Qt.NoFocus)   # навигация — стрелками из поля
+        self._list.setFocusPolicy(Qt.NoFocus)   # navigation via arrows from the input
         self._list.setIconSize(QSize(base_size(), base_size()))
-        # подпись занимает всю ширину, shortcut — по содержимому справа
+        # label takes the full width, shortcut — resize-to-content on the right
         header = self._list.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.Stretch)
@@ -84,10 +85,10 @@ class CommandPalette(QDialog):
 
         self.retheme()
 
-    # ── Публичное API ───────────────────────────────────────────────
+    # ── Public API ──────────────────────────────────────────────────
 
     def open_for(self):
-        """Открыть палитру над текущим выделением дерева."""
+        """Open the palette over the current tree selection."""
         try:
             self._selection = self._selection_provider() or Selection()
         except Exception:
@@ -105,8 +106,8 @@ class CommandPalette(QDialog):
         self._reposition()
 
     def retheme(self):
-        """Перестилизация при смене темы (каркас; содержимое пересобирается
-        при следующем открытии из свежих токенов)."""
+        """Restyle on theme change (skeleton; content is rebuilt on the
+        next open from fresh tokens)."""
         self._list.setIconSize(QSize(base_size(), base_size()))
         self._frame.setStyleSheet(
             f"QFrame#paletteFrame {{ background: {Color.RAISED};"
@@ -128,7 +129,7 @@ class CommandPalette(QDialog):
             f" color: {Color.ON_ACCENT}; }}"
         )
 
-    # ── Внутреннее ──────────────────────────────────────────────────
+    # ── Internal ────────────────────────────────────────────────────
 
     def _refresh(self, query):
         self._list.clear()
@@ -171,7 +172,7 @@ class CommandPalette(QDialog):
         self._invoke_item(self._list.currentItem())
 
     def _reposition(self):
-        """По горизонтали — центр родителя, у верхнего края (под тулбаром)."""
+        """Horizontally centered on the parent, near the top edge (below the toolbar)."""
         parent = self.parent()
         if parent is None or not parent.isVisible():
             return
@@ -200,7 +201,7 @@ class CommandPalette(QDialog):
         return super().eventFilter(obj, event)
 
     def changeEvent(self, event):
-        # Клик мимо палитры (в главное окно) закрывает её — поведение popup.
+        # Clicking outside the palette (into the main window) closes it — popup behavior.
         if event.type() == QEvent.WindowDeactivate and self.isVisible():
             self.close()
         super().changeEvent(event)

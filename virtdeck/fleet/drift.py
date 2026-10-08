@@ -1,11 +1,11 @@
-"""M4.3: version drift — ноды, отстающие по версии PVE от лидера кластера.
+"""M4.3: version drift — nodes lagging behind the cluster's PVE leader.
 
-Вход — ``node_versions`` из ClusterFleetReport (node → pveversion raw).
-Уровень отставания относительно самой свежей ноды кластера:
-``ok`` (равна) → ``patch`` (отстал patch) → ``minor`` → ``major``;
-неразбираемые версии дают ``unknown`` и не скрываются (сравнить нельзя —
-это само по себе сигнал). Риск, который закрывает отчёт (B24):
-несовместимость при будущих cross-cluster операциях.
+Input is ``node_versions`` from ClusterFleetReport (node → pveversion
+raw). Lag level relative to the newest node in the cluster:
+``ok`` (equal) → ``patch`` (behind a patch) → ``minor`` → ``major``;
+unparseable versions yield ``unknown`` and are not hidden (they cannot
+be compared — that alone is a signal). The risk this report closes
+(B24): incompatibility in future cross-cluster operations.
 """
 
 from __future__ import annotations
@@ -15,8 +15,8 @@ from dataclasses import dataclass
 
 from ..domain.compat import PveVersion, parse_pve_version
 
-# Порядок серьёзности; unknown между minor и patch — сигнализирует раньше
-# мелкого отставания, но позже реального разрыва версий.
+# Severity order; unknown between minor and patch — flags earlier than
+# a small lag, but later than a real version break.
 _SEVERITY = {"ok": 0, "patch": 1, "unknown": 2, "minor": 3, "major": 4}
 
 
@@ -24,7 +24,7 @@ _SEVERITY = {"ok": 0, "patch": 1, "unknown": 2, "minor": 3, "major": 4}
 class NodeDrift:
     node: str
     version: str
-    """pveversion raw, как в отчёте сбора."""
+    """pveversion raw, as in the collection report."""
     level: str
     """'ok' | 'patch' | 'unknown' | 'minor' | 'major'."""
     newest_node: str
@@ -42,7 +42,7 @@ def _level(own: PveVersion, newest: PveVersion) -> str:
 
 
 def detect_drift(node_versions: Mapping[str, str]) -> tuple[NodeDrift, ...]:
-    """Уровень отставания каждой ноды от самой свежей в кластере."""
+    """How far each node lags behind the newest in the cluster."""
     parsed: dict[str, PveVersion] = {}
     for node, raw in node_versions.items():
         version = parse_pve_version(raw)

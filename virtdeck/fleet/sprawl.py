@@ -1,11 +1,12 @@
-"""M4.4: snapshot sprawl — забытые старые снапшоты по всему парку.
+"""M4.4: snapshot sprawl — forgotten old snapshots across the whole fleet.
 
-Скан по кнопке (не фоновый): по каждой ВМ/CT один запрос
+On-demand scan (not background): one request per VM/CT
 ``GET /nodes/{node}/qemu|lxc/{vmid}/snapshot``; ``fetch_snapshots``
-гонит их через пул с лимитом параллелизма. ``scan_sprawl`` — чистая
-агрегация: снапшоты старше ``stale_days`` считаются забытыми; снапшоты
-без времени (zombie) тоже забытые; служебный ``current`` исключается.
-Кэш последнего скана — забота UI (M4.5).
+pushes them through a pool with a concurrency limit. ``scan_sprawl``
+is pure aggregation: snapshots older than ``stale_days`` count as
+forgotten; snapshots without a time (zombies) count as forgotten too;
+the service ``current`` snapshot is excluded. Caching the last scan is
+the UI's concern (M4.5).
 """
 
 from __future__ import annotations
@@ -29,12 +30,13 @@ class GuestSprawl:
     name: str
     vm_type: str
     count: int
-    """Всего пользовательских снапшотов (без current; зомби считаются)."""
+    """Total user snapshots (no current; zombies count)."""
     oldest_time: int | None
     stale_names: tuple[str, ...] = field(default_factory=tuple)
-    """Имена забытых (старше порога или без времени), старые первыми."""
+    """Names of forgotten ones (older than the threshold or without a
+    time), oldest first."""
     zombie_names: tuple[str, ...] = field(default_factory=tuple)
-    """Снапшоты без времени — возраст неизвестен."""
+    """Snapshots without a time — age unknown."""
 
     @property
     def has_stale(self) -> bool:
@@ -46,8 +48,8 @@ class SprawlScan:
     generated_at: int
     stale_days: int
     guests: tuple[GuestSprawl, ...]
-    """Только гости со снапшотами, отсортированы: stale первыми,
-    внутри — по возрасту старейшего."""
+    """Only guests with snapshots, sorted: stale first, within — by the
+    age of the oldest."""
 
 
 def _guest_key(guest: Guest) -> tuple[str, int, str, str]:
@@ -57,7 +59,7 @@ def _guest_key(guest: Guest) -> tuple[str, int, str, str]:
 def scan_sprawl(snapshots_by_vmid: Mapping[int, Sequence[dict]],
                 guests: Sequence[Guest], *, now: int,
                 stale_days: int = DEFAULT_STALE_DAYS) -> SprawlScan:
-    """Агрегация скана: снапшоты гостей, пометка забытых (см. докмодуль)."""
+    """Scan aggregation: guest snapshots, marking forgotten ones (see module doc)."""
     by_vmid = {g.vmid: g for g in guests}
     stale_cutoff = now - stale_days * SECONDS_PER_DAY
     rows: list[GuestSprawl] = []
@@ -75,7 +77,7 @@ def scan_sprawl(snapshots_by_vmid: Mapping[int, Sequence[dict]],
                 snaptime = int(raw_time)
             except (TypeError, ValueError):
                 zombie.append(name)
-                stale.append((0, name))  # забытое — наверху
+                stale.append((0, name))  # forgotten — on top
                 continue
             names.append(name)
             if oldest is None or snaptime < oldest:
@@ -106,11 +108,11 @@ def scan_sprawl(snapshots_by_vmid: Mapping[int, Sequence[dict]],
 def fetch_snapshots(provider, guests: Sequence[Guest], *,
                     concurrency: int = DEFAULT_CONCURRENCY,
                     on_progress=None) -> dict[int, list[dict]]:
-    """Собрать снапшоты всех гостей парка (1 запрос на ВМ).
+    """Collect snapshots of all fleet guests (1 request per VM).
 
-    Лимит параллелизма через пул потоков; ошибки per-ВМ глушатся
-    (гость просто без снапшотов — в отчёте не участвует). Возвращает
-    vmid → список снапшотов (raw).
+    Concurrency is limited via a thread pool; per-VM errors are muted
+    (the guest simply has no snapshots — it is left out of the report).
+    Returns vmid → list of snapshots (raw).
     """
     targets = [g for g in guests if not g.template]
     if not targets:
