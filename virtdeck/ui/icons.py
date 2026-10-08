@@ -4,7 +4,7 @@ from PySide6.QtSvg import QSvgRenderer
 
 from .theme import Color
 
-ICON_SIZE = 16
+ICON_SIZE = 24
 _BASE_SIZE = ICON_SIZE  # базовый размер; движок тем меняет через set_base_size()
 
 
@@ -15,7 +15,7 @@ def set_base_size(size):
 
 
 def base_size():
-    """Текущий базовый размер иконок (24 у Breeze, 16 у остальных тем)."""
+    """Текущий базовый размер иконок (24 px во всех темах)."""
     return _BASE_SIZE
 
 

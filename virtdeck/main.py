@@ -31,6 +31,11 @@ def main():
     sys.excepthook = _excepthook
     app = QApplication(sys.argv)
 
+    # PM_SmallIconSize = base_size() до создания виджетов: иначе все
+    # setIconSize-less места (детальная панель, вкладки) рисуют 16px
+    from .ui.theme import install_base_icon_style
+    install_base_icon_style()
+
     from .ui.i18n import set_language
     lang = load_ui_state("language") or "en"
     set_language(lang)

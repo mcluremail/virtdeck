@@ -42,7 +42,7 @@ class LightTheme:
 
     @property
     def icon_size(self) -> int:
-        return 16
+        return 24
 
 
 # ── Breeze — фирменный filled-цветной набор (фиксированные цвета, как бренд) ──
@@ -283,7 +283,7 @@ class OxygenTheme:
 
     @property
     def icon_size(self) -> int:
-        return 16
+        return 24
 
 
 class GraphiteTheme:
@@ -347,7 +347,7 @@ class GraphiteTheme:
 
     @property
     def icon_size(self) -> int:
-        return 16
+        return 24
 
 
 # ── System (следует схеме ОС) ───────────────────────────────────────

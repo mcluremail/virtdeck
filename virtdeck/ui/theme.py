@@ -10,9 +10,47 @@ import re
 
 from PySide6.QtCore import QEvent, QObject, QTimer
 from PySide6.QtGui import QFont, QFontDatabase
-from PySide6.QtWidgets import QApplication, QHeaderView
+from PySide6.QtWidgets import QApplication, QHeaderView, QProxyStyle, QStyle
 
 logger = logging.getLogger(__name__)
+
+
+class BaseIconStyle(QProxyStyle):
+    """Стиль с иконочными метриками = базовому размеру иконок темы.
+
+    Без него виджеты, не задающие setIconSize явно (вкладки, кнопки,
+    таблицы детальной панели и т.п.), рисуют иконки в дефолте Qt
+    (PM_SmallIconSize = 16), а не в base_size(). Размер читается живьём
+    из icons.base_size(), так что смена темы подхватывается сама.
+    """
+
+    def pixelMetric(self, metric, option=None, widget=None):
+        if metric in (QStyle.PM_SmallIconSize, QStyle.PM_ListViewIconSize,
+                      QStyle.PM_IconViewIconSize, QStyle.PM_TabBarIconSize):
+            from .icons import base_size  # локально: icons <-> theme цикл
+            return base_size()
+        return super().pixelMetric(metric, option, widget)
+
+
+_BASE_ICON_STYLE: BaseIconStyle | None = None
+
+
+def install_base_icon_style() -> None:
+    """Поставить BaseIconStyle один раз на всё приложение (идемпотентно).
+
+    Вызывается из main() сразу после создания QApplication (при светлой
+    теме load_theme на старте не запускается — иначе стиль бы не встал)
+    и повторно из load_theme() для страховки. Ссылка держится глобально:
+    без неё Python-обёртку стиля собирает GC и Shiboken восстанавливает
+    её как базовый QCommonStyle (тип и виртуальный pixelMetric теряют
+    питоновскую идентичность).
+    """
+    global _BASE_ICON_STYLE
+    app = QApplication.instance()
+    if app is None or _BASE_ICON_STYLE is not None:
+        return
+    _BASE_ICON_STYLE = BaseIconStyle(app.style())
+    app.setStyle(_BASE_ICON_STYLE)
 
 
 def _app() -> QApplication:
@@ -973,7 +1011,8 @@ def load_theme(theme_id: str, registry=None, persist: bool = True) -> str:
         logger.warning("theme %r: extra_qss() failed", theme_id, exc_info=True)
         _EXTRA_QSS = ""
     _apply_qss()
-    set_base_size(getattr(plugin, "icon_size", 16))
+    install_base_icon_style()
+    set_base_size(getattr(plugin, "icon_size", 24))
     reset_icons()
     retheme_plots()
     from .widgets.metric_card import retheme_metric_cards

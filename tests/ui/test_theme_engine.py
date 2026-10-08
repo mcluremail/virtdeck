@@ -259,6 +259,8 @@ class TestBuiltinThemePlugins:
         assert tokens["WARNING"] == "#6e4a08"
 
     def test_breeze_activates_24px_with_overrides(self, qtbot):
+        """Breeze даёт 24px + оверрайды; после унификации (2026-10-07)
+        24px — базовый размер всех тем, но оверрайды только у Breeze."""
         from PySide6.QtCore import QSize
 
         from virtdeck.ui import icons
@@ -273,9 +275,38 @@ class TestBuiltinThemePlugins:
             assert QSize(24, 24) in icons.get_icon("refresh").availableSizes()
         finally:
             load_theme("light", persist=False)
-        assert icons._BASE_SIZE == 16
+        assert icons._BASE_SIZE == 24
         assert not icons._THEME_ICONS
-        assert QSize(16, 16) in icons.get_icon("vm").availableSizes()
+        assert QSize(24, 24) in icons.get_icon("vm").availableSizes()
+
+    def test_all_themes_use_24px_base(self):
+        """Унификация (2026-10-07): базовый размер иконок — 24px во всех
+        темах, включая System (разрешается через Breeze)."""
+        from virtdeck.plugins import default_registry
+
+        for theme_id in default_registry().theme_ids():
+            assert default_registry().get_theme(theme_id).icon_size == 24, \
+                theme_id
+
+    def test_style_installs_base_icon_size(self, qtbot):
+        """Прокси-стиль задаёт иконочные метрики = base_size().
+
+        Иначе виджеты без явного setIconSize (детальная панель, вкладки,
+        таблицы) рисуют иконки в дефолте Qt 16px (репорт 2026-10-07).
+        Проверка поведенческая: Shiboken не восстанавливает Python-тип
+        прокси при повторной обёртке, но виртуальный pixelMetric
+        маршрутизируется в питоновский override стабильно.
+        """
+        from PySide6.QtWidgets import QApplication, QStyle
+
+        from virtdeck.ui.theme import load_theme
+
+        load_theme("light", persist=False)
+        style = QApplication.instance().style()
+        assert style.pixelMetric(QStyle.PM_SmallIconSize) == 24
+        assert style.pixelMetric(QStyle.PM_ListViewIconSize) == 24
+        assert style.pixelMetric(QStyle.PM_IconViewIconSize) == 24
+        assert style.pixelMetric(QStyle.PM_TabBarIconSize) == 24
 
     def test_breeze_icons_cover_full_registry(self):
         """Breeze перекрывает весь реестр иконок, кроме брендового 'app'."""

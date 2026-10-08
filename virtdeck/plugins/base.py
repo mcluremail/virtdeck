@@ -56,7 +56,7 @@ class ThemePlugin(Plugin, Protocol):
     the built-in template — density tweaks, extra selectors) and
     ``icons()`` (partial override: icon name -> SVG source; missing
     names fall back to the built-in set recolored with theme tokens)
-    plus ``icon_size`` (base icon size in px, default 16).
+    plus ``icon_size`` (base icon size in px, default 24).
     """
 
     def tokens(self) -> dict[str, str]: ...
@@ -69,7 +69,7 @@ class ThemePlugin(Plugin, Protocol):
 
     @property
     def icon_size(self) -> int:
-        return 16
+        return 24
 
 
 class PluginRegistry:
