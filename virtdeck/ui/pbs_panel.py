@@ -107,7 +107,7 @@ class PbsPanel(QWidget):
         self._ds_table.horizontalHeader().setStretchLastSection(True)
         ds_page = QWidget()
         ds_layout = QVBoxLayout(ds_page)
-        ds_layout.setContentsMargins(0, 4, 0, 0)
+        ds_layout.setContentsMargins(0, 8, 0, 0)
         ds_layout.addWidget(self._ds_table)
         self._stack.addWidget(ds_page)
 
@@ -157,7 +157,7 @@ class PbsPanel(QWidget):
     def _build_snapshots_tab(self):
         w = QWidget()
         v = QVBoxLayout(w)
-        v.setContentsMargins(0, 4, 0, 0)
+        v.setContentsMargins(0, 8, 0, 0)
         v.setSpacing(6)
 
         top = QHBoxLayout()
@@ -190,7 +190,7 @@ class PbsPanel(QWidget):
     def _build_jobs_tab(self):
         w = QWidget()
         v = QVBoxLayout(w)
-        v.setContentsMargins(0, 4, 0, 0)
+        v.setContentsMargins(0, 8, 0, 0)
 
         self._jobs_table = QTableWidget(0, 5)
         self._jobs_table.setHorizontalHeaderLabels(

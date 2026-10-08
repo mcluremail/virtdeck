@@ -100,6 +100,10 @@ class CardRow(QFrame):
                 self._title_label.setFixedWidth(title_width)
             else:
                 self._title_label.setMinimumWidth(120)
+            if val:
+                # фиксированная колонка клипает длинное значение молча —
+                # полное имя доступно в tooltip
+                self._title_label.setToolTip(str(val))
             layout.addWidget(self._title_label)
 
         fields = self._columns.get("fields", [])
@@ -109,6 +113,8 @@ class CardRow(QFrame):
             lbl.setStyleSheet(f"color: {Color.TEXT_SEC};")
             if fwidth:
                 lbl.setFixedWidth(fwidth)
+                if val:
+                    lbl.setToolTip(str(val))
             self._field_labels.append((fkey, lbl))
             layout.addWidget(lbl)
 

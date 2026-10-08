@@ -431,13 +431,13 @@ class CreateVmDialog(QDialog):
         footer.addStretch()
 
         self.create_btn = QPushButton(tr("Create"))
-        self.create_btn.setFixedWidth(120)
+        self.create_btn.setMinimumWidth(120)
         self.create_btn.setObjectName("accentBtn")
         self.create_btn.clicked.connect(self._on_create)
         footer.addWidget(self.create_btn)
 
         self.cancel_btn = QPushButton(tr("Cancel"))
-        self.cancel_btn.setFixedWidth(100)
+        self.cancel_btn.setMinimumWidth(100)
         self.cancel_btn.clicked.connect(self.reject)
         footer.addWidget(self.cancel_btn)
 

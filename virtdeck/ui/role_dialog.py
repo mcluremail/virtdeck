@@ -84,7 +84,7 @@ class RoleDialog(QDialog):
 
         priv_group = QGroupBox(tr("Privileges"))
         priv_layout = QGridLayout(priv_group)
-        priv_layout.setSpacing(4)
+        priv_layout.setSpacing(6)
         self._priv_checks = {}
         cols = 2
         for i, priv in enumerate(_PVE_PRIVILEGES):
@@ -117,16 +117,16 @@ class RoleDialog(QDialog):
         if self._is_special:
             close_btn = QPushButton(tr("Close"))
             close_btn.setObjectName("accentBtn")
-            close_btn.setFixedWidth(120)
+            close_btn.setMinimumWidth(120)
             close_btn.clicked.connect(self.accept)
             btn_layout.addWidget(close_btn)
         else:
             self._ok_btn = QPushButton(tr("Save"))
             self._ok_btn.setObjectName("accentBtn")
-            self._ok_btn.setFixedWidth(120)
+            self._ok_btn.setMinimumWidth(120)
             self._ok_btn.clicked.connect(self.accept)
             cancel_btn = QPushButton(tr("Cancel"))
-            cancel_btn.setFixedWidth(120)
+            cancel_btn.setMinimumWidth(120)
             cancel_btn.clicked.connect(self.reject)
             btn_layout.addWidget(self._ok_btn)
             btn_layout.addWidget(cancel_btn)

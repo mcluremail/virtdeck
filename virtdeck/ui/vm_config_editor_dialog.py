@@ -107,12 +107,12 @@ class VmConfigEditorDialog(QDialog):
 
         self._ok_btn = QPushButton(tr("Save"))
         self._ok_btn.setObjectName("accentBtn")
-        self._ok_btn.setFixedWidth(120)
+        self._ok_btn.setMinimumWidth(120)
         self._ok_btn.clicked.connect(self._on_ok)
         btn_layout.addWidget(self._ok_btn)
 
         self._cancel_btn = QPushButton(tr("Cancel"))
-        self._cancel_btn.setFixedWidth(120)
+        self._cancel_btn.setMinimumWidth(120)
         self._cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self._cancel_btn)
 

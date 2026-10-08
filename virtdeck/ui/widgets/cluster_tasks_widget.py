@@ -166,8 +166,8 @@ class ClusterTasksWidget(QWidget):
 
         # Filter bar — compact, right-aligned
         filter_bar = QHBoxLayout()
-        filter_bar.setContentsMargins(4, 3, 4, 3)
-        filter_bar.setSpacing(4)
+        filter_bar.setContentsMargins(8, 6, 8, 6)
+        filter_bar.setSpacing(6)
         filter_bar.addStretch()
 
         self._progress_items = {}
@@ -180,7 +180,8 @@ class ClusterTasksWidget(QWidget):
         filter_bar.addWidget(self._filter_input)
 
         self._status_filter = QComboBox()
-        self._status_filter.setMaximumWidth(90)
+        # ru «Выполняется» шире дефолтных 90px — клип в свёрнутом виде
+        self._status_filter.setMaximumWidth(140)
         self._status_filter.addItem(tr("All"), "all")
         self._status_filter.addItem(tr("OK"), "OK")
         self._status_filter.addItem(tr("Errors"), "error")
@@ -189,7 +190,6 @@ class ClusterTasksWidget(QWidget):
         filter_bar.addWidget(self._status_filter)
 
         filter_widget = QWidget()
-        filter_widget.setFixedHeight(30)
         filter_widget.setLayout(filter_bar)
 
         layout = QVBoxLayout(self)

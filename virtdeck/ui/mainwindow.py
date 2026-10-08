@@ -240,7 +240,7 @@ class MainWindow(QMainWindow):
         self.status_bar.insertPermanentWidget(0, self._refresh_spinner)
 
         self._lang_combo = QComboBox()
-        self._lang_combo.setFixedWidth(110)
+        self._lang_combo.setMinimumWidth(110)
         self._lang_combo.setStyleSheet(
             f"QComboBox {{ font-size: 12px; border: 1px solid {Color.BORDER_STRONG}; border-radius: 3px; "
             f"padding: 1px 4px; background: {Color.TRACK}; color: {Color.TEXT}; }}"
@@ -785,7 +785,9 @@ class MainWindow(QMainWindow):
         # Диалог подтверждения
         dlg = QDialog(self)
         dlg.setWindowTitle(tr("Delete VM"))
-        dlg.setFixedSize(480, is_running and 280 or 240)
+        # минимум вместо setFixedSize: в локалях с длинным переводом
+        # перенесённый текст и чекбоксы не влезали в 240px высоты
+        dlg.setMinimumWidth(480)
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
@@ -821,11 +823,11 @@ class MainWindow(QMainWindow):
         btn_layout.addStretch()
 
         delete_btn = QPushButton(tr("Delete"))
-        delete_btn.setFixedWidth(120)
+        delete_btn.setMinimumWidth(120)
         delete_btn.setObjectName("dangerBtn")
         delete_btn.setEnabled(False)
         cancel_btn = QPushButton(tr("Cancel"))
-        cancel_btn.setFixedWidth(120)
+        cancel_btn.setMinimumWidth(120)
         cancel_btn.setDefault(True)
 
         if is_running:
@@ -869,16 +871,22 @@ class MainWindow(QMainWindow):
     def _confirm_delete(self, text):
         dlg = QDialog(self)
         dlg.setWindowTitle(tr("Delete"))
-        dlg.setFixedSize(420, 130)
+        # минимум вместо setFixedSize: длинные подтверждения в локалях
+        # обрезались одной строкой без переносов
+        dlg.setMinimumWidth(420)
         layout = QVBoxLayout(dlg)
-        layout.addWidget(QLabel(text))
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+        msg = QLabel(text)
+        msg.setWordWrap(True)
+        layout.addWidget(msg)
         layout.addStretch()
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         yes_btn = QPushButton(tr("Yes"))
-        yes_btn.setFixedWidth(80)
+        yes_btn.setMinimumWidth(80)
         no_btn = QPushButton(tr("No"))
-        no_btn.setFixedWidth(80)
+        no_btn.setMinimumWidth(80)
         no_btn.setDefault(True)
         btn_layout.addWidget(yes_btn)
         btn_layout.addWidget(no_btn)
@@ -2115,7 +2123,7 @@ class MainWindow(QMainWindow):
             except Exception as exc:
                 logger.error("saved theme %r failed: %s", saved, exc)
         self._theme_combo = QComboBox()
-        self._theme_combo.setFixedWidth(110)
+        self._theme_combo.setMinimumWidth(110)
         self._theme_combo.setStyleSheet(self._status_combo_style())
         reg = get_registry()
         saved = load_ui_state("theme") or "light"

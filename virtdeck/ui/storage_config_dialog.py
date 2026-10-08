@@ -18,7 +18,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
+    QWidget,
 )
 
 from .i18n import tr
@@ -108,23 +110,35 @@ class StorageConfigDialog(QDialog):
         self._enable_check.setChecked(str(self._config.get("enable", "1")) not in ("0", "False"))
         form.addRow("", self._enable_check)
 
-        layout.addLayout(form)
-
         # Type-specific fields
         self._type_form = QFormLayout()
         self._type_form.setSpacing(8)
-        layout.addLayout(self._type_form)
+        # общая форма и поля типа — в скролле: у rbd/ceph форм столько
+        # полей, что в низких окнах и локалях с длинными подписями контент
+        # не влезает (кнопки остаются снаружи, всегда видимы)
+        body = QWidget(self)
+        body_lay = QVBoxLayout(body)
+        body_lay.setContentsMargins(0, 0, 0, 0)
+        body_lay.setSpacing(12)
+        body_lay.addLayout(form)
+        body_lay.addLayout(self._type_form)
+        body_lay.addStretch(1)
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setWidget(body)
+        layout.addWidget(scroll, 1)
         self._rebuild_type_fields()
 
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         ok_btn = QPushButton(tr("Save"))
         ok_btn.setObjectName("accentBtn")
-        ok_btn.setFixedWidth(120)
+        ok_btn.setMinimumWidth(120)
         ok_btn.clicked.connect(self.accept)
         btn_layout.addWidget(ok_btn)
         cancel_btn = QPushButton(tr("Cancel"))
-        cancel_btn.setFixedWidth(120)
+        cancel_btn.setMinimumWidth(120)
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
