@@ -52,6 +52,7 @@ _SECTIONS = (
 
 class _ScanSignals(QObject):
     scans_done = Signal()
+    progress = Signal(int, int)
 
 
 class FleetHealthDialog(QDialog):
@@ -68,6 +69,7 @@ class FleetHealthDialog(QDialog):
         self._scan_thread: threading.Thread | None = None
         self._scan_signals = _ScanSignals()
         self._scan_signals.scans_done.connect(self._on_scan_done)
+        self._scan_signals.progress.connect(self._on_scan_progress)
         self._build_ui()
         self._load()
 
@@ -82,10 +84,11 @@ class FleetHealthDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 12)
 
         buttons = QHBoxLayout()
-        self._refresh_btn = QPushButton(tr("Refresh"))
+        self._refresh_btn = QPushButton(get_icon("refresh"), tr("Refresh"))
         self._refresh_btn.clicked.connect(self._load)
         buttons.addWidget(self._refresh_btn)
-        self._scan_btn = QPushButton(tr("Scan snapshots"))
+        self._scan_btn = QPushButton(get_icon("snapshot"),
+                                     tr("Scan snapshots"))
         self._scan_btn.clicked.connect(self._scan_snapshots)
         buttons.addWidget(self._scan_btn)
         buttons.addStretch(1)
@@ -140,8 +143,15 @@ class FleetHealthDialog(QDialog):
         self._scan_thread.start()
 
     def _scan_worker(self) -> None:
-        self._scans = scan_fleet_snapshots(self._targets, self._bundles)
+        self._scans = scan_fleet_snapshots(
+            self._targets, self._bundles,
+            on_progress=lambda done, total:
+                self._scan_signals.progress.emit(done, total))
         self._scan_signals.scans_done.emit()
+
+    def _on_scan_progress(self, done: int, total: int) -> None:
+        if self._scan_thread is not None:
+            self._status.setText(tr("Scanning... {}/{}").format(done, total))
 
     def _on_scan_done(self) -> None:
         self._scan_thread = None
@@ -167,12 +177,20 @@ class FleetHealthDialog(QDialog):
     def _render_cluster(self, bundle: ClusterBundle) \
             -> tuple[QTreeWidgetItem, int]:
         report = bundle.report
-        status = "OK" if report.complete else "warning"
+        if report.complete:
+            status = "OK"
+        elif report.coverage is None:
+            status = "error"  # основной сбор не состоялся вовсе
+        else:
+            status = "warning"
         label = bundle.display or report.cluster
+        cluster_item = QTreeWidgetItem([label, "", "", ""])
         if not report.complete:
             label += "  ·  " + tr("Data from {}").format(
                 _fmt_time(report.generated_at))
-        cluster_item = QTreeWidgetItem([label, "", "", ""])
+            # неполнота данных — сигнальный цвет, не тихий серый
+            cluster_item.setText(0, label)
+            cluster_item.setForeground(0, QColor(Color.WARNING))
         cluster_item.setIcon(0, get_icon("cluster", status=status))
 
         sections = {
@@ -182,18 +200,28 @@ class FleetHealthDialog(QDialog):
             "sprawl": self._sprawl_rows(report.cluster),
         }
         issues = 0
+        section_items = []
         for section_key, title in _SECTIONS:
             rows = sections[section_key]
             if not rows:
                 continue
             section_item = QTreeWidgetItem([tr(title), "", "", ""])
+            font = section_item.font(0)
+            font.setBold(True)
+            section_item.setFont(0, font)
+            section_item.setForeground(0, QColor(Color.TEXT_SEC))
             section_item.setFirstColumnSpanned(True)
             cluster_item.addChild(section_item)
             for row, _sev in rows:
                 section_item.addChild(row)
+            section_items.append(section_item)
             issues += sum(1 for _r, sev in rows if sev >= 1)
         self._tree.addTopLevelItem(cluster_item)
         cluster_item.setExpanded(True)
+        # раскрытие секций — только после вставки в дерево: до insert
+        # setExpanded у Qt не фиксируется, строки остались бы скрыты
+        for section_item in section_items:
+            section_item.setExpanded(True)
         return cluster_item, issues
 
     def _compliance_rows(self, bundle: ClusterBundle) -> list:
@@ -209,28 +237,24 @@ class FleetHealthDialog(QDialog):
             key = (report.cluster, guest.vmid, guest.node)
             label = _guest_label(guest)
             if guest.vmid in report.coverage.uncovered:
-                rows.append((self._issue_row(
-                    report.cluster, label,
+                rows.append((self._issue_row(label,
                     tr("Not covered by any backup job"), "",
                     _SEV_RED, key), _SEV_RED))
                 continue
             if not state.ever_backed_up:
-                rows.append((self._issue_row(
-                    report.cluster, label, tr("Never backed up"),
+                rows.append((self._issue_row(label, tr("Never backed up"),
                     "", _SEV_RED, key), _SEV_RED))
                 continue
             if state.task_last_failed is not None and (
                     state.last_successful is None
                     or state.task_last_failed > state.last_successful):
-                rows.append((self._issue_row(
-                    report.cluster, label, tr("Last backup failed"),
+                rows.append((self._issue_row(label, tr("Last backup failed"),
                     "", _SEV_RED, key), _SEV_RED))
                 continue
             age = (report.generated_at
                    - (state.last_successful or 0)) / 86400
             if age > COMPLIANCE_STALE_DAYS:
-                rows.append((self._issue_row(
-                    report.cluster, label,
+                rows.append((self._issue_row(label,
                     tr("Last backup is {} days old").format(int(age)),
                     "", _SEV_WARN, key), _SEV_WARN))
         return rows
@@ -252,8 +276,7 @@ class FleetHealthDialog(QDialog):
                 issue, sev = tr("Version unknown"), _SEV_WARN
             else:
                 issue, sev = tr("Outdated patch level"), _SEV_PLAIN
-            rows.append((self._issue_row(
-                report.cluster, drift.node, issue,
+            rows.append((self._issue_row(drift.node, issue,
                 _version_label(drift.version), sev, key, icon="host"), sev))
         return rows
 
@@ -275,8 +298,7 @@ class FleetHealthDialog(QDialog):
             else:
                 detail = tr("~{} days left").format(int(est.days_left))
             key = ("host", est.node, bundle.report.cluster)
-            rows.append((self._issue_row(
-                bundle.report.cluster, f"{est.storage} ({est.node})",
+            rows.append((self._issue_row(f"{est.storage} ({est.node})",
                 tr("Storage filling up"), detail, sev, key, icon="storage"),
                 sev))
         return rows
@@ -297,14 +319,15 @@ class FleetHealthDialog(QDialog):
                 sev = _SEV_RED if age > SPRAWL_DANGER_DAYS else _SEV_WARN
             issue = tr("{} snapshots, oldest {} days").format(row.count, age)
             key = (cluster, row.vmid, row.node)
-            rows.append((self._issue_row(cluster, _vmid_label(row), issue,
+            rows.append((self._issue_row(_vmid_label(row), issue,
                                          detail, sev, key, icon="snapshot"),
                          sev))
         return rows
 
-    def _issue_row(self, cluster: str, obj: str, issue: str, detail: str,
+    def _issue_row(self, obj: str, issue: str, detail: str,
                    sev: int, key, icon: str = "vm") -> QTreeWidgetItem:
-        item = QTreeWidgetItem([cluster, obj, issue, detail])
+        # колонка 0 пуста: имя кластера уже на родительском узле дерева
+        item = QTreeWidgetItem(["", obj, issue, detail])
         item.setIcon(1, get_icon(icon))
         if key is not None:
             item.setData(0, KEY_ROLE, key)

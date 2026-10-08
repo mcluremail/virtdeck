@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import replace
 
 import pytest
@@ -102,6 +103,13 @@ def test_render_issues_and_status(qtbot, api):
     assert ok.text(1) == "pve01"
     assert ok.text(3) == "8.2.4"
     assert ok.foreground(2).color() != QColor(Color.DANGER)
+    # секции раскрыты (иначе строки скрыты), колонка кластера у строк пуста
+    top = dlg._tree.topLevelItem(0)
+    for j in range(top.childCount()):
+        section = top.child(j)
+        assert section.isExpanded()
+        for k in range(section.childCount()):
+            assert section.child(k).text(0) == ""
     # runway: rrddata сцены растёт → хранилище local попадает в отчёт
     assert find_issue(dlg._tree, "Storage filling up") is not None
     assert dlg._status.text() == "3 issues on 1 clusters"
@@ -123,6 +131,8 @@ def test_data_from_plate_on_partial_failure(qtbot, api):
     wait_loaded(qtbot, dlg)
     top = dlg._tree.topLevelItem(0)
     assert "Data from" in top.text(0)
+    # неполнота данных — сигнальный цвет плашки кластера
+    assert top.foreground(0).color() == QColor(Color.WARNING)
     # drift-строки нет (версия pve02 не собралась), compliance живо
     assert find_issue(dlg._tree, "Behind by major version") is None
     assert find_issue(dlg._tree, "Never backed up") is not None
@@ -183,6 +193,22 @@ def test_sprawl_section_after_scan(qtbot, api):
     zombie = find_by_key(dlg._tree, ("alpha", 102, "pve01"))
     assert zombie.foreground(2).color() == QColor(Color.DANGER)
     assert zombie.text(3) == "Unknown snapshot age"
+
+
+def test_scan_progress_in_status(qtbot, api):
+    dlg = make_dialog(qtbot)
+    wait_loaded(qtbot, dlg)
+    # прогресс из фонового потока попадает в статус «Сканирование... d/t»
+    dlg._scan_thread = threading.Thread(target=lambda: None)
+    dlg._scan_thread.start()
+    dlg._on_scan_progress(45, 120)
+    assert "45/120" in dlg._status.text()
+    # после завершения скана запоздалые апдейты статус не трогают
+    dlg._scan_thread.join()
+    dlg._scan_thread = None
+    dlg._status.setText("done")
+    dlg._on_scan_progress(50, 120)
+    assert dlg._status.text() == "done"
 
 
 def test_worker_multi_cluster(qtbot, monkeypatch):

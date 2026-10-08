@@ -1275,5 +1275,6 @@
   "{} snapshots, oldest {} days": "{} لقطات، الأقدم {} يومًا",
   "Oldest {} days": "الأقدم {} يومًا",
   "Unknown snapshot age": "عمر اللقطات غير معروف",
-  "Up to date": "الإصدار محدث"
+  "Up to date": "الإصدار محدث",
+  "Scanning... {}/{}": "جارٍ الفحص… {}/{}"
 }

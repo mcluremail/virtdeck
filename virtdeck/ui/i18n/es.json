@@ -1275,5 +1275,6 @@
   "{} snapshots, oldest {} days": "{} instantáneas, la más antigua {} días",
   "Oldest {} days": "La más antigua {} días",
   "Unknown snapshot age": "Edad de instantáneas desconocida",
-  "Up to date": "Versión actualizada"
+  "Up to date": "Versión actualizada",
+  "Scanning... {}/{}": "Analizando… {}/{}"
 }
