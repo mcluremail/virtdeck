@@ -16,13 +16,22 @@ Monitor clusters and hosts, manage virtual machines and containers, browse Proxm
 | Fedora / RHEL | .rpm | [Releases](https://github.com/mcluremail/virtdeck/releases) |
 | Any | .tar.gz / .whl | [Releases](https://github.com/mcluremail/virtdeck/releases) |
 
-Latest release: [v2.13.0](https://github.com/mcluremail/virtdeck/releases/tag/v2.13.0)
+Latest release: [v3.0.0](https://github.com/mcluremail/virtdeck/releases/tag/v3.0.0)
 
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 
 ## Features
+
+**Fleet Health (multi-cluster)**
+- One report across all your independent clusters: backup compliance, version drift, storage runway and snapshot sprawl — the whole estate at a glance
+- Backup compliance: guests not covered by any backup job — pure client-side matching of PVE job semantics (all > pool > vmid, exclude lists, templates exempt); "last successful backup" from PBS or task history
+- Version drift: nodes lagging behind their cluster leader highlighted (patch / minor / major)
+- Storage runway: least-squares forecast with a 95% confidence interval — "site B runs out of disk in ~12 days"
+- Snapshot sprawl: forgotten snapshots (>30 days) across every guest, on-demand scan with bounded parallelism
+- Partial failure isolation: an offline cluster degrades to a "data from HH:MM" plate — the report never goes empty
+- Launch from the toolbar, tray or Ctrl+Shift+F; double-click jumps to the object in the tree
 
 **Monitoring**
 - CPU, RAM, network, and disk usage charts (RRD data from PVE); arbitrary time range (Custom From/To) and CSV export for VM, host and storage charts
@@ -41,6 +50,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 **Management**
 - Power actions for QEMU and LXC: Start, Shutdown, Reboot, Reset, Stop, Resume
 - Bulk actions: multi-select VMs in the tree (Ctrl/Shift+click) and mass Start / Shutdown / Reboot / Stop with progress dialog and per-VM results
+- Optimistic UI: power actions apply instantly with tree spinners and roll back with a clear error on failure
 - Snapshot rollback: revert a VM/container to a snapshot from the Snapshots tab (guarded for the pseudo-snapshot "current")
 - Create Virtual Machines: dialog with CPU, RAM, disk, network settings — right from the node context menu
 - Cluster operations: create a cluster from a standalone host and add a node to an existing cluster (peer hostname, root password, fingerprint, corosync link0, votes) via context menus
@@ -69,10 +79,11 @@ See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 - Audit log filters: text search + status filter (All/OK/Errors/Running)
 
 **Interface**
-- Object tree: one flat, name-sorted top level — user groups, clusters and standalone hosts → Hosts → VMs/Containers with color status indicators; templates get a distinct icon; "Hosts"/"Storages"/"Backup servers" view modes; shared cluster storages show per-node usage rows
+- Object tree: one flat, name-sorted top level — user groups, clusters and standalone hosts → Hosts → VMs/Containers with color status indicators; templates get a distinct icon; "Hosts"/"Storages"/"Backup servers" view modes; shared cluster storages show per-node usage rows; compact two-line rows (24px icons throughout) with running/total counters as a name suffix
 - User-defined host groups: named groups at the tree top level, assign hosts/clusters via context menu or drag&drop; clicking a group shows an aggregated summary
-- Tree notes: short per-item note (host, cluster, group, VM, storage) in a muted second column; host notes default to the host FQDN
+- Tree notes: short per-item note (host, cluster, group, VM, storage) rendered as a pale line under the item name; host notes default to the host FQDN; the full text is in the tooltip
 - Global search (Ctrl+F): find VMs, hosts, pools and storages across all clusters and jump to the object in the tree
+- Command palette (Ctrl+K): fuzzy search over every tree and toolbar action, keyboard navigation, context header; the tree context menu is built from the same declarative action registry
 - Monitoring dashboard: metric cards with progress bars (CPU, RAM, Disk, Network, Uptime) and live charts
 - CardList widget — list views as card rows (Host VMs, Cluster Summary, Storage Overview) with status dots, filter, double-click editing
 - Node comparison view: side-by-side cluster node metrics (CPU, RAM, disk, VMs, uptime, PVE version)
@@ -83,7 +94,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 - System tray icon: minimize to tray, quick quit, context menu
 - Offline mode: cached resources shown on startup before first network response
 - Multi-language UI (English, Russian, Arabic, Chinese, French, Spanish)
-- Theme switcher in the status bar: Light, KDE Breeze / Breeze Dark (24px icon set, exact KDE palettes), Oxygen, Graphite, and System (follows the OS color scheme); toolbar icons and brand recolor to match
+- Theme switcher in the status bar: Light, KDE Breeze / Breeze Dark (24px icon set, exact KDE palettes), Oxygen, Graphite, and System (follows the OS color scheme); toolbar icons and brand recolor to match; themes are plugins with a documented API ([docs/THEMES.md](docs/THEMES.md))
 - Background auto-refresh every 20 seconds without losing selection or tabs
 - Toast notifications on host/VM status changes
 - Diagnostics for unreachable hosts (DNS error, timeout, auth failure, SSL errors)
@@ -265,9 +276,12 @@ packages (no venv required): `./run` uses plain `python -m virtdeck`.
 | `virtdeck/__main__.py` | Module entry (`python -m virtdeck`) |
 | `virtdeck/main.py` | Application entry point |
 | `virtdeck/backend/` | API client package: workers, `RefreshCoordinator` (hard/soft refresh), event bus seed, unified PVE error parsing |
+| `virtdeck/backend/fleet.py` | Fleet Health API workers (per-cluster collection) |
 | `virtdeck/pbs/` | Proxmox Backup Server API client (ticket auth) and workers |
 | `virtdeck/plugins/_pbs.py` | PBS plugin (dispatch by `cfg["type"] = "pbs"`) |
 | `virtdeck/domain/pbs.py` | PBS domain models (datastores, snapshots, jobs) |
+| `virtdeck/domain/backup_coverage.py` | Backup compliance matching engine (vzdump job semantics, pure domain) |
+| `virtdeck/fleet/` | Fleet Health collectors and analytics (drift, storage runway, snapshot sprawl) |
 | `virtdeck/config.py` | Keyring, SQLite config storage, export/import |
 | `virtdeck/ui/mainwindow.py` | Main window |
 | `virtdeck/ui/tree_panel.py` | Tree panel for clusters, hosts, and VMs |
@@ -281,13 +295,19 @@ packages (no venv required): `./run` uses plain `python -m virtdeck`.
 | `virtdeck/ui/vm_config_display.py` | VM config display widget |
 | `virtdeck/ui/vm_actions.py` | VM power action labels and confirmation |
 | `virtdeck/ui/pbs_panel.py` | PBS panel: datastores, snapshots, jobs |
+| `virtdeck/ui/fleet_health.py` | Fleet Health report dialog (multi-cluster) |
+| `virtdeck/ui/command_palette.py` | Command palette (Ctrl+K) |
+| `virtdeck/ui/action_registry.py` | Declarative action registry — shared source for the palette and context menus |
+| `virtdeck/ui/brand.py` | VirtDeck brand assets: toolbar lockup, app/tray icons |
 | `virtdeck/ui/about_dialog.py` | About dialog |
 | `virtdeck/ui/theme.py` | Color constants, fonts, QSS theme |
+| `virtdeck/plugins/_themes.py` | Built-in theme plugins (Light, Breeze, Breeze Dark, Oxygen, Graphite, System) |
 | `virtdeck/ui/icons.py` | SVG icon registry |
 | `virtdeck/ui/notification.py` | Toast notifications |
 | `virtdeck/ui/i18n/` | Translation module (tr()), JSON translation files |
 | `virtdeck/ui/widgets/` | Widget modules (metrics, pool, tasks, hardware, options, card_list) |
 | `virtdeck/ui/api/` | API workers (RRD data, storage content) |
+| `tests/harness/` | Fake PVE/PBS API harness for UI tests (in-memory scenes) |
 | `virtdeck/ui/console/` | Built-in noVNC console: window, WebSocket bridge (vendored noVNC assets) |
 | `virtdeck/provider/` | Data provider seam: `ProxmoxProvider` facade, session with per-host proxy |
 | `packaging/virtdeck-win.spec` | PyInstaller spec for Windows build |

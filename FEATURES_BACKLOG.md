@@ -287,7 +287,7 @@ server+web-продукт). Мы агрегируем кластеры — вс�
 - **Идея на будущее (минимальный downtime):** zfs send/receive по SSH
   (внутрикластерный pvesr между кластерами не работает) — см. идеи ROADMAP.
 
-### B24. Fleet Health — план v3.0 (веха M4, киллер-фича)
+### B24. Fleet Health ✅ (v3.0.0 — веха M4, киллер-фича)
 Сводный отчёт по всем независимым кластерам сразу («весь парк одним
 взглядом»): backup compliance, version drift, storage runway, snapshot
 sprawl. Профиль целевого юзера: владелец нескольких площадок/кластеров
@@ -319,6 +319,16 @@ read-only API — ноль EXPERIMENTAL, идеальный противовес
 - **M4.0 — тестовый харнесс до фич**: fake PVE/PBS API + record/replay
   fixture'ы (фан-аут живыми кластерами не тестируем).
 - Запуск из меню/трея; отчёт «что где красное» с переходом к объекту.
+
+**Реализовано (v3.0.0):** matching-движок `virtdeck/domain/backup_coverage.py`
+(vzdump-семантика: all > pool > vmid + exclude, templates exempt;
+table-driven юнит-тесты) и агрегация `virtdeck/domain/fleet.py`; сбор/аналитика
+`virtdeck/fleet/` (collector, drift, runway — прогноз наименьших квадратов
+с 95% доверительным интервалом, sprawl — скан по кнопке с ограниченным
+параллелизмом); воркеры `virtdeck/backend/fleet.py`; диалог
+`virtdeck/ui/fleet_health.py` (частичный отказ → плашка «данные от HH:MM»);
+харнесс fake PVE/PBS API (`tests/harness/`). Запуск: тулбар, трей,
+Ctrl+Shift+F; двойной клик — переход к объекту в дереве.
 
 ### B25. Профили подключений — план v3.0 (веха M10 Платформа)
 Сценарий: несколько площадок/организаций, работа через разные VPN; за раз

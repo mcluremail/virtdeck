@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -631,48 +631,6 @@ wheels = [
 ]
 
 [[package]]
-name = "virtdeck"
-version = "2.13.0"
-source = { editable = "." }
-dependencies = [
-    { name = "cryptography" },
-    { name = "keyring" },
-    { name = "proxmoxer" },
-    { name = "pyqtgraph" },
-    { name = "pyside6" },
-    { name = "requests" },
-    { name = "urllib3" },
-    { name = "websockets", version = "16.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' and sys_platform == 'win32'" },
-    { name = "websockets", version = "17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' and sys_platform == 'win32'" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-qt" },
-]
-novnc = [
-    { name = "websockets", version = "16.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "websockets", version = "17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=42.0.0" },
-    { name = "keyring", specifier = ">=24.0" },
-    { name = "proxmoxer", specifier = ">=2.0" },
-    { name = "pyqtgraph", specifier = ">=0.12" },
-    { name = "pyside6", specifier = ">=6.5" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-qt", marker = "extra == 'dev'", specifier = ">=4.4" },
-    { name = "requests", specifier = ">=2.32.0" },
-    { name = "urllib3", specifier = ">=1.26" },
-    { name = "websockets", marker = "sys_platform == 'win32'", specifier = ">=14.0" },
-    { name = "websockets", marker = "extra == 'novnc'", specifier = ">=14.0" },
-]
-provides-extras = ["novnc", "dev"]
-
-[[package]]
 name = "pycparser"
 version = "3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -905,6 +863,48 @@ sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897", size = 131087, upload-time = "2026-05-07T16:13:17.151Z" },
 ]
+
+[[package]]
+name = "virtdeck"
+version = "3.0.0"
+source = { editable = "." }
+dependencies = [
+    { name = "cryptography" },
+    { name = "keyring" },
+    { name = "proxmoxer" },
+    { name = "pyqtgraph" },
+    { name = "pyside6" },
+    { name = "requests" },
+    { name = "urllib3" },
+    { name = "websockets", version = "16.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' and sys_platform == 'win32'" },
+    { name = "websockets", version = "17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' and sys_platform == 'win32'" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-qt" },
+]
+novnc = [
+    { name = "websockets", version = "16.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "websockets", version = "17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=42.0.0" },
+    { name = "keyring", specifier = ">=24.0" },
+    { name = "proxmoxer", specifier = ">=2.0" },
+    { name = "pyqtgraph", specifier = ">=0.12" },
+    { name = "pyside6", specifier = ">=6.5" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-qt", marker = "extra == 'dev'", specifier = ">=4.4" },
+    { name = "requests", specifier = ">=2.32.0" },
+    { name = "urllib3", specifier = ">=1.26" },
+    { name = "websockets", marker = "sys_platform == 'win32'", specifier = ">=14.0" },
+    { name = "websockets", marker = "extra == 'novnc'", specifier = ">=14.0" },
+]
+provides-extras = ["novnc", "dev"]
 
 [[package]]
 name = "websockets"
