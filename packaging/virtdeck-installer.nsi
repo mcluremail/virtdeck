@@ -8,8 +8,8 @@
 
 Name "${APP_NAME}"
 OutFile "virtdeck-setup.exe"
-Icon "packaging\virtdeck.ico"
-UninstallIcon "packaging\virtdeck.ico"
+Icon "virtdeck.ico"
+UninstallIcon "virtdeck.ico"
 InstallDir "$PROGRAMFILES64\virtdeck"
 InstallDirRegKey HKLM "${APP_REGKEY}" "InstallDir"
 RequestExecutionLevel admin
