@@ -4,7 +4,7 @@ Desktop client for Proxmox VE management. Written in Python with PySide6.
 
 Monitor clusters and hosts, manage virtual machines and containers, browse Proxmox Backup Server backups — all in one window, no browser needed.
 
-![VirtDeck](Screenshots/main.png)
+![VirtDeck](Screenshots/main.png?v=3)
 
 ## Download
 
