@@ -1,11 +1,17 @@
 # Changelog
 
-## Unreleased
+## v3.0.1 — honest VM/CT operations (external audit stage 2)
 
 **New features**
 - Fleet Health: the storage runway forecast now communicates data quality — a sparse-history estimate (few rrddata points, no confidence interval) is shown as "~N days left (sparse history — rough estimate)" instead of a bare day count; reliable forecasts keep their 95% confidence-interval range (i18n version 35)
+- VM/CT ops: LXC migration is implemented — PVE 7/8/9 support `POST /nodes/{node}/lxc/{vmid}/migrate` (verified against the pve-container sources); running VMs migrate live (`online=1`), running containers via restart migration (`restart=1`, the dialog says the CT will be rebooted on the target node); the migration task is awaited (30 min ceiling) so a failed migration is reported instead of silently forgotten
 
 **Bug fixes**
+- VM ops: the LXC migrate stub no longer leaks a worker slot and freezes the status line — the early return before the `try/finally` skipped `finished` forever, so 16 attempts would exhaust the main-window worker pool ("Too many concurrent operations")
+- VM ops: start/stop/reboot/shutdown/reset/suspend/resume and disk resize/move await their PVE tasks — a failed action is reported as an error instead of a false "completed" (the old messages fired on task acceptance, an UPID, not the outcome); a task still running after the wait window reads "still running after Ns", not "timeout"
+- VM ops: converting a template back to a VM now warns that PVE does not officially support the reverse conversion (the flag is silently cleared, volumes stay base volumes — linked clones may break); the action is refused for container templates
+- VM ops: a taken-VMID conflict between workers (nextid race) retries once with a freshly fetched id in create and clone
+- VM ops: the delete dialog exposes the purge choice (removal from HA resources and backup jobs — previously hardwired on); bulk actions reuse one provider (login) per host instead of re-authenticating per VM
 - Fleet Health: a cluster whose provider cannot even be created no longer shows a "Data from 1970" plate — it says "Data unavailable"
 - Fleet Health: the status line no longer claims a bare "No issues found" when some clusters returned incomplete data — the suffix "N with incomplete data" is appended
 - Fleet Health: one degenerate storage series (identical timestamps) no longer ZeroDivisionError's the whole cluster report — the forecast is isolated per source like every other collector; a flat series lands in the honest "no trend" branch
@@ -19,6 +25,9 @@
 - Fleet Health: an open-ended confidence interval renders as "~N–∞ days left"; a forecast built on a stale series (last point ≥3 days old) carries an explicit "data N days old" suffix
 - Fleet Health: shared storages (NFS/Ceph/PBS) are forecast once per cluster instead of once per node (N identical forecasts and N rrddata requests before)
 - Fleet Health: collection runs under a bounded thread pool (8) with a wait ceiling — a hung target yields a partial report instead of a frozen dialog; a crashed scan/collection always restores the dialog state
+
+**Internal**
+- External audit of VM/CT operations (stage 2): every `vmops`/`vm.py` worker path proven to emit `finished` exactly once with the provider closed (parameterized worker tests against a fake PVE with write routes + task simulation — `FakePveApi.set_next_task_result` for OK/failed/never-finishing tasks, `POST/PUT/DELETE` endpoint routes, `/cluster/nextid`); PVE API claims verified against the pve-container/qemu-server sources (stable-7, stable-bookworm, master) — LXC migration exists on PVE 7/8/9, a running VM refuses to migrate without `--online`, `template=0` has no special handling in the config PUT path; i18n versions 36–38 (false LXC-unsupported warning replaced with restart-migration semantics); 1189 tests, ruff clean
 
 **Internal**
 - Release pipeline: the new `smoke-packages` job installs the built `.deb` (Ubuntu 24.04) and `.rpm` (Fedora 41) in clean containers and import-checks the installed package before the GitHub Release is created — broken packages now block the release; release notes no longer reference the removed pip install channel
