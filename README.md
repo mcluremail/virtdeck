@@ -11,7 +11,6 @@ Monitor clusters and hosts, manage virtual machines and containers, browse Proxm
 | Platform | Format | Link |
 |----------|--------|------|
 | Windows | .zip / .exe installer | [Releases](https://github.com/mcluremail/virtdeck/releases) |
-| Linux (any) | pip | `pip install virtdeck` |
 | Debian / Ubuntu | .deb | [Releases](https://github.com/mcluremail/virtdeck/releases) |
 | Fedora / RHEL | .rpm | [Releases](https://github.com/mcluremail/virtdeck/releases) |
 | Any | .tar.gz / .whl | [Releases](https://github.com/mcluremail/virtdeck/releases) |
@@ -104,7 +103,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 
 ## Requirements
 
-- Python 3.10+ (for pip/source install; not needed for Windows .zip or installer)
+- Python 3.10+ (for source install; not needed for Windows .zip or installer)
 - PySide6 (full package, incl. WebEngine — for the built-in noVNC console)
 - proxmoxer (Debian 12+/Ubuntu 23.04+ have `python3-proxmoxer`; older — via pip)
 - requests / urllib3
@@ -112,7 +111,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 - keyring — system keyring access (KWallet / GNOME Keyring / Windows Credential Manager)
 - cryptography (export/import encrypted config bundle)
 - websockets — **optional on Linux**: required only for the built-in noVNC
-  console (`pip install virtdeck[novnc]`); the app runs fine without it.
+  console (`pip install websockets`); the app runs fine without it.
   On **Windows** it is a hard dependency — Windows builds (zip/installer)
   bundle everything, no system Python needed.
 - Proxmox VE (cluster or standalone host)
@@ -132,12 +131,12 @@ Download `virtdeck-windows.zip` or `virtdeck-*-setup.exe` from [GitHub Releases]
 
 For SPICE console, install [virt-viewer for Windows](https://virt-manager.org/download/).
 
-### Via pip (PyPI)
+### From source (any Linux)
 
 ```bash
-pip install virtdeck
-# optional: built-in noVNC console
-pip install "virtdeck[novnc]"
+# download and unpack virtdeck-3.0.0.tar.gz (or .whl) from Releases,
+# then install the dependencies:
+pip install PySide6 proxmoxer requests urllib3 pyqtgraph cryptography keyring
 virtdeck
 ```
 
@@ -227,7 +226,7 @@ brew install virt-viewer
 # Portable: Extract .zip, run virtdeck.exe
 # Installer: Run virtdeck-*-setup.exe
 
-# If installed via pip or .deb:
+# If installed via .deb:
 virtdeck
 
 # From local repository:
