@@ -51,8 +51,8 @@ jobs:
           set -e
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-pip
-          PYVER=$(python3 -c 'import sys; print(f"{sys.version_info[3]}.{sys.version_info[4]}")')
-          PYNEXT=$(python3 -c 'import sys; print(f"{sys.version_info[3]}.{sys.version_info[4]+1}")')
+          PYVER=$(python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
+          PYNEXT=$(python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]+1}")')
           ABLABEL="py$(printf '%s' "$PYVER" | tr -d .)"
           SITE=/tmp/stage/usr/lib/python3/dist-packages
           mkdir -p /tmp/stage/DEBIAN $SITE
