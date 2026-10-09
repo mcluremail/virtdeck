@@ -32,11 +32,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Sync version (tag, else pyproject)
         run: |
-          if [[ "${GITHUB_REF_NAME}" == v* ]]; then
-            version="${GITHUB_REF_NAME#v}"
-          else
-            version=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
-          fi
+          case "${GITHUB_REF_NAME}" in
+            v*) version="${GITHUB_REF_NAME#v}" ;;
+            *)  version=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml) ;;
+          esac
           sed -i "1s/.*/virtdeck (${version}-1) unstable; urgency=medium/" debian/changelog
       - name: Install build deps
         run: |
@@ -73,11 +72,10 @@ jobs:
       - name: Build .rpm
         run: |
           mkdir -p /tmp/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-          if [[ "${GITHUB_REF_NAME}" == v* ]]; then
-            version="${GITHUB_REF_NAME#v}"
-          else
-            version=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
-          fi
+          case "${GITHUB_REF_NAME}" in
+            v*) version="${GITHUB_REF_NAME#v}" ;;
+            *)  version=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml) ;;
+          esac
           sed -i "s/Version:.*/Version: ${version}/" virtdeck.spec
           # create source tarball from checkout
           tar czf /tmp/rpmbuild/SOURCES/virtdeck-${version}.tar.gz \

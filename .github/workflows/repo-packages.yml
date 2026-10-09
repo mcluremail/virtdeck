@@ -53,7 +53,7 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-pip
           PYVER=$(python3 -c 'import sys; print(f"{sys.version_info[3]}.{sys.version_info[4]}")')
           PYNEXT=$(python3 -c 'import sys; print(f"{sys.version_info[3]}.{sys.version_info[4]+1}")')
-          ABLABEL="py${PYVER//./}"
+          ABLABEL="py$(printf '%s' "$PYVER" | tr -d .)"
           SITE=/tmp/stage/usr/lib/python3/dist-packages
           mkdir -p /tmp/stage/DEBIAN $SITE
           pip3 install --no-compile --break-system-packages --target $SITE "PySide6==${PYSIDE}"
