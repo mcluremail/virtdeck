@@ -207,9 +207,9 @@ jobs:
         if: matrix.pkg == 'deb'
         run: |
           apt-get update -qq
-          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl gnupg
           install -dm755 /etc/apt/keyrings
-          curl -fsSL https://repo.mclure.ru/KEY.gpg -o /etc/apt/keyrings/virtdeck.gpg
+          curl -fsSL https://repo.mclure.ru/KEY.gpg | gpg --dearmor -o /etc/apt/keyrings/virtdeck.gpg
           echo "deb [signed-by=/etc/apt/keyrings/virtdeck.gpg] https://repo.mclure.ru/apt noble main" \
             > /etc/apt/sources.list.d/virtdeck.list
           apt-get update -qq
