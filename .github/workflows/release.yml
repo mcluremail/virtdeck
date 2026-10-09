@@ -198,9 +198,10 @@ jobs:
             if [ "$ok_rpm" = 0 ]; then
               if curl -fsSL https://repo.mclure.ru/rpm/fedora/41/repodata/repomd.xml -o /tmp/repomd.xml; then
                 href=$(grep -oP '(?<=href=")[^"]*-primary\.xml\.zst' /tmp/repomd.xml | head -1)
-                live=$(curl -fsSL "https://repo.mclure.ru/rpm/fedora/41/$href" | zstd -dc 2>/dev/null \
-                  | sed 's|<package type="rpm">|\n&|g' | grep 'virtdeck-3' \
-                  | grep -oP '(?<=<checksum type="sha256">)[a-f0-9]+' | head -1)
+                live=$(curl -fsSL "https://repo.mclure.ru/rpm/fedora/41/$href" | zstd -dc 2>/dev/null | awk '
+                  /<package type="rpm">/ {inblk=1; buf=""}
+                  inblk {buf = buf "\n" $0}
+                  /<\/package>/ {inblk=0; if (buf ~ /<name>virtdeck</ && match(buf, /<checksum type="sha256"[^>]*>[a-f0-9]+/)) { s=substr(buf, RSTART, RLENGTH); sub(/.*>/, "", s); print s }}')
                 if [ "$live" = "$rpm_sha" ]; then ok_rpm=1; echo "rpm: repo serves this build ✓"; fi
               fi
             fi
