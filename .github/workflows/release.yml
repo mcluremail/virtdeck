@@ -191,7 +191,7 @@ jobs:
         run: |
           rpm_sha=$(sha256sum upload/virtdeck-*.rpm | cut -d' ' -f1)
           deb_sha=$(sha256sum upload/virtdeck_*.deb | cut -d' ' -f1)
-          echo "local artifacts: rpm ${rpm_sha:0:12}…, deb ${deb_sha:0:12}…"
+          echo "local artifacts: rpm ${rpm_sha:0:12}…, deb ${deb_sha:0:12}… (the server signs rpms, so rpm is matched by consistency)"
           ok_rpm=0; ok_deb=0
           for i in $(seq 1 20); do
             sleep 15
@@ -202,7 +202,11 @@ jobs:
                   /<package type="rpm">/ {inblk=1; buf=""}
                   inblk {buf = buf "\n" $0}
                   /<\/package>/ {inblk=0; if (buf ~ /<name>virtdeck</ && match(buf, /<checksum type="sha256"[^>]*>[a-f0-9]+/)) { s=substr(buf, RSTART, RLENGTH); sub(/.*>/, "", s); print s }}')
-                if [ "$live" = "$rpm_sha" ]; then ok_rpm=1; echo "rpm: repo serves this build ✓"; fi
+                # the server signs rpms after upload, so compare against the
+                # served file itself, not the CI artifact
+                curl -fsSL https://repo.mclure.ru/rpm/fedora/41/virtdeck-3.0.1-1.fc41.noarch.rpm -o /tmp/virtdeck.rpm
+                served=$(sha256sum /tmp/virtdeck.rpm | cut -d' ' -f1)
+                if [ -n "$live" ] && [ "$live" = "$served" ]; then ok_rpm=1; echo "rpm: repo metadata matches the served package ✓"; fi
               fi
             fi
             if [ "$ok_deb" = 0 ]; then
