@@ -281,6 +281,125 @@ def test_scan_progress_in_status(qtbot, api):
     assert dlg._status.text() == "done"
 
 
+def test_scan_incomplete_status(qtbot, api):
+    """Failed per-VM fetches are not "no snapshots" — the status says so."""
+    dlg = make_dialog(qtbot)
+    wait_loaded(qtbot, dlg)
+    dlg._scans = {"alpha": scan_sprawl({}, [], now=NOW,
+                                       failed=(101, 102, 301))}
+    dlg._render()
+    assert "3 guests failed" in dlg._status.text()
+
+
+def test_scan_worker_crash_releases_ui(qtbot, api, monkeypatch):
+    import virtdeck.ui.fleet_health as fh
+
+    dlg = make_dialog(qtbot)
+    wait_loaded(qtbot, dlg)
+    dlg._scan_thread = threading.Thread(target=lambda: None)
+    dlg._scan_thread.start()
+    dlg._scan_thread.join()
+
+    def boom(*_a, **_kw):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(fh, "scan_fleet_snapshots", boom)
+    t = threading.Thread(target=dlg._scan_worker, daemon=True)
+    dlg._scan_thread = t
+    with qtbot.waitSignal(dlg._scan_signals.scans_done, timeout=5000):
+        t.start()
+    t.join()
+    assert dlg._scan_thread is None
+    assert dlg._scan_btn.isEnabled() and dlg._refresh_btn.isEnabled()
+
+
+def test_runway_full_storage_no_growth(qtbot, api):
+    """A nearly full storage without growth must still speak up (P1):
+    "99% full" must not hide behind "no trend"."""
+    dlg = make_dialog(qtbot)
+    wait_loaded(qtbot, dlg)
+    report = dlg._bundles[0].report
+
+    def est(days, used, *, quality="ok", low=None, high=None, age=None):
+        return RunwayEstimate(node="pve01", storage="local",
+                              used_bytes=used, total_bytes=100,
+                              slope_bytes_per_day=1.0 if days else 0.0,
+                              days_left=days, days_left_low=low,
+                              days_left_high=high, points_used=48,
+                              quality=quality, last_point_age_days=age)
+
+    # 96% full, no growth → red "almost full" (silent before this fix)
+    dlg._bundles = [ClusterBundle(report=report,
+                                  runway=(est(None, 96, quality="no-trend"),))]
+    dlg._render()
+    row = find_issue(dlg._tree, "Storage almost full")
+    assert row is not None
+    assert row.text(3) == "96% used — no growth detected"
+    assert row.foreground(2).color() == QColor(Color.DANGER)
+
+    # 92% → warning
+    dlg._bundles = [ClusterBundle(report=report,
+                                  runway=(est(None, 92, quality="no-trend"),))]
+    dlg._render()
+    row = find_issue(dlg._tree, "Storage almost full")
+    assert row.foreground(2).color() == QColor(Color.WARNING)
+
+    # 50% + no growth → silent
+    dlg._bundles = [ClusterBundle(report=report,
+                                  runway=(est(None, 50, quality="no-trend"),))]
+    dlg._render()
+    assert find_issue(dlg._tree, "Storage almost full") is None
+
+    # growing storage keeps the days-based row even at 96% full
+    dlg._bundles = [ClusterBundle(report=report,
+                                  runway=(est(20, 96, low=19, high=21),))]
+    dlg._render()
+    assert find_issue(dlg._tree, "Storage almost full") is None
+    assert find_issue(dlg._tree, "Storage filling up") is not None
+
+
+def test_runway_open_ended_ci_and_stale_data(qtbot, api):
+    dlg = make_dialog(qtbot)
+    wait_loaded(qtbot, dlg)
+    report = dlg._bundles[0].report
+    # optimistic CI bound never fills → the range is open-ended ("∞")
+    est = RunwayEstimate(node="pve01", storage="local", used_bytes=80,
+                         total_bytes=100, slope_bytes_per_day=1.0,
+                         days_left=10, days_left_low=9, days_left_high=None,
+                         points_used=48, quality="ok")
+    dlg._bundles = [ClusterBundle(report=report, runway=(est,))]
+    dlg._render()
+    row = find_issue(dlg._tree, "Storage filling up")
+    assert row is not None
+    assert row.text(3) == "~9–∞ days left"
+
+    # stale series (node was down) → explicit age suffix
+    est = RunwayEstimate(node="pve01", storage="local", used_bytes=80,
+                         total_bytes=100, slope_bytes_per_day=1.0,
+                         days_left=10, days_left_low=9, days_left_high=11,
+                         points_used=48, quality="ok",
+                         last_point_age_days=5.0)
+    dlg._bundles = [ClusterBundle(report=report, runway=(est,))]
+    dlg._render()
+    row = find_issue(dlg._tree, "Storage filling up")
+    assert "data 5 days old" in row.text(3)
+
+
+class TestDedupStorageRows:
+    def test_shared_forecast_once_per_cluster(self):
+        from virtdeck.backend.fleet import _dedup_storage_rows
+        rows = [
+            {"node": "n1", "storage": "local", "active": 1, "shared": 0},
+            {"node": "n1", "storage": "nfs1", "active": 1, "shared": 1},
+            {"node": "n2", "storage": "local", "active": 1, "shared": 0},
+            {"node": "n2", "storage": "nfs1", "active": 1, "shared": 1},
+            {"node": "n2", "storage": "dead", "active": 0, "shared": 1},
+        ]
+        out = _dedup_storage_rows(rows)
+        assert [(r["node"], r["storage"]) for r in out] == \
+            [("n1", "local"), ("n1", "nfs1"), ("n2", "local")]
+
+
 def test_worker_multi_cluster(qtbot, monkeypatch):
     alpha = make_pve_cluster("alpha")
     beta = make_pve_cluster("beta")
@@ -311,6 +430,23 @@ def test_worker_pbs_freshness(qtbot, monkeypatch):
         worker.start()
     bundle = blocker.args[0][0]
     assert bundle.report.backup_states[101].pbs_last_ok == 1727827200
+
+
+def test_worker_crash_still_emits_finished(qtbot, monkeypatch):
+    """A crash inside a job must not leave the dialog without the
+    finished_all signal (buttons would stay disabled forever)."""
+    alpha = make_pve_cluster("alpha")
+    install_fake_pve(monkeypatch, alpha)
+    worker = FleetHealthWorker(
+        [FleetTarget("alpha", "alpha", fake_pve_cfg("alpha"))])
+
+    def boom(self, target, pbs_map=None):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(FleetHealthWorker, "_collect_one", boom)
+    with qtbot.waitSignal(worker.finished_all, timeout=10000) as blocker:
+        worker.start()
+    assert blocker.args[0] == []
 
 
 def test_cluster_display_label(qtbot, monkeypatch):

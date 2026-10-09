@@ -5,7 +5,7 @@ from __future__ import annotations
 from tests.harness import fake_pve_cfg, install_fake_pve
 from tests.harness.scenarios import make_pve_cluster
 from virtdeck.domain.backup_coverage import Guest
-from virtdeck.fleet.sprawl import fetch_snapshots, scan_sprawl
+from virtdeck.fleet.sprawl import FetchResult, fetch_snapshots, scan_sprawl
 
 NOW = 1727830000
 DAY = 86400
@@ -24,6 +24,14 @@ def snap(name: str, age_days: float | None = 1.0) -> dict:
 
 
 class TestScanSprawl:
+    def test_failed_guests_recorded(self):
+        scan = scan_sprawl({}, [guest(101)], now=NOW, failed=(101, 301))
+        assert scan.failed == (101, 301)
+        assert scan.guests == ()
+
+    def test_default_no_failures(self):
+        scan = scan_sprawl({}, [], now=NOW)
+        assert scan.failed == ()
     def test_fresh_vs_stale(self):
         snapshots = {101: [snap("yesterday", 1.0),
                            snap("old", 45.0)]}
@@ -81,8 +89,9 @@ class TestFetchSnapshots:
                       Guest(201, "tmpl", "pve02", "qemu", template=True)]
             result = fetch_snapshots(provider, guests, concurrency=2)
         # template skipped; 301 has no snapshots — absent from the result
-        assert set(result) == {101}
-        assert result[101][0]["name"] == "pre-upgrade"
+        assert set(result.snapshots) == {101}
+        assert result.snapshots[101][0]["name"] == "pre-upgrade"
+        assert result.failed == ()
 
     def test_error_isolated_per_vm(self, monkeypatch):
         api = make_pve_cluster("alpha")
@@ -96,7 +105,10 @@ class TestFetchSnapshots:
             result = fetch_snapshots(provider, guests, concurrency=1,
                                      on_progress=lambda d, t:
                                      progress.append((d, t)))
-        assert 101 not in result and 102 not in result  # 102 has no snapshots
+        # a failed guest is not "no snapshots" — it is unverified (P1)
+        assert result.failed == (101,)
+        assert 101 not in result.snapshots
+        assert 102 not in result.snapshots  # 102 has no snapshots
         assert progress  # progress was reported
         assert progress[-1] == (2, 2)  # both processed, including the failed one
 
@@ -105,6 +117,6 @@ class TestFetchSnapshots:
         install_fake_pve(monkeypatch, api)
         from virtdeck.provider import ProxmoxProvider
         with ProxmoxProvider(fake_pve_cfg("alpha")) as provider:
-            assert fetch_snapshots(provider, []) == {}
+            assert fetch_snapshots(provider, []) == FetchResult({}, ())
             assert fetch_snapshots(provider, [guest(201, template=True)]) \
-                == {}
+                == FetchResult({}, ())

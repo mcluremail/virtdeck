@@ -402,6 +402,41 @@ badge в M11 достаточно); **DRS/load balancing** (XO/ProxCenter-сти
 - VmDetailWorker / вкладка Config — глубоко вложенный PVE-конфиг, моделирование дорого при малой пользе
 - Config-словари (`cfg["group"]`, тела POST-запросов) — dict по дизайну, не PVE-ответы
 
+## Бэклог Fleet Health (из внешних ревью Kimi/Claude/ChatGPT, 2026-10)
+
+> Решение владельца (2026-10-09): баги-честность закрыты в текущем цикле
+> (P0 + P1), **новые фичи Fleet Health едут в 3.x.x** — в этот цикл не брать.
+
+Фичи (3.x.x):
+- пороги в Settings (COMPLIANCE_STALE_DAYS=14, SPRAWL_DANGER_DAYS=30,
+  RUNWAY_FULL_*; переопределение по schedule джобов — Claude/ChatGPT/Кими)
+- зелёная сводка секций («Backup compliance: 47/47 OK»), статус джоба
+  целиком («Job vzdump-daily: last 3 runs failed»), CSV-экспорт отчёта
+  (Кими)
+- SQLite-история отчётов + diff («что изменилось за неделю») — мост к
+  v4.0 (Кими/Claude/ChatGPT)
+- математика runway 2.0: Theil–Sen, суточные максимумы вместо часовых,
+  week-окно худшего случая, срез ряда после последнего падения
+  (Claude/ChatGPT)
+- cluster_rep → запасные endpoint'ы кластера (Claude); параллельный
+  fetch rrddata ограниченным пулом; параллельный sprawl по кластерам
+- эталон покрытия: `GET /cluster/backup-info/not-backed-up` (PVE 8+)
+  через `supports()` — сверка с `compute_coverage` на фикстурах (Claude)
+- исключения с причиной / nobackup-тег; свежесть бэкапа относительно
+  schedule джоба; offsite-проверка (Claude)
+- новые секции: PBS health (ёмкость датасторов, verify/GC), quorum/HA,
+  EOL-таблица версий PVE, N+1 по памяти, ZFS/SMART (Claude/ChatGPT)
+- hypothesis-тесты движка покрытия (disjoint/идемпотентность),
+  вложенные пулы PVE 9 (Claude)
+
+Не баг (проверено 2026-10):
+- порядок `all > pool > vmid` в `selects()` — для покрытия union,
+  порядок не влияет (Claude сомневалась)
+- `parse_pve_version` с хвостом «(running kernel: ...)» — хвост попадает
+  в часть после последнего `/`, формат парсится верно (вопрос Кими;
+  тест-фиксатор добавить при случае)
+
+
 ## v4.0 — Опциональная серверная часть
 - Inventory
 - Централизованный Cache

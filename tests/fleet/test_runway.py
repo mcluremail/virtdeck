@@ -128,3 +128,12 @@ def test_identical_timestamps_no_trend():
     est = estimate_runway(flat, node="pve01", storage="local")
     assert est.quality == NO_TREND
     assert est.days_left is None
+
+
+def test_last_point_age_against_wall_clock():
+    """With ``now`` the estimate carries the age of its freshest point:
+    a forecast built on stale series must be flaggable (P1)."""
+    est = estimate_runway(series(48), now=T0 + 47 * 3600 + 3 * 86400)
+    assert est.last_point_age_days == pytest.approx(3.0)
+    # no wall clock → age unknown, field stays None
+    assert estimate_runway(series(48)).last_point_age_days is None

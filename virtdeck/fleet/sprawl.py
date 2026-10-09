@@ -50,6 +50,9 @@ class SprawlScan:
     guests: tuple[GuestSprawl, ...]
     """Only guests with snapshots, sorted: stale first, within — by the
     age of the oldest."""
+    failed: tuple[int, ...] = ()
+    """vmids whose snapshot fetch failed — they are not "without
+    snapshots", they are unverified: the report must say so."""
 
 
 def _guest_key(guest: Guest) -> tuple[str, int, str, str]:
@@ -58,7 +61,8 @@ def _guest_key(guest: Guest) -> tuple[str, int, str, str]:
 
 def scan_sprawl(snapshots_by_vmid: Mapping[int, Sequence[dict]],
                 guests: Sequence[Guest], *, now: int,
-                stale_days: int = DEFAULT_STALE_DAYS) -> SprawlScan:
+                stale_days: int = DEFAULT_STALE_DAYS,
+                failed: Sequence[int] = ()) -> SprawlScan:
     """Scan aggregation: guest snapshots, marking forgotten ones (see module doc)."""
     by_vmid = {g.vmid: g for g in guests}
     stale_cutoff = now - stale_days * SECONDS_PER_DAY
@@ -102,22 +106,32 @@ def scan_sprawl(snapshots_by_vmid: Mapping[int, Sequence[dict]],
                              r.oldest_time if r.oldest_time is not None
                              else now + 1))
     return SprawlScan(generated_at=now, stale_days=stale_days,
-                      guests=tuple(rows))
+                      guests=tuple(rows), failed=tuple(failed))
+
+
+@dataclass(frozen=True)
+class FetchResult:
+    """fetch_snapshots outcome: snapshots plus the guests we failed on."""
+
+    snapshots: dict[int, list[dict]]
+    failed: tuple[int, ...]
 
 
 def fetch_snapshots(provider, guests: Sequence[Guest], *,
                     concurrency: int = DEFAULT_CONCURRENCY,
-                    on_progress=None) -> dict[int, list[dict]]:
+                    on_progress=None) -> FetchResult:
     """Collect snapshots of all fleet guests (1 request per VM).
 
-    Concurrency is limited via a thread pool; per-VM errors are muted
-    (the guest simply has no snapshots — it is left out of the report).
-    Returns vmid → list of snapshots (raw).
+    Concurrency is limited via a thread pool. Per-VM failures are
+    collected into ``failed`` — an unverified guest is not the same as
+    "no snapshots", the caller must surface the difference.
+    Returns a FetchResult (vmid → raw snapshots + failed vmids).
     """
     targets = [g for g in guests if not g.template]
     if not targets:
-        return {}
+        return FetchResult({}, ())
     result: dict[int, list[dict]] = {}
+    failed: list[int] = []
     lock = threading.Lock()
     done = [0]
 
@@ -127,6 +141,8 @@ def fetch_snapshots(provider, guests: Sequence[Guest], *,
                                                 guest.vm_type)
         except Exception:
             snaps = None
+            with lock:
+                failed.append(guest.vmid)
         with lock:
             if snaps:
                 result[guest.vmid] = list(snaps)
@@ -139,4 +155,4 @@ def fetch_snapshots(provider, guests: Sequence[Guest], *,
             if on_progress is not None:
                 with lock:
                     on_progress(done[0], len(targets))
-    return result
+    return FetchResult(result, tuple(failed))

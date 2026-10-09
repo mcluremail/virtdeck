@@ -14,6 +14,11 @@
 - Fleet Health: snapshots without any timestamp ("zombies") no longer render "oldest None days" — the issue reads "N snapshots, unknown age"
 - Fleet Health: PBS backup freshness is actually wired into the fleet scan (it was collected nowhere) — the last verified PBS snapshot time participates in the "last successful backup" per guest; each PBS server is isolated (one dead server never breaks the report)
 - Fleet Health: when the task history hits the fetch limit (200 rows), the report carries a "Task history truncated" caveat instead of silently risking false "never backed up" verdicts
+- Fleet Health: a nearly full storage (≥90% warn / ≥95% danger) speaks up even when the trend says "no growth" — "99% full" no longer hides behind "no trend"
+- Fleet Health: per-VM snapshot scan failures are surfaced ("scan incomplete: N guests failed" in the status line + per-cluster failed list) instead of silently looking like "no snapshots"; scan ages are computed against the scan's own wall clock and the guest list is re-fetched before scanning
+- Fleet Health: an open-ended confidence interval renders as "~N–∞ days left"; a forecast built on a stale series (last point ≥3 days old) carries an explicit "data N days old" suffix
+- Fleet Health: shared storages (NFS/Ceph/PBS) are forecast once per cluster instead of once per node (N identical forecasts and N rrddata requests before)
+- Fleet Health: collection runs under a bounded thread pool (8) with a wait ceiling — a hung target yields a partial report instead of a frozen dialog; a crashed scan/collection always restores the dialog state
 
 **Internal**
 - Release pipeline: the new `smoke-packages` job installs the built `.deb` (Ubuntu 24.04) and `.rpm` (Fedora 41) in clean containers and import-checks the installed package before the GitHub Release is created — broken packages now block the release; release notes no longer reference the removed pip install channel
@@ -46,7 +51,7 @@
 **Internal**
 - UI audit (full pass, `docs/AUDIT_2026-10-08.md`): locale-fit harness `tests/ui/test_locale_fit.py` (16 dialogs + cluster tasks widget × 6 locales, sizeHint vs maximum constraints, DB seeding isolated); 60 text buttons converted from fixed to minimum width (fr/ru clips), delete-VM and confirm dialogs un-fixed with word wrap, storage dialog wrapped in a scroll area, tasks filter bar and PBS/role spacing polished, card-list fixed columns gained full-value tooltips
 - Incremental audit per `docs/AUDIT_PROCESS.md` (`docs/AUDIT_2026-10-06.md`, tag `audit/2026-10-06`): delta v2.13.0 → M2 (23 commits) — theme engine, rename migrations, brand, first-run, M0/M1/M2; fixed palette offering host actions on the initial-load skeleton placeholder with an empty host name (E1) and a stale palette icon size after theme switch (E2); 5 observations recorded
-- 1121 tests (M0 contracts, optimistic UI, perf smoke, compat matrix, theme plugins incl. full Breeze icon registry coverage + exact-24px sizing + live chart retheme, brand assets/tray states incl. tray-available startup, add-server dialog, keyring and config-dir legacy migration; M2 action registry + command palette incl. menu parity and bulk-selection; M4 test harness — fake PVE/PBS scenes + record/replay, backup compliance matching engine, fleet collector with partial failure, drift/runway/sprawl analytics, Fleet Health dialog with cluster grouping by tree semantics incl. the static sync-contract guard), ruff clean
+- 1129 tests (M0 contracts, optimistic UI, perf smoke, compat matrix, theme plugins incl. full Breeze icon registry coverage + exact-24px sizing + live chart retheme, brand assets/tray states incl. tray-available startup, add-server dialog, keyring and config-dir legacy migration; M2 action registry + command palette incl. menu parity and bulk-selection; M4 test harness — fake PVE/PBS scenes + record/replay, backup compliance matching engine, fleet collector with partial failure, drift/runway/sprawl analytics, Fleet Health dialog with cluster grouping by tree semantics incl. the static sync-contract guard), ruff clean
 
 ## v2.13.0 — cluster create/join via UI, storage management, stabilization (last 2.x)
 

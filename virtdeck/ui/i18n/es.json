@@ -1282,5 +1282,10 @@
   "{} with incomplete data": "{} con datos incompletos",
   "{} snapshots, unknown age": "{} instantáneas, antigüedad desconocida",
   "Task history truncated": "Historial de tareas truncado",
-  "Only the newest {} tasks are analyzed — older successful backups may be missing": "Solo se analizan las {} tareas más recientes — puede que falten copias de seguridad exitosas más antiguas"
+  "Only the newest {} tasks are analyzed — older successful backups may be missing": "Solo se analizan las {} tareas más recientes — puede que falten copias de seguridad exitosas más antiguas",
+  "Storage almost full": "Almacenamiento casi lleno",
+  "{}% used — no growth detected": "{}% usado — no se detectó crecimiento",
+  "~{}–∞ days left": "~{}–∞ días para llenarse",
+  "data {} days old": "datos de hace {} días",
+  "snapshot scan incomplete: {} guests failed": "escaneo de instantáneas incompleto: {} invitados sin verificar"
 }

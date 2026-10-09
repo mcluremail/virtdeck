@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import wait as _futures_wait
 from dataclasses import dataclass
 
 from PySide6.QtCore import QObject, Signal
@@ -24,6 +27,14 @@ from ..plugins import create_provider
 logger = logging.getLogger(__name__)
 
 RUNWAY_TIMEFRAME = "month"  # rrddata: monthly window, hourly points
+
+# thread cap for cluster collection: a fleet of standalone hosts must
+# not spawn one thread each (each thread holds a provider + session)
+MAX_COLLECT_THREADS = 8
+# generous ceiling on waiting for the whole fleet: request timeouts
+# (15 s) bound each thread, this only guards a pathological hang —
+# on timeout the dialog gets the partial report instead of freezing
+JOIN_TIMEOUT_S = 600
 
 
 @dataclass(frozen=True)
@@ -117,21 +128,31 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
 
         bundles: list[ClusterBundle] = []
         lock = threading.Lock()
-        threads: list[threading.Thread] = []
 
-        def worker(target: FleetTarget) -> None:
-            bundle = self._collect_one(target, pbs_map)
+        def job(target: FleetTarget) -> None:
+            try:
+                bundle = self._collect_one(target, pbs_map)
+            except Exception as e:  # never leave the dialog without a signal
+                logger.warning("Fleet Health: %s crashed: %s",
+                               target.name, e)
+                return
             with lock:
                 bundles.append(bundle)
             self._signals.cluster_done.emit(bundle)
 
-        for target in self._targets:
-            t = threading.Thread(target=worker, args=(target,), daemon=True)
-            t.start()
-            threads.append(t)
-        for t in threads:
-            t.join()
-        self._signals.finished_all.emit(bundles)
+        workers = min(MAX_COLLECT_THREADS, max(1, len(self._targets)))
+        executor = ThreadPoolExecutor(max_workers=workers,
+                                      thread_name_prefix="fleet")
+        try:
+            futures = [executor.submit(job, t) for t in self._targets]
+            _futures_wait(futures, timeout=JOIN_TIMEOUT_S)
+        except Exception as e:
+            logger.warning("Fleet Health: collection aborted: %s", e)
+        finally:
+            # the dialog resets on this signal no matter what happened —
+            # buttons must never stay disabled forever
+            executor.shutdown(wait=False, cancel_futures=True)
+            self._signals.finished_all.emit(bundles)
 
     def _collect_one(self, target: FleetTarget,
                      pbs_map: dict | None = None) -> ClusterBundle:
@@ -155,9 +176,8 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
     def _runway(self, provider, report: ClusterFleetReport) \
             -> tuple[RunwayEstimate, ...]:
         estimates: list[RunwayEstimate] = []
-        for row in report.storage_usage:
-            if not row.get("active"):
-                continue  # inactive storage is not forecast
+        now = int(time.time())
+        for row in _dedup_storage_rows(report.storage_usage):
             node, storage = str(row.get("node")), str(row.get("storage"))
             try:
                 series = provider.rrd.get_storage_rrddata(
@@ -170,8 +190,30 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
             # must not sink the already-collected cluster report
             try:
                 estimates.append(estimate_runway(series, node=node,
-                                                 storage=storage))
+                                                 storage=storage, now=now))
             except Exception as e:
                 logger.debug("Fleet Health runway %s/%s: %s",
                              node, storage, e)
         return tuple(estimates)
+
+
+def _dedup_storage_rows(rows: list[dict]) -> list[dict]:
+    """Active storage rows with shared storages forecast once.
+
+    Shared storages (NFS/Ceph/PBS) arrive as one row per node: without
+    dedup a 10-node cluster gets 10 identical forecasts and 10 rrddata
+    requests for the same filesystem. The first active row of a shared
+    storage wins; non-shared (local) rows stay per-node.
+    """
+    seen_shared: set[str] = set()
+    out: list[dict] = []
+    for row in rows:
+        if not row.get("active"):
+            continue  # inactive storage is not forecast
+        if row.get("shared"):
+            name = str(row.get("storage") or "")
+            if name in seen_shared:
+                continue
+            seen_shared.add(name)
+        out.append(row)
+    return out

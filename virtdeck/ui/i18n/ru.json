@@ -1282,5 +1282,10 @@
   "{} with incomplete data": "{} с неполными данными",
   "{} snapshots, unknown age": "{} снимков, возраст неизвестен",
   "Task history truncated": "История задач усечена",
-  "Only the newest {} tasks are analyzed — older successful backups may be missing": "Анализируются только последние {} задач — более старые успешные резервные копии могут быть не учтены"
+  "Only the newest {} tasks are analyzed — older successful backups may be missing": "Анализируются только последние {} задач — более старые успешные резервные копии могут быть не учтены",
+  "Storage almost full": "Хранилище почти заполнено",
+  "{}% used — no growth detected": "{}% занято — роста не обнаружено",
+  "~{}–∞ days left": "~{}–∞ дней до заполнения",
+  "data {} days old": "данные {} дн. назад",
+  "snapshot scan incomplete: {} guests failed": "скан снимков неполный: {} гостей не проверено"
 }

@@ -1282,5 +1282,10 @@
   "{} with incomplete data": "{} 个数据不完整",
   "{} snapshots, unknown age": "{} 个快照，创建时间未知",
   "Task history truncated": "任务历史已截断",
-  "Only the newest {} tasks are analyzed — older successful backups may be missing": "仅分析最近 {} 条任务——较早的成功备份可能未被计入"
+  "Only the newest {} tasks are analyzed — older successful backups may be missing": "仅分析最近 {} 条任务——较早的成功备份可能未被计入",
+  "Storage almost full": "存储几乎写满",
+  "{}% used — no growth detected": "已用 {}%——未检测到增长",
+  "~{}–∞ days left": "~{}–∞ 天后写满",
+  "data {} days old": "数据已滞后 {} 天",
+  "snapshot scan incomplete: {} guests failed": "快照扫描不完整：{} 个客户机未检查"
 }

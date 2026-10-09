@@ -46,6 +46,10 @@ class RunwayEstimate:
     """Optimistic bound (slope at the lower CI)."""
     points_used: int
     quality: str
+    last_point_age_days: float | None = None
+    """Age of the freshest series point against the caller's ``now`` —
+    None when unknown; a stale series means the node was unreachable and
+    the forecast silently builds on old data unless surfaced."""
 
 
 def _valid_points(series: Sequence[dict]) -> list[tuple[float, float]]:
@@ -90,9 +94,15 @@ def _days_until_full(total: float, used_now: float,
 
 
 def estimate_runway(series: Sequence[dict], *, node: str = "",
-                    storage: str = "", window_days: int = 30) \
+                    storage: str = "", window_days: int = 30,
+                    now: float | None = None) \
         -> RunwayEstimate:
-    """Forecast from an rrddata series (see module doc)."""
+    """Forecast from an rrddata series (see module doc).
+
+    ``now`` — wall-clock epoch: when given, the estimate carries the age
+    of its freshest point (``last_point_age_days``) so the UI can flag a
+    forecast built on stale data.
+    """
     points = _valid_points(series)
 
     # total — from the freshest series point where it is known and positive.
@@ -116,6 +126,9 @@ def estimate_runway(series: Sequence[dict], *, node: str = "",
 
     base = dict(node=node, storage=storage, total_bytes=total,
                 used_bytes=int(used_now) if used_now is not None else None)
+    if now is not None and points:
+        base["last_point_age_days"] = max(
+            0.0, (now - points[-1][0]) / SECONDS_PER_DAY)
 
     if len(points) < 2:
         return RunwayEstimate(slope_bytes_per_day=None, days_left=None,

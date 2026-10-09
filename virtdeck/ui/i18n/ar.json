@@ -1282,5 +1282,10 @@
   "{} with incomplete data": "{} ببيانات غير مكتملة",
   "{} snapshots, unknown age": "{} لقطات، العمر غير معروف",
   "Task history truncated": "سجل المهام مقتطع",
-  "Only the newest {} tasks are analyzed — older successful backups may be missing": "يتم تحليل آخر {} مهام فقط — قد لا تُحسب النسخ الاحتياطية الناجحة الأقدم"
+  "Only the newest {} tasks are analyzed — older successful backups may be missing": "يتم تحليل آخر {} مهام فقط — قد لا تُحسب النسخ الاحتياطية الناجحة الأقدم",
+  "Storage almost full": "وحدة التخزين ممتلئة تقريبًا",
+  "{}% used — no growth detected": "{}% مستخدم — لا نمو مرصود",
+  "~{}–∞ days left": "~{}–∞ يوم قبل الامتلاء",
+  "data {} days old": "بيانات عمرها {} يومًا",
+  "snapshot scan incomplete: {} guests failed": "مسح اللقطات غير مكتمل: تعذر فحص {} ضيفًا"
 }

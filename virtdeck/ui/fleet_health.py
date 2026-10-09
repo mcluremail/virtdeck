@@ -29,7 +29,7 @@ from ..backend.fleet import ClusterBundle, FleetHealthWorker
 from ..domain.fleet import GuestBackupState
 from ..fleet.collector import TASK_HISTORY_LIMIT
 from ..fleet.drift import detect_drift
-from ..fleet.runway import SPARSE
+from ..fleet.runway import SPARSE, RunwayEstimate
 from .api.fleet import scan_fleet_snapshots
 from .i18n import tr
 from .icons import get_icon
@@ -40,6 +40,11 @@ KEY_ROLE = Qt.UserRole + 1
 COMPLIANCE_STALE_DAYS = 14
 RUNWAY_WARN_DAYS = 30
 RUNWAY_DANGER_DAYS = 7
+# a storage this full must speak up even when the trend says "no growth"
+RUNWAY_FULL_WARN_PCT = 90
+RUNWAY_FULL_DANGER_PCT = 95
+# series older than this gets an explicit "data N days old" suffix
+RUNWAY_STALE_DATA_DAYS = 3
 SPRAWL_DANGER_DAYS = 90
 
 # row severity: 2 — red, 1 — yellow, 0 — neutral
@@ -148,11 +153,14 @@ class FleetHealthDialog(QDialog):
         self._scan_thread.start()
 
     def _scan_worker(self) -> None:
-        self._scans = scan_fleet_snapshots(
-            self._targets, self._bundles,
-            on_progress=lambda done, total:
-                self._scan_signals.progress.emit(done, total))
-        self._scan_signals.scans_done.emit()
+        try:
+            self._scans = scan_fleet_snapshots(
+                self._targets, self._bundles,
+                on_progress=lambda done, total:
+                    self._scan_signals.progress.emit(done, total))
+        finally:
+            # a crashed scan must never leave the dialog disabled
+            self._scan_signals.scans_done.emit()
 
     def _on_scan_progress(self, done: int, total: int) -> None:
         if self._scan_thread is not None:
@@ -183,6 +191,13 @@ class FleetHealthDialog(QDialog):
         if incomplete:
             status += "  ·  " + tr("{} with incomplete data").format(
                 incomplete)
+        # unverified guests are not "no snapshots" — say so explicitly
+        scan_failed = sum(len(s.failed) for s in self._scans.values()
+                          if s is not None)
+        if scan_failed:
+            status += "  ·  " + tr(
+                "snapshot scan incomplete: {} guests failed").format(
+                scan_failed)
         self._status.setText(status)
 
     def _render_cluster(self, bundle: ClusterBundle) \
@@ -309,30 +324,55 @@ class FleetHealthDialog(QDialog):
     def _runway_rows(self, bundle: ClusterBundle) -> list:
         rows: list = []
         for est in bundle.runway:
-            if est.days_left is None:
+            fill = None
+            if est.used_bytes is not None and est.total_bytes:
+                fill = est.used_bytes / est.total_bytes
+            sev, detail, issue = None, "", ""
+            if est.days_left is not None \
+                    and est.days_left < RUNWAY_WARN_DAYS:
+                sev = (_SEV_RED if est.days_left < RUNWAY_DANGER_DAYS
+                       else _SEV_WARN)
+                detail = self._runway_detail(est)
+                issue = tr("Storage filling up")
+            elif fill is not None:
+                # no usable forecast (no growth / too slow): a nearly
+                # full storage must still speak up (P1) — "99% full"
+                # must not hide behind "no trend"
+                if fill >= RUNWAY_FULL_DANGER_PCT / 100:
+                    sev = _SEV_RED
+                elif fill >= RUNWAY_FULL_WARN_PCT / 100:
+                    sev = _SEV_WARN
+                if sev is not None:
+                    detail = tr("{}% used — no growth detected").format(
+                        int(fill * 100))
+                    issue = tr("Storage almost full")
+            if sev is None:
                 continue
-            if est.days_left < RUNWAY_DANGER_DAYS:
-                sev = _SEV_RED
-            elif est.days_left < RUNWAY_WARN_DAYS:
-                sev = _SEV_WARN
-            else:
-                continue
-            if est.quality == SPARSE:
-                # no CI — a bare day count reads as false precision (B24)
-                detail = tr("~{} days left (sparse history — rough estimate)") \
-                    .format(int(est.days_left))
-            elif est.days_left_low is not None \
-                    and est.days_left_high is not None:
-                detail = tr("~{}–{} days left").format(
-                    int(est.days_left_low), int(est.days_left_high))
-            else:
-                # ok-quality forecasts always carry a CI; defensive fallback
-                detail = tr("~{} days left").format(int(est.days_left))
             key = ("host", est.node, bundle.report.cluster)
             rows.append((self._issue_row(f"{est.storage} ({est.node})",
-                tr("Storage filling up"), detail, sev, key, icon="storage"),
-                sev))
+                issue, detail, sev, key, icon="storage"), sev))
         return rows
+
+    def _runway_detail(self, est: RunwayEstimate) -> str:
+        if est.quality == SPARSE:
+            # no CI — a bare day count reads as false precision (B24)
+            detail = tr("~{} days left (sparse history — rough estimate)") \
+                .format(int(est.days_left))
+        elif est.days_left_low is not None \
+                and est.days_left_high is not None:
+            detail = tr("~{}–{} days left").format(
+                int(est.days_left_low), int(est.days_left_high))
+        elif est.days_left_low is not None:
+            # optimistic CI bound never fills — the range is open-ended
+            detail = tr("~{}–∞ days left").format(int(est.days_left_low))
+        else:
+            # ok-quality forecasts always carry a CI; defensive fallback
+            detail = tr("~{} days left").format(int(est.days_left))
+        if est.last_point_age_days is not None \
+                and est.last_point_age_days >= RUNWAY_STALE_DATA_DAYS:
+            detail += "  ·  " + tr("data {} days old").format(
+                int(est.last_point_age_days))
+        return detail
 
     def _sprawl_rows(self, cluster: str) -> list:
         scan = self._scans.get(cluster)
