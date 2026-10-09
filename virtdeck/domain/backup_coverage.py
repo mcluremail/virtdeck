@@ -20,6 +20,8 @@ are fixed explicitly (following PVE::VZDump behavior):
 7. Job overlaps are allowed: a guest may be covered by several.
 8. A guest moves between pools between runs → the engine is stateless,
    the report is recomputed each time from fresh resources.
+9. ``node`` — a node-restricted job runs (and backs up) only on that
+   node: guests on other nodes stay uncovered.
 
 API anomalies are handled deterministically: a duplicate vmid in guests —
 the first row encountered wins; garbage in the vmid/exclude list is
@@ -65,6 +67,7 @@ class BackupJob:
     vmids: frozenset[int] = frozenset()
     exclude: frozenset[int] = frozenset()
     pool: str = ""
+    node: str = ""
     schedule: str = ""
     storage: str = ""
 
@@ -77,6 +80,7 @@ class BackupJob:
             vmids=frozenset(_parse_vmid_list(raw.get("vmid"))),
             exclude=frozenset(_parse_vmid_list(raw.get("exclude"))),
             pool=str(raw.get("pool") or ""),
+            node=str(raw.get("node") or ""),
             schedule=str(raw.get("schedule") or ""),
             storage=str(raw.get("storage") or ""),
         )
@@ -85,6 +89,8 @@ class BackupJob:
         """Whether the job covers the guest (vzdump semantics, see module doc)."""
         if not self.enabled or guest.template:
             return False
+        if self.node and guest.node != self.node:
+            return False  # node-restricted job never reaches other nodes
         if self.all_vms:
             return guest.vmid not in self.exclude
         if self.pool:

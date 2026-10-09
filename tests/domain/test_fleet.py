@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from virtdeck.domain.backup_coverage import Guest
+from virtdeck.domain.backup_coverage import BackupJob, Guest
 from virtdeck.domain.fleet import (
     ClusterFleetReport,
     CollectError,
@@ -42,6 +42,12 @@ def job_raw(job_id: str, **kw) -> dict:
 
 def state_of(states, vmid):
     return states.get(vmid)
+
+
+def job_upid(job_id: str, start_hex: str = "0000003c",
+             node: str = "pve01") -> str:
+    """UPID of a scheduled cluster-wide job run: id slot = job id."""
+    return f"UPID:{node}:00000001:00000000:{start_hex}:vzdump:{job_id}:root@pam:"
 
 
 class TestBackupStatesFromTasks:
@@ -98,6 +104,75 @@ class TestBackupStatesFromTasks:
             [{"upid": upid(101, "00000064"), "type": "vzdump",
               "status": "OK"}], [], {})
         assert 101 in states
+
+
+class TestJobLevelTaskFallback:
+    """Cluster-wide vzdump job runs (UPID id slot = job id, no vmid):
+    indirect evidence for covered guests without direct task data (P0)."""
+
+    def test_job_run_marks_covered_guests(self):
+        tasks = [{"upid": job_upid("bz-all"), "type": "vzdump",
+                  "status": "OK"}]
+        jobs = [BackupJob(job_id="bz-all", all_vms=True)]
+        states = build_backup_states(tasks, [guest(101), guest(102)],
+                                     {}, jobs=jobs)
+        assert state_of(states, 101).task_last_ok == 60
+        assert state_of(states, 102).task_last_ok == 60
+        assert state_of(states, 102).ever_backed_up
+
+    def test_direct_failed_task_not_masked_by_job_run(self):
+        tasks = [
+            {"upid": upid(101, "0000003c"), "type": "vzdump",
+             "status": "Errors: backup of VM/CT failed"},
+            {"upid": job_upid("bz-all"), "type": "vzdump", "status": "OK"},
+        ]
+        jobs = [BackupJob(job_id="bz-all", all_vms=True)]
+        s = state_of(build_backup_states(tasks, [guest(101)], {}, jobs=jobs),
+                     101)
+        assert s.task_last_ok is None
+        assert s.task_last_failed == 60
+        assert not s.ever_backed_up
+
+    def test_failed_job_run_marks_nothing(self):
+        tasks = [{"upid": job_upid("bz-all"), "type": "vzdump",
+                  "status": "Errors: unknown"}]
+        jobs = [BackupJob(job_id="bz-all", all_vms=True)]
+        s = state_of(build_backup_states(tasks, [guest(101)], {}, jobs=jobs),
+                     101)
+        assert s.task_last_ok is None and not s.ever_backed_up
+
+    def test_only_covering_jobs_count(self):
+        tasks = [{"upid": job_upid("bz-pool"), "type": "vzdump",
+                  "status": "OK"}]
+        jobs = [BackupJob(job_id="bz-pool", pool="prod")]
+        states = build_backup_states(tasks, [guest(101, pool="prod"),
+                                             guest(102)], {}, jobs=jobs)
+        assert state_of(states, 101).task_last_ok == 60
+        assert state_of(states, 102).task_last_ok is None
+
+    def test_no_jobs_no_fallback(self):
+        tasks = [{"upid": job_upid("bz-all"), "type": "vzdump",
+                  "status": "OK"}]
+        s = state_of(build_backup_states(tasks, [guest(101)], {}), 101)
+        assert s.task_last_ok is None
+
+    def test_jobname_row_field_wins_over_upid_slot(self):
+        tasks = [{"upid": "UPID:pve01:00000001:00000000:0000003c:vzdump:"
+                          ":root@pam:",
+                  "type": "vzdump", "status": "OK", "jobname": "bz-all"}]
+        jobs = [BackupJob(job_id="bz-all", all_vms=True)]
+        s = state_of(build_backup_states(tasks, [guest(101)], {}, jobs=jobs),
+                     101)
+        assert s.task_last_ok == 60
+
+    def test_job_fallback_preserves_pbs(self):
+        tasks = [{"upid": job_upid("bz-all"), "type": "vzdump",
+                  "status": "OK"}]
+        jobs = [BackupJob(job_id="bz-all", all_vms=True)]
+        s = state_of(build_backup_states(tasks, [guest(101)],
+                                         {("vm", "101"): 100}, jobs=jobs),
+                     101)
+        assert s.task_last_ok == 60 and s.pbs_last_ok == 100
 
 
 class TestBuildBackupStatesWithPbs:
@@ -198,6 +273,23 @@ class TestBuildClusterReport:
             errors=(CollectError("alpha", "backup_jobs", "boom"),))
         assert report.coverage is None
         assert report.guests  # guests still collected
+
+    def test_cluster_job_run_covers_guests_end_to_end(self):
+        """102 has no own task; the OK cluster-job run (bz-all) marks it."""
+        report = make_cluster_report(tasks=[
+            {"upid": upid(101, "00000064"), "type": "vzdump",
+             "status": "OK", "starttime": 1727827200},
+            {"upid": job_upid("bz-all", start_hex="67100000"),
+             "type": "vzdump", "status": "OK",
+             "starttime": 1727820000},
+        ])
+        assert report.backup_states[101].task_last_ok == 1727827200
+        assert report.backup_states[102].task_last_ok == 1727820000
+
+    def test_tasks_truncated_flag(self):
+        assert not make_cluster_report().tasks_truncated
+        report = make_cluster_report(tasks_truncated=True)
+        assert report.tasks_truncated
 
 
 class TestMergeFleetReports:

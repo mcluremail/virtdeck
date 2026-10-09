@@ -1277,5 +1277,10 @@
   "Unknown snapshot age": "عمر اللقطات غير معروف",
   "Up to date": "الإصدار محدث",
   "Scanning... {}/{}": "جارٍ الفحص… {}/{}",
-  "~{} days left (sparse history — rough estimate)": "~{} يوم قبل الامتلاء (سجل قصير — تقدير تقريبي)"
+  "~{} days left (sparse history — rough estimate)": "~{} يوم قبل الامتلاء (سجل قصير — تقدير تقريبي)",
+  "Data unavailable": "البيانات غير متوفرة",
+  "{} with incomplete data": "{} ببيانات غير مكتملة",
+  "{} snapshots, unknown age": "{} لقطات، العمر غير معروف",
+  "Task history truncated": "سجل المهام مقتطع",
+  "Only the newest {} tasks are analyzed — older successful backups may be missing": "يتم تحليل آخر {} مهام فقط — قد لا تُحسب النسخ الاحتياطية الناجحة الأقدم"
 }

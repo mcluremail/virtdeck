@@ -109,6 +109,18 @@ def test_pbs_enrichment(alpha):
     assert s301.pbs_last_ok is None  # lxc guest absent from the PBS mapping
 
 
+def test_task_history_truncation_flag(alpha):
+    """Exactly at the fetch limit the report must carry the flag: the
+    window may have cut off older successful backups (P0 honesty)."""
+    from virtdeck.fleet.collector import TASK_HISTORY_LIMIT
+    for i in range(TASK_HISTORY_LIMIT):
+        alpha.add_task("pve01", f"UPID:pve01:1:2:67000000:apt:update{i}:root@pam:",
+                       task_type="aptupdate", starttime=NOW - i)
+    report = collect_alpha()
+    assert report.tasks_truncated
+    assert len(report.backup_states) >= 0  # no crash on non-vzdump rows
+
+
 def test_collect_fleet_merge(monkeypatch):
     alpha = make_pve_cluster("alpha")
     beta = make_pve_cluster("beta")

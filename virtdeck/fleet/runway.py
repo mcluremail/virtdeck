@@ -70,7 +70,9 @@ def _fit(points: list[tuple[float, float]]) -> tuple[float, float, float]:
     my = sum(ys) / n
     sxx = sum((x - mx) ** 2 for x in xs)
     sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True))
-    slope = sxy / sxx
+    # identical timestamps (degenerate rrddata) → sxx == 0: no slope is
+    # computable; slope 0 lands in the honest "no-trend" branch below
+    slope = sxy / sxx if sxx else 0.0
     intercept = my - slope * mx
     if n < 3:
         return slope, intercept, 0.0

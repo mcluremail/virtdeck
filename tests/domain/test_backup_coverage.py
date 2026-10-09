@@ -25,11 +25,12 @@ def g(vmid: int, *, pool: str = "", template: bool = False,
 
 
 def j(job_id: str, *, enabled: bool = True, all_vms: bool = False,
-      vmids=(), exclude=(), pool: str = "", schedule: str = "daily",
-      storage: str = "pbs1") -> BackupJob:
+      vmids=(), exclude=(), pool: str = "", node: str = "",
+      schedule: str = "daily", storage: str = "pbs1") -> BackupJob:
     return BackupJob(job_id=job_id, enabled=enabled, all_vms=all_vms,
                      vmids=frozenset(vmids), exclude=frozenset(exclude),
-                     pool=pool, schedule=schedule, storage=storage)
+                     pool=pool, node=node, schedule=schedule,
+                     storage=storage)
 
 
 # Scene: 2 nodes, qemu+lxc, a template, two pools.
@@ -72,6 +73,12 @@ COVERAGE_CASES = [
     ("template_listed_in_vmid_still_exempt",
      [j("bz-list", vmids=[102, 201])],
      {102}, {101, 301}, {201}),
+    ("node_restricted_all_job_covers_only_that_node",
+     [j("bz-n1", all_vms=True, node="n1")],
+     {101, 102}, {301}, {201}),
+    ("node_restricted_pool_job_cross_node_uncovered",
+     [j("bz-n2", pool="prod", node="n2")],
+     {301}, {101, 102}, {201}),
 ]
 
 
@@ -149,6 +156,13 @@ class TestBackupJobFromRaw:
         assert job == BackupJob(job_id="bz-1", all_vms=True,
                                 exclude=frozenset({101, 102}),
                                 schedule="02:30", storage="pbs1")
+
+    def test_node_parsed_and_restricts(self):
+        job = BackupJob.from_raw({"id": "bz-n", "all": 1, "node": "pve01"})
+        assert job.node == "pve01"
+        # node-restricted job never reaches guests on other nodes
+        assert job.selects(Guest(vmid=1, node="pve01"))
+        assert not job.selects(Guest(vmid=2, node="pve02"))
 
     def test_vmid_list_with_spaces_and_garbage(self):
         job = BackupJob.from_raw({"id": "x", "vmid": "101, 103, abc, , 105"})

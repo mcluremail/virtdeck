@@ -1277,5 +1277,10 @@
   "Unknown snapshot age": "Возраст снапшотов неизвестен",
   "Up to date": "Версия актуальна",
   "Scanning... {}/{}": "Сканирование… {}/{}",
-  "~{} days left (sparse history — rough estimate)": "~{} дней до заполнения (мало истории — грубая оценка)"
+  "~{} days left (sparse history — rough estimate)": "~{} дней до заполнения (мало истории — грубая оценка)",
+  "Data unavailable": "Данные недоступны",
+  "{} with incomplete data": "{} с неполными данными",
+  "{} snapshots, unknown age": "{} снимков, возраст неизвестен",
+  "Task history truncated": "История задач усечена",
+  "Only the newest {} tasks are analyzed — older successful backups may be missing": "Анализируются только последние {} задач — более старые успешные резервные копии могут быть не учтены"
 }

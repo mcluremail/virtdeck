@@ -1277,5 +1277,10 @@
   "Unknown snapshot age": "快照时间未知",
   "Up to date": "版本最新",
   "Scanning... {}/{}": "扫描中… {}/{}",
-  "~{} days left (sparse history — rough estimate)": "~{} 天后写满（历史数据稀少，粗略估计）"
+  "~{} days left (sparse history — rough estimate)": "~{} 天后写满（历史数据稀少，粗略估计）",
+  "Data unavailable": "数据不可用",
+  "{} with incomplete data": "{} 个数据不完整",
+  "{} snapshots, unknown age": "{} 个快照，创建时间未知",
+  "Task history truncated": "任务历史已截断",
+  "Only the newest {} tasks are analyzed — older successful backups may be missing": "仅分析最近 {} 条任务——较早的成功备份可能未被计入"
 }

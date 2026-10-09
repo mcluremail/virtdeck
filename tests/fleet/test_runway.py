@@ -117,3 +117,14 @@ def test_two_points_sparse():
     est = estimate_runway(series(2))
     assert est.quality == SPARSE
     assert est.days_left is not None
+
+
+def test_identical_timestamps_no_trend():
+    """Degenerate rrddata (all timestamps equal → sxx == 0) must land in
+    the honest no-trend branch, not ZeroDivisionError the whole cluster
+    report (P0: one bad storage must not sink the collection)."""
+    flat = [{"time": T0, "total": 10 * GIB, "used": 5 * GIB + i}
+            for i in range(12)]
+    est = estimate_runway(flat, node="pve01", storage="local")
+    assert est.quality == NO_TREND
+    assert est.days_left is None

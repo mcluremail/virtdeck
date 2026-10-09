@@ -11,7 +11,10 @@ report.
 "Last successful backup" (B24) — from two sources:
 - task history (vzdump tasks): available on any cluster, no mapping;
 - PBS snapshots (``client.snapshots``) — more precise, passed in as a
-  ready ``{(backup-type, backup-id): ts}`` mapping.
+  ready ``{(backup-type, backup-id): ts}`` mapping;
+- indirectly: a successful cluster-wide vzdump job run (UPID without a
+  vmid, id = job id) marks its covered guests as backed up when they
+  have no direct task evidence (no false "never backed up").
 """
 
 from __future__ import annotations
@@ -86,6 +89,9 @@ class ClusterFleetReport:
     """node → pveversion raw (drift, M4.3)."""
     storage_usage: tuple[dict, ...]
     """/nodes/{node}/storage rows tagged 'node' (runway, M4.3)."""
+    tasks_truncated: bool = False
+    """True — the task history hit the fetch limit: older successful
+    backups may be missing, "never backed up" may be inaccurate."""
 
 
 @dataclass(frozen=True)
@@ -113,21 +119,39 @@ def merge_fleet_reports(reports: Sequence[ClusterFleetReport]) -> FleetReport:
     )
 
 
-def _task_aggregates(tasks: Sequence[dict]) -> dict[int, dict]:
-    """vzdump tasks per vmid: latest ok/attempt/failed (by starttime)."""
+def _task_aggregates(tasks: Sequence[dict]) \
+        -> tuple[dict[int, dict], dict[str, dict]]:
+    """vzdump tasks: per-vmid and per-job aggregates of ok/attempt/failed.
+
+    A scheduled cluster-wide vzdump job (PVE 7.2+) runs under an UPID
+    whose id slot carries the job id instead of a single vmid — such a
+    task cannot be attributed to a guest directly, so it is aggregated
+    per job id (from the row ``jobname``/``id`` fields, else the UPID
+    id slot). ``build_backup_states`` uses these aggregates as indirect
+    evidence for guests the job covers.
+    """
     agg: dict[int, dict] = {}
+    job_agg: dict[str, dict] = {}
     for row in tasks:
         upid = str(row.get("upid") or "")
         task_type = str(row.get("type") or _upid_field(upid, _UPID_TYPE_SLOT))
         if task_type != "vzdump":
             continue
-        vmid = _row_vmid(row, upid)
-        if vmid is None:
-            continue
         starttime = _row_starttime(row, upid)
-        bucket = agg.setdefault(vmid, {"vmid": vmid, "task_last_ok": None,
-                                       "task_last_attempt": None,
-                                       "task_last_failed": None})
+        vmid = _row_vmid(row, upid)
+        if vmid is not None:
+            bucket = agg.setdefault(vmid, {"vmid": vmid, "task_last_ok": None,
+                                           "task_last_attempt": None,
+                                           "task_last_failed": None})
+        else:
+            # no per-guest attribution: a scheduled job run
+            job_id = str(row.get("jobname") or row.get("id")
+                         or _upid_field(upid, _UPID_VMID_SLOT))
+            if not job_id:
+                continue
+            bucket = job_agg.setdefault(job_id, {"task_last_ok": None,
+                                                 "task_last_attempt": None,
+                                                 "task_last_failed": None})
         if starttime is not None \
                 and (bucket["task_last_attempt"] is None
                      or starttime > bucket["task_last_attempt"]):
@@ -142,7 +166,7 @@ def _task_aggregates(tasks: Sequence[dict]) -> dict[int, dict]:
         elif bucket["task_last_failed"] is None \
                 or starttime > bucket["task_last_failed"]:
             bucket["task_last_failed"] = starttime
-    return agg
+    return agg, job_agg
 
 
 def _row_vmid(row: dict, upid: str) -> int | None:
@@ -197,18 +221,40 @@ def last_pbs_backup_times(snapshots: Iterable[dict]) \
 
 
 def build_backup_states(tasks: Sequence[dict], guests: Sequence[Guest],
-                        pbs_times: Mapping[tuple[str, str], int]
+                        pbs_times: Mapping[tuple[str, str], int],
+                        jobs: Sequence[BackupJob] | None = None
                         ) -> dict[int, GuestBackupState]:
-    """Per-guest backup state: task history + optional PBS.
+    """Per-guest backup state: task history + optional PBS + job runs.
 
     Includes every scene guest ("never backed up" is a state too). A VM
     seen in tasks but missing from resources (removed between runs) gets
     its state from tasks alone.
+
+    Guests with no direct task evidence get indirect evidence from
+    successful cluster-wide job runs (``_task_aggregates`` job bucket):
+    if a job that selects the guest finished OK, the guest is marked
+    ``task_last_ok`` at that run's start time. Indirect only — a job may
+    report OK with per-guest warnings — but far more honest than a false
+    "never backed up". Direct per-guest evidence always wins: a failed
+    guest task is never masked by a green job run.
     """
     by_vmid = {g.vmid: g for g in guests}
     states: dict[int, GuestBackupState] = {}
-    for vmid, agg in _task_aggregates(tasks).items():
+    vm_agg, job_agg = _task_aggregates(tasks)
+    for vmid, agg in vm_agg.items():
         states[vmid] = GuestBackupState(**agg)
+    if jobs and job_agg:
+        for guest in guests:
+            base = states.get(guest.vmid, GuestBackupState(vmid=guest.vmid))
+            if base.task_last_ok is not None \
+                    or base.task_last_attempt is not None:
+                continue  # direct evidence — a job run would only blur it
+            covering = {j.job_id for j in jobs
+                        if j.job_id and j.selects(guest)}
+            oks = [a["task_last_ok"] for jid, a in job_agg.items()
+                   if jid in covering and a["task_last_ok"] is not None]
+            if oks:
+                states[guest.vmid] = replace(base, task_last_ok=max(oks))
     for vmid, guest in by_vmid.items():
         pbs = pbs_times.get((_PBS_TYPE.get(guest.vm_type, guest.vm_type),
                              str(vmid)))
@@ -227,6 +273,7 @@ def build_cluster_report(
     node_versions: Mapping[str, str] | None = None,
     storage_usage: Sequence[dict] | None = None,
     pbs_last_backups: Mapping[tuple[str, str], int] | None = None,
+    tasks_truncated: bool = False,
     errors: Sequence[CollectError] = (),
 ) -> ClusterFleetReport:
     """Assemble a cluster report from collected data (pure function).
@@ -237,6 +284,7 @@ def build_cluster_report(
     """
     guests: tuple[Guest, ...] = ()
     coverage: Coverage | None = None
+    jobs: list[BackupJob] = []
     if resources is not None:
         guests = tuple(g for g in (Guest.from_raw(r) for r in resources)
                        if g is not None)
@@ -251,7 +299,8 @@ def build_cluster_report(
         guests=guests,
         coverage=coverage,
         backup_states=build_backup_states(tasks or (), guests,
-                                          pbs_last_backups or {}),
+                                          pbs_last_backups or {}, jobs=jobs),
         node_versions=dict(node_versions or {}),
         storage_usage=tuple(storage_usage or ()),
+        tasks_truncated=tasks_truncated,
     )

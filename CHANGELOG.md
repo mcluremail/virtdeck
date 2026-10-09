@@ -3,7 +3,17 @@
 ## Unreleased
 
 **New features**
-- Fleet Health: the storage runway forecast now communicates data quality — a sparse-history estimate (few rrddata points, no confidence interval) is shown as "~N days left (sparse history — rough estimate)" instead of a bare day count; reliable forecasts keep their 95% confidence-interval range (i18n version 34)
+- Fleet Health: the storage runway forecast now communicates data quality — a sparse-history estimate (few rrddata points, no confidence interval) is shown as "~N days left (sparse history — rough estimate)" instead of a bare day count; reliable forecasts keep their 95% confidence-interval range (i18n version 35)
+
+**Bug fixes**
+- Fleet Health: a cluster whose provider cannot even be created no longer shows a "Data from 1970" plate — it says "Data unavailable"
+- Fleet Health: the status line no longer claims a bare "No issues found" when some clusters returned incomplete data — the suffix "N with incomplete data" is appended
+- Fleet Health: one degenerate storage series (identical timestamps) no longer ZeroDivisionError's the whole cluster report — the forecast is isolated per source like every other collector; a flat series lands in the honest "no trend" branch
+- Fleet Health: cluster-wide scheduled vzdump job runs (UPID without a vmid, id slot = job id) now serve as indirect "backed up" evidence for the guests they cover — a guest backed up daily by such a job is no longer reported as "never backed up"; direct per-guest evidence always wins (a failed guest task is not masked by a green job run)
+- Fleet Health: node-restricted backup jobs (``node`` field) no longer cover guests on other nodes — the matching engine follows vzdump semantics
+- Fleet Health: snapshots without any timestamp ("zombies") no longer render "oldest None days" — the issue reads "N snapshots, unknown age"
+- Fleet Health: PBS backup freshness is actually wired into the fleet scan (it was collected nowhere) — the last verified PBS snapshot time participates in the "last successful backup" per guest; each PBS server is isolated (one dead server never breaks the report)
+- Fleet Health: when the task history hits the fetch limit (200 rows), the report carries a "Task history truncated" caveat instead of silently risking false "never backed up" verdicts
 
 **Internal**
 - Release pipeline: the new `smoke-packages` job installs the built `.deb` (Ubuntu 24.04) and `.rpm` (Fedora 41) in clean containers and import-checks the installed package before the GitHub Release is created — broken packages now block the release; release notes no longer reference the removed pip install channel

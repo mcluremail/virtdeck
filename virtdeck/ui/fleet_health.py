@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from ..backend.fleet import ClusterBundle, FleetHealthWorker
 from ..domain.fleet import GuestBackupState
+from ..fleet.collector import TASK_HISTORY_LIMIT
 from ..fleet.drift import detect_drift
 from ..fleet.runway import SPARSE
 from .api.fleet import scan_fleet_snapshots
@@ -62,9 +63,10 @@ class FleetHealthDialog(QDialog):
 
     object_selected = Signal(tuple)
 
-    def __init__(self, targets, parent=None):
+    def __init__(self, targets, parent=None, pbs_cfgs=None):
         super().__init__(parent)
         self._targets = list(targets)
+        self._pbs_cfgs = list(pbs_cfgs or [])
         self._bundles: list[ClusterBundle] = []
         self._scans: dict[str, object] = {}
         self._worker: FleetHealthWorker | None = None
@@ -121,7 +123,8 @@ class FleetHealthDialog(QDialog):
         self._refresh_btn.setEnabled(False)
         self._scan_btn.setEnabled(False)
         self._status.setText(tr("Loading fleet data..."))
-        self._worker = FleetHealthWorker(self._targets)
+        self._worker = FleetHealthWorker(self._targets,
+                                         pbs_cfgs=self._pbs_cfgs)
         self._worker.finished_all.connect(self._on_load_finished)
         self._worker.start()
 
@@ -170,11 +173,17 @@ class FleetHealthDialog(QDialog):
         for bundle in self._bundles:
             _item, issues = self._render_cluster(bundle)
             total_issues += issues
+        # honesty first: "no issues" on a broken collection would be a lie
+        incomplete = sum(1 for b in self._bundles if not b.report.complete)
         if total_issues:
-            self._status.setText(tr("{} issues on {} clusters").format(
-                total_issues, len(self._bundles)))
+            status = tr("{} issues on {} clusters").format(
+                total_issues, len(self._bundles))
         else:
-            self._status.setText(tr("No issues found"))
+            status = tr("No issues found")
+        if incomplete:
+            status += "  ·  " + tr("{} with incomplete data").format(
+                incomplete)
+        self._status.setText(status)
 
     def _render_cluster(self, bundle: ClusterBundle) \
             -> tuple[QTreeWidgetItem, int]:
@@ -188,12 +197,26 @@ class FleetHealthDialog(QDialog):
         label = bundle.display or report.cluster
         cluster_item = QTreeWidgetItem([label, "", "", ""])
         if not report.complete:
-            label += "  ·  " + tr("Data from {}").format(
-                _fmt_time(report.generated_at))
+            if report.generated_at == 0:
+                # provider never answered — a formatted epoch (1970) lies
+                label += "  ·  " + tr("Data unavailable")
+            else:
+                label += "  ·  " + tr("Data from {}").format(
+                    _fmt_time(report.generated_at))
             # incomplete data — signal color, not a quiet grey
             cluster_item.setText(0, label)
             cluster_item.setForeground(0, QColor(Color.WARNING))
         cluster_item.setIcon(0, get_icon("cluster", status=status))
+
+        if report.tasks_truncated:
+            # an honest caveat, not an issue: old "ok" tasks may be cut
+            # off, "never backed up" can be an artifact of the limit
+            cluster_item.addChild(self._issue_row(
+                "", tr("Task history truncated"),
+                tr("Only the newest {} tasks are analyzed — older "
+                   "successful backups may be missing").format(
+                    TASK_HISTORY_LIMIT),
+                _SEV_PLAIN, key=None, icon="history"))
 
         sections = {
             "compliance": self._compliance_rows(bundle),
@@ -322,10 +345,13 @@ class FleetHealthDialog(QDialog):
             age = _days_ago(row.oldest_time, scan.generated_at)
             if row.zombie_names:
                 detail, sev = tr("Unknown snapshot age"), _SEV_RED
+                # no timestamp → no age to format ("oldest None days" lies)
+                issue = tr("{} snapshots, unknown age").format(row.count)
             else:
                 detail = tr("Oldest {} days").format(age)
                 sev = _SEV_RED if age > SPRAWL_DANGER_DAYS else _SEV_WARN
-            issue = tr("{} snapshots, oldest {} days").format(row.count, age)
+                issue = tr("{} snapshots, oldest {} days").format(
+                    row.count, age)
             key = (cluster, row.vmid, row.node)
             rows.append((self._issue_row(_vmid_label(row), issue,
                                          detail, sev, key, icon="snapshot"),

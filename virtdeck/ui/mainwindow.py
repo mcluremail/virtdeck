@@ -1434,7 +1434,10 @@ class MainWindow(QMainWindow):
 
     def _open_fleet_health(self):
         """Fleet Health: summary report across all fleet clusters (M4)."""
-        dlg = FleetHealthDialog(build_fleet_targets(self.nodes_cfg), self)
+        dlg = FleetHealthDialog(
+            build_fleet_targets(self.nodes_cfg), self,
+            pbs_cfgs=[c for c in self.nodes_cfg
+                      if c.get("type") == "pbs" and not c.get("skip")])
         dlg.object_selected.connect(self.tree_panel.reveal_key)
         dlg.exec()
 

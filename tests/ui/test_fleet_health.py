@@ -23,7 +23,7 @@ from virtdeck.backend.fleet import (
     build_fleet_targets,
 )
 from virtdeck.domain.backup_coverage import Guest
-from virtdeck.domain.fleet import GuestBackupState
+from virtdeck.domain.fleet import GuestBackupState, build_cluster_report
 from virtdeck.fleet.runway import RunwayEstimate
 from virtdeck.fleet.sprawl import scan_sprawl
 from virtdeck.ui.fleet_health import KEY_ROLE, FleetHealthDialog
@@ -141,6 +141,62 @@ def test_data_from_plate_on_partial_failure(qtbot, api):
     assert find_issue(dlg._tree, "Never backed up") is not None
 
 
+def test_data_unavailable_plate_and_incomplete_status(qtbot, monkeypatch):
+    """Provider creation failed (unknown plugin type → generated_at=0):
+    the cluster plate must not say "Data from 1970", and the status line
+    must not say a bare "No issues found" while a cluster has no data."""
+    alpha = make_pve_cluster("alpha")
+    install_fake_pve(monkeypatch, alpha)
+    dlg = FleetHealthDialog([
+        FleetTarget("alpha", "alpha", fake_pve_cfg("alpha")),
+        FleetTarget("ghost", "ghost",
+                    {"name": "ghost", "type": "nosuchplugin"})])
+    qtbot.addWidget(dlg)
+    wait_loaded(qtbot, dlg)
+    tops = [dlg._tree.topLevelItem(i)
+            for i in range(dlg._tree.topLevelItemCount())]
+    ghost = next(t for t in tops if t.text(0).startswith("ghost"))
+    assert "Data unavailable" in ghost.text(0)
+    assert "1970" not in ghost.text(0)
+    assert "with incomplete data" in dlg._status.text()
+
+
+def test_tasks_truncated_row(qtbot, api):
+    from virtdeck.fleet.collector import TASK_HISTORY_LIMIT
+    for i in range(TASK_HISTORY_LIMIT):
+        api.add_task("pve01",
+                     f"UPID:pve01:1:2:67000000:apt:u{i}:root@pam:",
+                     task_type="aptupdate", starttime=NOW - i)
+    dlg = make_dialog(qtbot)
+    wait_loaded(qtbot, dlg)
+    top = dlg._tree.topLevelItem(0)
+    rows = [top.child(j) for j in range(top.childCount())]
+    assert any(r.text(2) == "Task history truncated" for r in rows)
+    # the caveat is not an issue: it must not inflate the counter
+    assert "with incomplete data" not in dlg._status.text()
+
+
+def test_cluster_job_run_covers_guests(qtbot, api):
+    """A guest with no own task evidence but covered by an OK cluster-
+    wide job run must not be reported as "never backed up" (P0)."""
+    dlg = make_dialog(qtbot)
+    wait_loaded(qtbot, dlg)
+    report = dlg._bundles[0].report
+    report2 = build_cluster_report(
+        cluster=report.cluster, generated_at=NOW,
+        resources=[{"type": "qemu", "vmid": 105, "name": "fresh",
+                    "node": "pve01"}],
+        backup_jobs=[{"id": "bz-all", "enabled": 1, "all": 1}],
+        tasks=[{"upid": "UPID:pve01:00000009:00000000:67100000:"
+                        "vzdump:bz-all:root@pam:",
+                "type": "vzdump", "status": "OK",
+                "starttime": NOW - 3600}])
+    dlg._bundles = [ClusterBundle(report=report2, runway=())]
+    dlg._render()
+    assert find_issue(dlg._tree, "Never backed up") is None
+    assert dlg._status.text() == "No issues found"
+
+
 def test_object_navigation_signal(qtbot, api):
     dlg = make_dialog(qtbot)
     wait_loaded(qtbot, dlg)
@@ -205,6 +261,8 @@ def test_sprawl_section_after_scan(qtbot, api):
     zombie = find_by_key(dlg._tree, ("alpha", 102, "pve01"))
     assert zombie.foreground(2).color() == QColor(Color.DANGER)
     assert zombie.text(3) == "Unknown snapshot age"
+    # no timestamp → no age in the issue column either ("oldest None" lies)
+    assert zombie.text(2) == "1 snapshots, unknown age"
 
 
 def test_scan_progress_in_status(qtbot, api):
@@ -237,6 +295,22 @@ def test_worker_multi_cluster(qtbot, monkeypatch):
     assert {b.report.cluster for b in bundles} == {"alpha", "beta"}
     assert all(b.report.complete for b in bundles)
     assert all(b.runway for b in bundles)  # scene rrddata → estimates
+
+
+def test_worker_pbs_freshness(qtbot, monkeypatch):
+    """PBS configs passed to the worker enrich every cluster report."""
+    import virtdeck.backend.fleet as backend_fleet
+    monkeypatch.setattr(backend_fleet, "collect_pbs_last_backups",
+                        lambda cfgs: {("vm", "101"): 1727827200})
+    alpha = make_pve_cluster("alpha")
+    install_fake_pve(monkeypatch, alpha)
+    worker = FleetHealthWorker(
+        [FleetTarget("alpha", "alpha", fake_pve_cfg("alpha"))],
+        pbs_cfgs=[{"name": "pbs1", "type": "pbs"}])
+    with qtbot.waitSignal(worker.finished_all, timeout=20000) as blocker:
+        worker.start()
+    bundle = blocker.args[0][0]
+    assert bundle.report.backup_states[101].pbs_last_ok == 1727827200
 
 
 def test_cluster_display_label(qtbot, monkeypatch):

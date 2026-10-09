@@ -1277,5 +1277,10 @@
   "Unknown snapshot age": "Âge des instantanés inconnu",
   "Up to date": "Version à jour",
   "Scanning... {}/{}": "Analyse… {}/{}",
-  "~{} days left (sparse history — rough estimate)": "~{} jours avant remplissage (historique insuffisant — estimation approximative)"
+  "~{} days left (sparse history — rough estimate)": "~{} jours avant remplissage (historique insuffisant — estimation approximative)",
+  "Data unavailable": "Données indisponibles",
+  "{} with incomplete data": "{} avec des données incomplètes",
+  "{} snapshots, unknown age": "{} instantanés, âge inconnu",
+  "Task history truncated": "Historique des tâches tronqué",
+  "Only the newest {} tasks are analyzed — older successful backups may be missing": "Seules les {} tâches les plus récentes sont analysées — des sauvegardes réussies plus anciennes peuvent manquer"
 }

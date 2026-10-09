@@ -17,6 +17,7 @@ from PySide6.QtCore import QObject, Signal
 
 from ..domain.fleet import ClusterFleetReport
 from ..fleet.collector import collect_cluster
+from ..fleet.pbs_source import collect_pbs_last_backups
 from ..fleet.runway import RunwayEstimate, estimate_runway
 from ..plugins import create_provider
 
@@ -88,11 +89,17 @@ class FleetHealthSignals(QObject):
 
 
 class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
-    """Collects Fleet Health across all targets in parallel."""
+    """Collects Fleet Health across all targets in parallel.
 
-    def __init__(self, targets: list[FleetTarget]):
+    ``pbs_cfgs`` — optional PBS host configs: last-backup freshness is
+    fetched once (per-server isolation, see ``fleet.pbs_source``) and
+    shared by every cluster's report.
+    """
+
+    def __init__(self, targets: list[FleetTarget], pbs_cfgs=None):
         super().__init__()
         self._targets = list(targets)
+        self._pbs_cfgs = list(pbs_cfgs or [])
         self._signals = FleetHealthSignals()
         self.cluster_done = self._signals.cluster_done
         self.finished_all = self._signals.finished_all
@@ -101,12 +108,19 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self) -> None:
+        pbs_map: dict = {}
+        if self._pbs_cfgs:
+            try:
+                pbs_map = collect_pbs_last_backups(self._pbs_cfgs)
+            except Exception as e:  # PBS is an enrichment source only
+                logger.warning("Fleet Health: PBS sources failed: %s", e)
+
         bundles: list[ClusterBundle] = []
         lock = threading.Lock()
         threads: list[threading.Thread] = []
 
         def worker(target: FleetTarget) -> None:
-            bundle = self._collect_one(target)
+            bundle = self._collect_one(target, pbs_map)
             with lock:
                 bundles.append(bundle)
             self._signals.cluster_done.emit(bundle)
@@ -119,11 +133,13 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
             t.join()
         self._signals.finished_all.emit(bundles)
 
-    def _collect_one(self, target: FleetTarget) -> ClusterBundle:
+    def _collect_one(self, target: FleetTarget,
+                     pbs_map: dict | None = None) -> ClusterBundle:
         name = target.name
         try:
             with create_provider(target.cfg) as provider:
-                report = collect_cluster(provider, name=name)
+                report = collect_cluster(provider, name=name,
+                                         pbs_last_backups=pbs_map or None)
                 runway = self._runway(provider, report)
         except Exception as e:  # provider creation is a source too
             logger.warning("Fleet Health: %s failed: %s", name, e)
@@ -150,6 +166,12 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
                 logger.debug("Fleet Health runway %s/%s: %s",
                              node, storage, e)
                 continue
-            estimates.append(estimate_runway(series, node=node,
-                                             storage=storage))
+            # the forecast itself is a source too: one degenerate series
+            # must not sink the already-collected cluster report
+            try:
+                estimates.append(estimate_runway(series, node=node,
+                                                 storage=storage))
+            except Exception as e:
+                logger.debug("Fleet Health runway %s/%s: %s",
+                             node, storage, e)
         return tuple(estimates)

@@ -17,6 +17,12 @@ from ..domain.fleet import (
     build_cluster_report,
 )
 
+# /cluster/tasks fetch limit: PVE keeps thousands of rows; pulling them
+# all is wasteful, but the cap must be surfaced (tasks_truncated) —
+# a guest whose last successful backup fell out of the window must not
+# be reported as "never backed up" without a caveat.
+TASK_HISTORY_LIMIT = 200
+
 
 def _node_version(provider, node: str) -> str:
     """Node pveversion: from the node status, fallback /nodes/{node}/version.
@@ -65,9 +71,12 @@ def collect_cluster(
     if err:
         errors.append(err)
     tasks, err = guarded("tasks",
-                         lambda: provider.tasks.list_cluster(limit=200))
+                         lambda: provider.tasks.list_cluster(
+                             limit=TASK_HISTORY_LIMIT))
     if err:
         errors.append(err)
+    tasks_truncated = tasks is not None \
+        and len(tasks) >= TASK_HISTORY_LIMIT
 
     node_versions: dict[str, str] = {}
     storage_rows: list[dict] = []
@@ -102,6 +111,7 @@ def collect_cluster(
         node_versions=node_versions,
         storage_usage=storage_rows,
         pbs_last_backups=pbs_last_backups,
+        tasks_truncated=tasks_truncated,
         errors=errors,
     )
 
