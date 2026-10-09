@@ -141,6 +141,10 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart("v")
+          if ($version -notmatch '^\d') {
+            # not a tag run — take the version from pyproject.toml
+            $version = (Select-String -Path pyproject.toml -Pattern '^version = "(.*)"').Matches[0].Groups[1].Value
+          }
           $distDir = Resolve-Path "dist/virtdeck"
           $nsisPath = "C:\Program Files (x86)\NSIS"
           if (Test-Path "$nsisPath\makensis.exe") {
@@ -228,6 +232,7 @@ jobs:
 
   create-release:
     name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: [build-python, build-deb, build-rpm, build-windows, build-windows-installer, smoke-packages]
     runs-on: ubuntu-latest
     permissions:
