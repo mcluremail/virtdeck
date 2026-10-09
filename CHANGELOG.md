@@ -12,6 +12,7 @@
 - VM ops: converting a template back to a VM now warns that PVE does not officially support the reverse conversion (the flag is silently cleared, volumes stay base volumes — linked clones may break); the action is refused for container templates
 - VM ops: a taken-VMID conflict between workers (nextid race) retries once with a freshly fetched id in create and clone
 - VM ops: the delete dialog exposes the purge choice (removal from HA resources and backup jobs — previously hardwired on); bulk actions reuse one provider (login) per host instead of re-authenticating per VM
+- Packaging: the .deb no longer depends on the nonexistent `python3-pyside6` (PySide6 is not in the Debian/Ubuntu archives — pip-only) — the dependency made every apt install fail with "held broken packages" since v3.0.0; the smoke gate caught it on its first run. Release notes now say `apt install ./virtdeck_*.deb` (resolves deps) + `pip3 install --break-system-packages PySide6`
 - Fleet Health: a cluster whose provider cannot even be created no longer shows a "Data from 1970" plate — it says "Data unavailable"
 - Fleet Health: the status line no longer claims a bare "No issues found" when some clusters returned incomplete data — the suffix "N with incomplete data" is appended
 - Fleet Health: one degenerate storage series (identical timestamps) no longer ZeroDivisionError's the whole cluster report — the forecast is isolated per source like every other collector; a flat series lands in the honest "no trend" branch

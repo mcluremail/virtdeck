@@ -180,7 +180,13 @@ jobs:
         if: matrix.pkg == 'deb'
         run: |
           apt-get update -qq
-          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ./pkg/virtdeck_*.deb
+          # PySide6 is not in the Debian/Ubuntu archives (pip-only) — the
+          # deb ships the apt-installable deps, PySide6 comes from pip
+          # exactly as documented in the release notes
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            python3-pip libgl1 libegl1 libxkbcommon0 libdbus-1-3 \
+            ./pkg/virtdeck_*.deb
+          pip3 install --break-system-packages PySide6
           python3 -c "from virtdeck import main; import virtdeck; print('deb smoke OK', virtdeck.__version__)"
       - name: Install .rpm and import-check (Fedora 41)
         if: matrix.pkg == 'rpm'
@@ -215,8 +221,8 @@ jobs:
 
             Установка .deb:
             ```
-            sudo dpkg -i virtdeck_*.deb
-            pip install proxmoxer
+            sudo apt install ./virtdeck_*.deb
+            pip3 install --break-system-packages PySide6
             sudo apt install virt-viewer
             ```
 
