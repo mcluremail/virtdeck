@@ -503,7 +503,6 @@
   "Linux 2.6+": "Linux 2.6+",
   "Linux 2.6+ / 3.x / 4.x": "Linux 2.6+ / 3.x / 4.x",
   "Lithuanian": "Lituano",
-  "Live migration of containers (LXC) is not supported by PVE": "La migración en vivo de contenedores (LXC) no es compatible con PVE",
   "Loading detailed info...": "Cargando información detallada...",
   "Loading tasks...": "Cargando tareas...",
   "Loading...": "Cargando...",
@@ -1097,7 +1096,6 @@
   "VM {vmid} converted to template": "VM {vmid} convertida en plantilla",
   "VM {vmid} created on {node}": "VM {vmid} creada en {node}",
   "VM {vmid} deleted from {node}": "VM {vmid} eliminada de {node}",
-  "VM {vmid} migration to {target} started": "Migración de VM {vmid} a {target} iniciada",
   "VM {vmid}: opening noVNC console...": "VM {vmid}: abriendo consola noVNC...",
   "VM {vmid}: opening {ctype} console...": "VM {vmid}: abriendo consola {ctype}...",
   "VM {vmid}: {action} completed": "VM {vmid}: {action} completado",
@@ -1287,5 +1285,11 @@
   "{}% used — no growth detected": "{}% usado — no se detectó crecimiento",
   "~{}–∞ days left": "~{}–∞ días para llenarse",
   "data {} days old": "datos de hace {} días",
-  "snapshot scan incomplete: {} guests failed": "escaneo de instantáneas incompleto: {} invitados sin verificar"
+  "snapshot scan incomplete: {} guests failed": "escaneo de instantáneas incompleto: {} invitados sin verificar",
+  "Restart migration: the container will be rebooted on the target node": "Migración con reinicio: el contenedor se reiniciará en el nodo de destino",
+  "VM {vmid} migrated to {target}": "La VM {vmid} se migró a {target}",
+  "Migration of VM {vmid} failed: {err}": "Falló la migración de la VM {vmid}: {err}",
+  "Purge from HA resources and backup jobs": "Purgar de recursos HA y trabajos de copia de seguridad",
+  "Converting a container template back to a container is not supported": "No se admite reconvertir una plantilla de contenedor en contenedor",
+  "PVE does not officially support this operation: the template flag is silently cleared and volumes remain base volumes — linked clones may break.": "PVE no admite oficialmente esta operación: la marca de plantilla se elimina en silencio y los volúmenes permanecen como volúmenes base — los clones enlazados pueden romperse."
 }

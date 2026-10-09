@@ -66,8 +66,11 @@ class MigrateVMDialog(QDialog):
         self.with_local_disks_cb.setChecked(True)
         target_grid.addWidget(self.with_local_disks_cb, 1, 0, 1, 2)
 
-        if vm_type == "lxc":
-            warn = QLabel(tr("Live migration of containers (LXC) is not supported by PVE"))
+        if vm_type == "lxc" and self._vm_info.get("running"):
+            # restart migration semantics (PVE 7/8/9): the CT is stopped
+            # on the source and rebooted on the target node
+            warn = QLabel(tr("Restart migration: the container will be "
+                             "rebooted on the target node"))
             warn.setStyleSheet(f"color: {Color.STATUS_WARN}; font-size: 11px;")
             warn.setWordWrap(True)
             target_grid.addWidget(warn, 2, 0, 1, 2)

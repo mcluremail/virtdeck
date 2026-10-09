@@ -503,7 +503,6 @@
   "Linux 2.6+": "Linux 2.6+",
   "Linux 2.6+ / 3.x / 4.x": "Linux 2.6+ / 3.x / 4.x",
   "Lithuanian": "Lituanien",
-  "Live migration of containers (LXC) is not supported by PVE": "La migration à chaud des conteneurs (LXC) n'est pas prise en charge par PVE",
   "Loading detailed info...": "Chargement des informations détaillées...",
   "Loading tasks...": "Chargement des tâches...",
   "Loading...": "Chargement...",
@@ -1097,7 +1096,6 @@
   "VM {vmid} converted to template": "VM {vmid} convertie en modèle",
   "VM {vmid} created on {node}": "VM {vmid} créée sur {node}",
   "VM {vmid} deleted from {node}": "VM {vmid} supprimée de {node}",
-  "VM {vmid} migration to {target} started": "Migration de VM {vmid} vers {target} démarrée",
   "VM {vmid}: opening noVNC console...": "VM {vmid} : ouverture de la console noVNC...",
   "VM {vmid}: opening {ctype} console...": "VM {vmid} : ouverture de la console {ctype}...",
   "VM {vmid}: {action} completed": "VM {vmid} : {action} terminé",
@@ -1287,5 +1285,11 @@
   "{}% used — no growth detected": "{} % utilisés — aucune croissance détectée",
   "~{}–∞ days left": "~{}–∞ jours avant remplissage",
   "data {} days old": "données vieilles de {} jours",
-  "snapshot scan incomplete: {} guests failed": "scan des instantanés incomplet : {} invités non vérifiés"
+  "snapshot scan incomplete: {} guests failed": "scan des instantanés incomplet : {} invités non vérifiés",
+  "Restart migration: the container will be rebooted on the target node": "Migration par redémarrage : le conteneur sera redémarré sur le nœud cible",
+  "VM {vmid} migrated to {target}": "La VM {vmid} a été migrée vers {target}",
+  "Migration of VM {vmid} failed: {err}": "Échec de la migration de la VM {vmid} : {err}",
+  "Purge from HA resources and backup jobs": "Purger des ressources HA et des tâches de sauvegarde",
+  "Converting a container template back to a container is not supported": "La reconversion d'un modèle de conteneur en conteneur n'est pas prise en charge",
+  "PVE does not officially support this operation: the template flag is silently cleared and volumes remain base volumes — linked clones may break.": "PVE ne prend pas officiellement en charge cette opération : l'indicateur de modèle est retiré silencieusement et les volumes restent des volumes de base — les clones liés peuvent être cassés."
 }

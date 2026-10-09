@@ -61,6 +61,10 @@ def _await_task(provider, node_name, result, timeout=120):
     )
     if status == "stopped" and exitstatus == "OK":
         return True, ""
+    if status == "timeout":
+        # the task is still alive in PVE — not a failure, but not a
+        # success either; the caller must not claim "completed"
+        return False, f"still running after {int(timeout)} s"
     return False, exitstatus or status
 
 # ----------------------------------------------------------------------
@@ -71,6 +75,32 @@ def _safe_emit(signal, *args):
         signal.emit(*args)
     except RuntimeError:
         pass
+
+
+def _is_vmid_conflict(err: str) -> bool:
+    """PVE rejected the target VMID as taken (nextid race: another
+    worker claimed the same fresh id between next_vmid() and POST)."""
+    lowered = str(err).lower()
+    return "already exists" in lowered or "already in use" in lowered
+
+
+def _await_vmid_retry(provider, node_name, fork, next_vmid, timeout):
+    """_await_task with a one-shot retry on a taken-VMID conflict.
+
+    ``fork(newid)`` performs the POST; on the first conflict the id is
+    re-fetched via ``next_vmid()`` and the call is retried once.
+    """
+    newid = None
+    for attempt in range(2):
+        try:
+            ok, err = _await_task(provider, node_name, fork(newid),
+                                  timeout=timeout)
+        except Exception as exc:
+            ok, err = False, _sanitize_error(exc)
+        if ok or not _is_vmid_conflict(err) or attempt == 1:
+            return ok, err
+        newid = next_vmid()
+    return ok, err
 
 # ----------------------------------------------------------------------
 # StorageUploadWorker — POST /nodes/{node}/storage/{storage}/upload (multipart)

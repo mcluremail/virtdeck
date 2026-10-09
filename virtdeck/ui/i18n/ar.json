@@ -503,7 +503,6 @@
   "Linux 2.6+": "Linux 2.6+",
   "Linux 2.6+ / 3.x / 4.x": "Linux 2.6+ / 3.x / 4.x",
   "Lithuanian": "الليتوانية",
-  "Live migration of containers (LXC) is not supported by PVE": "الترحيل المباشر للحاويات (LXC) غير مدعوم من PVE",
   "Loading detailed info...": "جارٍ تحميل المعلومات التفصيلية...",
   "Loading tasks...": "جارٍ تحميل المهام...",
   "Loading...": "جارٍ التحميل...",
@@ -1097,7 +1096,6 @@
   "VM {vmid} converted to template": "تم تحويل الجهاز الافتراضي {vmid} إلى قالب",
   "VM {vmid} created on {node}": "VM {vmid} تم إنشاؤه على {node}",
   "VM {vmid} deleted from {node}": "VM {vmid} تم حذفه من {node}",
-  "VM {vmid} migration to {target} started": "بدأ ترحيل VM {vmid} إلى {target}",
   "VM {vmid}: opening noVNC console...": "الجهاز الافتراضي {vmid}: جارٍ فتح وحدة تحكم noVNC...",
   "VM {vmid}: opening {ctype} console...": "جهاز افتراضي {vmid}: فتح وحدة تحكم {ctype}...",
   "VM {vmid}: {action} completed": "VM {vmid}: {action} اكتمل",
@@ -1287,5 +1285,11 @@
   "{}% used — no growth detected": "{}% مستخدم — لا نمو مرصود",
   "~{}–∞ days left": "~{}–∞ يوم قبل الامتلاء",
   "data {} days old": "بيانات عمرها {} يومًا",
-  "snapshot scan incomplete: {} guests failed": "مسح اللقطات غير مكتمل: تعذر فحص {} ضيفًا"
+  "snapshot scan incomplete: {} guests failed": "مسح اللقطات غير مكتمل: تعذر فحص {} ضيفًا",
+  "Restart migration: the container will be rebooted on the target node": "ترحيل بإعادة التشغيل: ستتم إعادة تشغيل الحاوية على العقدة الهدف",
+  "VM {vmid} migrated to {target}": "تمت ترحيل الجهاز {vmid} إلى {target}",
+  "Migration of VM {vmid} failed: {err}": "فشل ترحيل الجهاز {vmid}: {err}",
+  "Purge from HA resources and backup jobs": "إزالة من موارد HA ومهام النسخ الاحتياطي",
+  "Converting a container template back to a container is not supported": "تحويل قالب الحاوية مرة أخرى إلى حاوية غير مدعوم",
+  "PVE does not officially support this operation: the template flag is silently cleared and volumes remain base volumes — linked clones may break.": "لا يدعم PVE هذه العملية رسميًا: تتم إزالة علامة القالب بصمت وتبقى الأقراص أقراصًا أساسية — قد تتعطل الاستنساخات المرتبطة."
 }

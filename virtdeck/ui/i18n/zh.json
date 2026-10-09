@@ -503,7 +503,6 @@
   "Linux 2.6+": "Linux 2.6+",
   "Linux 2.6+ / 3.x / 4.x": "Linux 2.6+ / 3.x / 4.x",
   "Lithuanian": "立陶宛语",
-  "Live migration of containers (LXC) is not supported by PVE": "PVE 不支持容器的实时迁移 (LXC)",
   "Loading detailed info...": "正在加载详细信息...",
   "Loading tasks...": "正在加载任务...",
   "Loading...": "正在加载...",
@@ -1097,7 +1096,6 @@
   "VM {vmid} converted to template": "虚拟机 {vmid} 已转换为模板",
   "VM {vmid} created on {node}": "VM {vmid} 已在 {node} 上创建",
   "VM {vmid} deleted from {node}": "VM {vmid} 已从 {node} 删除",
-  "VM {vmid} migration to {target} started": "虚拟机 {vmid} 迁移到 {target} 已开始",
   "VM {vmid}: opening noVNC console...": "VM {vmid}：正在打开 noVNC 控制台...",
   "VM {vmid}: opening {ctype} console...": "虚拟机 {vmid}：正在打开 {ctype} 控制台...",
   "VM {vmid}: {action} completed": "VM {vmid}：{action} 已完成",
@@ -1287,5 +1285,11 @@
   "{}% used — no growth detected": "已用 {}%——未检测到增长",
   "~{}–∞ days left": "~{}–∞ 天后写满",
   "data {} days old": "数据已滞后 {} 天",
-  "snapshot scan incomplete: {} guests failed": "快照扫描不完整：{} 个客户机未检查"
+  "snapshot scan incomplete: {} guests failed": "快照扫描不完整：{} 个客户机未检查",
+  "Restart migration: the container will be rebooted on the target node": "重启迁移：容器将在目标节点上重新启动",
+  "VM {vmid} migrated to {target}": "虚拟机 {vmid} 已迁移到 {target}",
+  "Migration of VM {vmid} failed: {err}": "虚拟机 {vmid} 迁移失败：{err}",
+  "Purge from HA resources and backup jobs": "从 HA 资源和备份任务中清除",
+  "Converting a container template back to a container is not supported": "不支持将容器模板转换回容器",
+  "PVE does not officially support this operation: the template flag is silently cleared and volumes remain base volumes — linked clones may break.": "PVE 官方不支持此操作：模板标志会被静默清除，卷仍为基准卷——链接克隆可能会损坏。"
 }

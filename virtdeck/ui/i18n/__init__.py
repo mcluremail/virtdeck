@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 _DATA_DIR = Path(__file__).resolve().parent
 
 # Bump when built-in translations change structurally; forces re-seed.
-_I18N_VERSION = 36
+_I18N_VERSION = 38
 
 _current_lang = "en"
 _current_dict: dict[str, str] = {}

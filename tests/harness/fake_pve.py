@@ -10,6 +10,8 @@ partial failure semantics ("data as of HH:MM").
 
 from __future__ import annotations
 
+from urllib.parse import unquote
+
 
 def _pve_manager_version(major: int, minor: int, patch: int) -> str:
     return f"pve-manager/{major}.{minor}.{patch}/a1b2c3d4e5f6g7h8"
@@ -34,6 +36,11 @@ class FakePveApi:
         self.storage_rrddata: dict[tuple[str, str], list[dict]] = {}
         self.snapshots: dict[tuple[str, int], list[dict]] = {}
         self.tasks: list[dict] = []
+        # write-op task simulation: upid → exitstatus; a task absent from
+        # the mapping is still "running" (never finishes — timeout tests)
+        self.task_results: dict[str, str] = {}
+        self._next_task_result: str | None = "OK"
+        self._upid_seq = 0
         self._resources: list[dict] | None = None  # override /cluster/resources
         self._job_seq = 0
 
@@ -145,6 +152,23 @@ class FakePveApi:
         self._resources = entries
         return self
 
+    def set_next_task_result(self, exitstatus: str | None = "OK") -> FakePveApi:
+        """Exitstatus of the next forked write task; ``None`` — the task
+        stays "running" forever (timeout scenarios)."""
+        self._next_task_result = exitstatus
+        return self
+
+    def _fork_task(self, node: str, wtype: str, ident: str) -> str:
+        """Mint an UPID like a real fork_worker and register its outcome."""
+        self._upid_seq += 1
+        upid = (f"UPID:{node}:{self._upid_seq:08X}:00000000:"
+                f"1727830000:{wtype}:{ident}:root@pam:")
+        result = self._next_task_result
+        if result is not None:
+            self.task_results[upid] = result
+            self._next_task_result = "OK"  # "next task only" semantics
+        return upid
+
     # ── Request handling ────────────────────────────────────────────
 
     def _derived_resources(self) -> list[dict]:
@@ -185,6 +209,12 @@ class FakePveApi:
                 return 200, list(self.storage_cfg)
             if parts[:2] == ["cluster", "tasks"]:
                 return 200, list(self.tasks)
+            if parts[:2] == ["cluster", "nextid"]:
+                used = {vm["vmid"] for vms in self.qemu.values()
+                        for vm in vms}
+                used |= {ct["vmid"] for vms in self.lxc.values()
+                         for ct in vms}
+                return 200, (max(used) + 1) if used else 100
             if parts[:1] == ["nodes"] and len(parts) == 1:
                 return 200, [{"node": n, "status": "online"}
                              for n in self.nodes]
@@ -211,6 +241,16 @@ class FakePveApi:
                                  if n == node]
                 if rest == ["tasks"]:
                     return 200, [t for t in self.tasks if t["node"] == node]
+                if len(rest) == 3 and rest[0] == "tasks" \
+                        and rest[2] == "status":
+                    # worker polling: unquoted upid → registered outcome;
+                    # unregistered → still "running" (never finishes)
+                    upid = unquote(rest[1])
+                    exitstatus = self.task_results.get(upid)
+                    if exitstatus is None:
+                        return 200, {"status": "running"}
+                    return 200, {"status": "stopped",
+                                 "exitstatus": exitstatus}
                 if len(rest) == 3 and rest[0] == "storage" \
                         and rest[2] == "rrddata":
                     return 200, list(self.storage_rrddata.get(
@@ -234,6 +274,58 @@ class FakePveApi:
                         if vm["vmid"] == vmid:
                             return 200, dict(vm)
                 return 404, {"errors": f"no handler: {method} {path}"}
+            return 404, {"errors": f"no handler: {method} {path}"}
+
+        if method in ("POST", "PUT", "DELETE"):
+            if parts[:1] == ["nodes"] and len(parts) >= 3:
+                node = parts[1]
+                if node not in self.nodes:
+                    return 500, {"errors": f"no such node: {node}"}
+                rest = parts[2:]
+                # POST /nodes/{node}/qemu|lxc — create guest
+                if len(rest) == 1 and method == "POST" \
+                        and rest[0] in ("qemu", "lxc"):
+                    wtype = "qmcreate" if rest[0] == "qemu" else "vzcreate"
+                    return 200, self._fork_task(node, wtype, "0")
+                if rest and rest[0] in ("qemu", "lxc"):
+                    vmid = rest[1] if len(rest) > 1 else ""
+                    # DELETE /nodes/{node}/{qemu|lxc}/{vmid} — destroy
+                    if len(rest) == 2 and method == "DELETE" \
+                            and str(vmid).isdigit():
+                        wtype = "qmdestroy" if rest[0] == "qemu" \
+                            else "vzdestroy"
+                        return 200, self._fork_task(node, wtype, vmid)
+                    if len(rest) == 3:
+                        kind = rest[2]
+                        # PUT/POST .../config — synchronous in PVE
+                        if kind == "config":
+                            return 200, None
+                        # POST .../clone|migrate|template, PUT resize,
+                        # POST move_disk (qemu) / move_volume (lxc),
+                        # POST .../snapshot — async tasks
+                        wtype = {
+                            "clone": "qmclone", "migrate": "qmmigrate",
+                            "template": "qmtemplate", "resize": "qmresize",
+                            "move_disk": "qmmovedisk",
+                            "move_volume": "vzmovevolume",
+                        }.get(kind)
+                        if wtype:
+                            return 200, self._fork_task(node, wtype, vmid)
+                        if kind == "snapshot" and method == "POST":
+                            return 200, self._fork_task(node, "qmsnap",
+                                                        vmid)
+                    if len(rest) == 4 and method == "DELETE" \
+                            and rest[2] == "snapshot":
+                        return 200, self._fork_task(node, "qmdelsnap", vmid)
+                    if len(rest) == 5 and rest[2] == "snapshot" \
+                            and rest[4] == "rollback":
+                        return 200, self._fork_task(node, "qmrollback",
+                                                    vmid)
+                    if len(rest) == 4 and method == "POST" \
+                            and rest[2] == "status":
+                        wtype = "qm" if rest[0] == "qemu" else "vz"
+                        return 200, self._fork_task(node,
+                                                    wtype + rest[3], vmid)
             return 404, {"errors": f"no handler: {method} {path}"}
 
         return 404, {"errors": f"no handler: {method} {path}"}

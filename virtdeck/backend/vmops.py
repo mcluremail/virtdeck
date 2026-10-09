@@ -6,7 +6,7 @@ from PySide6.QtCore import QObject, QRunnable, Signal
 
 from ..plugins import create_provider
 from ..ui.i18n import tr
-from .core import _await_task, _safe_emit, _sanitize_error
+from .core import _await_task, _await_vmid_retry, _safe_emit, _sanitize_error
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +49,13 @@ class CreateVmWorker(QRunnable):
                         pass
                     return
 
-            ok, err = _await_task(
-                provider, self.node_name,
-                vm_api.create_qemu(self.node_name, **params),
+            def fork(newid=None):
+                if newid is not None:
+                    params["vmid"] = newid
+                return vm_api.create_qemu(self.node_name, **params)
+
+            ok, err = _await_vmid_retry(
+                provider, self.node_name, fork, cluster_api.next_vmid,
                 timeout=300,
             )
             if not ok:
@@ -102,12 +106,13 @@ class DeleteVmSignals(QObject):
     finished = Signal()
 class DeleteVmWorker(QRunnable):
     """Deletes a QEMU VM or LXC container via DELETE /nodes/{node}/{qemu|lxc}/{vmid}."""
-    def __init__(self, host_cfg, node_name, vmid, vm_type="qemu"):
+    def __init__(self, host_cfg, node_name, vmid, vm_type="qemu", purge=True):
         super().__init__()
         self.host_cfg = host_cfg
         self.node_name = node_name
         self.vmid = vmid
         self.vm_type = vm_type
+        self.purge = purge  # also remove from HA resources and backup jobs
         self.signals = DeleteVmSignals()
 
     def run(self):
@@ -117,7 +122,8 @@ class DeleteVmWorker(QRunnable):
             vm_api = provider.vms
             ok, err = _await_task(
                 provider, self.node_name,
-                vm_api.delete(self.node_name, self.vmid, self.vm_type, purge=True),
+                vm_api.delete(self.node_name, self.vmid, self.vm_type,
+                              purge=self.purge),
                 timeout=600,
             )
             if not ok:
@@ -155,11 +161,19 @@ class MigrateVmSignals(QObject):
     vm_error = Signal(str)
     finished = Signal()
 class MigrateVmWorker(QRunnable):
-    """Migrate QEMU VM or LXC container to another node in cluster.
-    QEMU: POST /nodes/{node}/qemu/{vmid}/migrate {target: ...}
-    LXC:  not supported by PVE API — emit error."""
+    """Migrate a QEMU VM or LXC container to another node in cluster.
+
+    POST /nodes/{node}/{qemu|lxc}/{vmid}/migrate — supported by PVE
+    7/8/9 for both guest types. A running guest must be flagged:
+    QEMU → ``online`` (live migration), LXC → ``restart`` (restart
+    migration: the CT is rebooted on the target node). The migration
+    task is awaited so a failed migration is reported instead of
+    silently forgotten.
+    """
+    MIGRATE_TIMEOUT_S = 1800
+
     def __init__(self, host_cfg, node_name, vmid, vm_type, target_node,
-                 with_local_disks=True):
+                 with_local_disks=True, running=False):
         super().__init__()
         self.host_cfg = host_cfg
         self.node_name = node_name
@@ -167,29 +181,36 @@ class MigrateVmWorker(QRunnable):
         self.vm_type = vm_type
         self.target_node = target_node
         self.with_local_disks = with_local_disks
+        self.running = running
         self.signals = MigrateVmSignals()
 
     def run(self):
-        if self.vm_type == "lxc":
-            try:
-                self.signals.vm_error.emit(
-                    tr("Live migration of containers (LXC) is not supported by PVE")
-                )
-            except RuntimeError:
-                pass
-            return
+        provider = None
         try:
-            provider = None
             provider = create_provider(self.host_cfg, timeout=120)
             vm_api = provider.vms
-            vm_api.migrate(self.node_name, self.vmid, self.target_node,
-                           self.with_local_disks)
-            msg = tr("VM {vmid} migration to {target} started").format(
-                vmid=self.vmid, target=self.target_node)
-            try:
-                self.signals.vm_migrated.emit(msg)
-            except RuntimeError:
-                pass
+            ok, err = _await_task(
+                provider, self.node_name,
+                vm_api.migrate(self.node_name, self.vmid, self.vm_type,
+                               self.target_node, self.with_local_disks,
+                               online=self.running and self.vm_type == "qemu",
+                               restart=self.running and self.vm_type == "lxc"),
+                timeout=self.MIGRATE_TIMEOUT_S,
+            )
+            if ok:
+                msg = tr("VM {vmid} migrated to {target}").format(
+                    vmid=self.vmid, target=self.target_node)
+                try:
+                    self.signals.vm_migrated.emit(msg)
+                except RuntimeError:
+                    pass
+            else:
+                msg = tr("Migration of VM {vmid} failed: {err}").format(
+                    vmid=self.vmid, err=err)
+                try:
+                    self.signals.vm_error.emit(msg)
+                except RuntimeError:
+                    pass
         except Exception as e:
             logger.debug("migrate error: %s", e)
             try:
@@ -257,9 +278,15 @@ class CloneVmWorker(QRunnable):
                     clone_params["full"] = 1
                 if params.get("storage"):
                     clone_params["storage"] = params["storage"]
-            ok, err = _await_task(
-                provider, self.node_name,
-                vm_api.clone(self.node_name, self.vmid, self.vm_type, **clone_params),
+            def fork(newid=None):
+                if newid is not None:
+                    params["newid"] = newid
+                    clone_params["newid"] = newid
+                return vm_api.clone(self.node_name, self.vmid,
+                                    self.vm_type, **clone_params)
+
+            ok, err = _await_vmid_retry(
+                provider, self.node_name, fork, cluster_api.next_vmid,
                 timeout=900,
             )
             if not ok:

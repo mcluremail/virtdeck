@@ -143,7 +143,7 @@ class VmConfigUpdateWorker(QRunnable):
 # VmDiskResizeWorker — PUT /nodes/{node}/qemu/{vmid}/resize
 # ----------------------------------------------------------------------
 class VmDiskResizeSignals(QObject):
-    disk_resized = Signal(int, str)   # vmid, upid
+    disk_resized = Signal(int, str)   # vmid, "" (emitted after task completion)
     disk_resize_error = Signal(int, str)
     finished = Signal()
 class VmDiskResizeWorker(QRunnable):
@@ -163,12 +163,24 @@ class VmDiskResizeWorker(QRunnable):
         try:
             provider = create_provider(self.host_cfg, timeout=30)
             vm_api = provider.vms
-            result = vm_api.resize_disk(self.node_name, self.vmid, self.vm_type,
-                                        self.disk, self.size)
-            try:
-                self.signals.disk_resized.emit(self.vmid, str(result))
-            except RuntimeError:
-                pass
+            # PUT resize forks an async task in PVE — await it, otherwise
+            # a failed resize (no space, bad size) reports a false success
+            ok, err = _await_task(
+                provider, self.node_name,
+                vm_api.resize_disk(self.node_name, self.vmid, self.vm_type,
+                                   self.disk, self.size),
+                timeout=600,
+            )
+            if ok:
+                try:
+                    self.signals.disk_resized.emit(self.vmid, "")
+                except RuntimeError:
+                    pass
+            else:
+                try:
+                    self.signals.disk_resize_error.emit(self.vmid, err)
+                except RuntimeError:
+                    pass
         except Exception as e:
             logger.debug("backend error: %s", e)
             try:
@@ -187,7 +199,7 @@ class VmDiskResizeWorker(QRunnable):
 # VmDiskMoveWorker — POST /nodes/{node}/qemu/{vmid}/move_disk
 # ----------------------------------------------------------------------
 class VmDiskMoveSignals(QObject):
-    disk_moved = Signal(int, str)   # vmid, upid
+    disk_moved = Signal(int, str)   # vmid, "" (emitted after task completion)
     disk_move_error = Signal(int, str)
     finished = Signal()
 class VmDiskMoveWorker(QRunnable):
@@ -209,12 +221,24 @@ class VmDiskMoveWorker(QRunnable):
         try:
             provider = create_provider(self.host_cfg, timeout=60)
             vm_api = provider.vms
-            result = vm_api.move_disk(self.node_name, self.vmid, self.vm_type,
-                                      self.disk, self.storage, delete=self.delete)
-            try:
-                self.signals.disk_moved.emit(self.vmid, str(result))
-            except RuntimeError:
-                pass
+            # POST move_disk/move_volume is a long async task (disk
+            # copy) — await it; a false "moved" hides a half-moved disk
+            ok, err = _await_task(
+                provider, self.node_name,
+                vm_api.move_disk(self.node_name, self.vmid, self.vm_type,
+                                 self.disk, self.storage, delete=self.delete),
+                timeout=3600,
+            )
+            if ok:
+                try:
+                    self.signals.disk_moved.emit(self.vmid, "")
+                except RuntimeError:
+                    pass
+            else:
+                try:
+                    self.signals.disk_move_error.emit(self.vmid, err)
+                except RuntimeError:
+                    pass
         except Exception as e:
             logger.debug("backend error: %s", e)
             try:
@@ -382,6 +406,12 @@ class VmActionSignals(QObject):
     finished = Signal()
 class VmActionWorker(QRunnable):
     ACTION_NAMES = VM_ACTION_MESSAGE_LABELS
+    # POST status/{action} is an async task in PVE: it must be awaited,
+    # otherwise a failed start/stop is reported as a false "completed"
+    TASK_TIMEOUTS = {"start": 600, "shutdown": 600, "reboot": 900,
+                     "stop": 300, "reset": 300, "suspend": 300,
+                     "resume": 300}
+    DEFAULT_TASK_TIMEOUT_S = 600
 
     def __init__(self, host_cfg, node_name, vmid, vm_type, action):
         super().__init__()
@@ -397,14 +427,27 @@ class VmActionWorker(QRunnable):
         try:
             provider = create_provider(self.host_cfg, timeout=10)
             vm_api = provider.vms
-            vm_api.perform_action(self.node_name, self.vmid, self.vm_type, self.action)
-            try:
+            ok, err = _await_task(
+                provider, self.node_name,
+                vm_api.perform_action(self.node_name, self.vmid,
+                                      self.vm_type, self.action),
+                timeout=self.TASK_TIMEOUTS.get(
+                    self.action, self.DEFAULT_TASK_TIMEOUT_S),
+            )
+            if ok:
                 action_name = self.ACTION_NAMES.get(self.action, self.action)
-                self.signals.action_result.emit(
-                    tr("VM {vmid}: {action} completed").format(vmid=self.vmid, action=action_name)
-                )
-            except RuntimeError:
-                pass
+                try:
+                    self.signals.action_result.emit(
+                        tr("VM {vmid}: {action} completed").format(
+                            vmid=self.vmid, action=action_name)
+                    )
+                except RuntimeError:
+                    pass
+            else:
+                try:
+                    self.signals.action_error.emit(err)
+                except RuntimeError:
+                    pass
         except Exception as e:
             logger.debug("backend error: %s", e)
             try:
@@ -428,7 +471,12 @@ class BulkVmActionWorker(QRunnable):
     Targets: list of dicts with keys host_cfg, node, vmid, vm_type.
     Emits progress before each VM, vm_done after each VM, finished at the end.
     Cancellation is cooperative: cancel() stops before the next VM.
+    Each action task is awaited — a failed start/stop is reported as a
+    per-VM failure, not a false "completed".
     """
+
+    TASK_TIMEOUTS = VmActionWorker.TASK_TIMEOUTS
+    DEFAULT_TASK_TIMEOUT_S = VmActionWorker.DEFAULT_TASK_TIMEOUT_S
 
     def __init__(self, targets, action):
         super().__init__()
@@ -444,42 +492,64 @@ class BulkVmActionWorker(QRunnable):
     def run(self):
         total = len(self.targets)
         done = 0
-        for target in self.targets:
-            if self._cancel:
-                self.was_cancelled = True
-                break
-            vmid = target["vmid"]
-            try:
-                self.signals.progress.emit(done, total, vmid)
-            except RuntimeError:
-                pass
-            provider = None
-            ok = False
-            msg = ""
-            try:
-                provider = create_provider(target["host_cfg"], timeout=10)
-                provider.vms.perform_action(
-                    target["node"], vmid, target["vm_type"], self.action,
-                )
-                ok = True
-                action_name = VM_ACTION_MESSAGE_LABELS.get(self.action, self.action)
-                msg = tr("VM {vmid}: {action} completed").format(
-                    vmid=vmid, action=action_name)
-            except Exception as e:
-                logger.debug("backend error: %s", e)
-                msg = _sanitize_error(e)
-            finally:
-                if provider:
-                    provider.close()
-            done += 1
-            try:
-                self.signals.vm_done.emit(vmid, ok, msg)
-            except RuntimeError:
-                pass
+        providers: dict = {}  # per-host reuse: one login for many VMs
+        try:
+            for target in self.targets:
+                if self._cancel:
+                    self.was_cancelled = True
+                    break
+                vmid = target["vmid"]
+                try:
+                    self.signals.progress.emit(done, total, vmid)
+                except RuntimeError:
+                    pass
+                ok = False
+                msg = ""
+                try:
+                    provider = self._host_provider(providers, target)
+                    ok, err = _await_task(
+                        provider, target["node"],
+                        provider.vms.perform_action(
+                            target["node"], vmid, target["vm_type"],
+                            self.action,
+                        ),
+                        timeout=self.TASK_TIMEOUTS.get(
+                            self.action, self.DEFAULT_TASK_TIMEOUT_S),
+                    )
+                    if ok:
+                        action_name = VM_ACTION_MESSAGE_LABELS.get(
+                            self.action, self.action)
+                        msg = tr("VM {vmid}: {action} completed").format(
+                            vmid=vmid, action=action_name)
+                    else:
+                        ok = False
+                        msg = err
+                except Exception as e:
+                    logger.debug("backend error: %s", e)
+                    msg = _sanitize_error(e)
+                done += 1
+                try:
+                    self.signals.vm_done.emit(vmid, ok, msg)
+                except RuntimeError:
+                    pass
+        finally:
+            for p in providers.values():
+                try:
+                    p.close()
+                except Exception:
+                    pass
         try:
             self.signals.finished.emit()
         except RuntimeError:
             pass
+
+    @staticmethod
+    def _host_provider(providers: dict, target: dict):
+        """One provider (session/login) per host for the whole bulk run."""
+        host = str(target["host_cfg"].get("name", ""))
+        if host not in providers:
+            providers[host] = create_provider(target["host_cfg"], timeout=10)
+        return providers[host]
 class VmSnapshotCreateSignals(QObject):
     result = Signal(str)
     error = Signal(str)

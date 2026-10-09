@@ -813,6 +813,12 @@ class MainWindow(QMainWindow):
         confirm_check = QCheckBox(tr("I confirm deletion"))
         layout.addWidget(confirm_check)
 
+        # purge also removes the guest from HA resources and backup jobs;
+        # default on (previous hardwired behavior), user can opt out
+        purge_check = QCheckBox(tr("Purge from HA resources and backup jobs"))
+        purge_check.setChecked(True)
+        layout.addWidget(purge_check)
+
         if is_running:
             force_check = QCheckBox(tr("Force stop and delete"))
             force_check.setStyleSheet(f"color: {Color.DANGER_SOLID};")
@@ -854,7 +860,8 @@ class MainWindow(QMainWindow):
         if not confirmed[0]:
             return
 
-        worker = DeleteVmWorker(cfg, node, vmid, vm_type)
+        worker = DeleteVmWorker(cfg, node, vmid, vm_type,
+                                purge=purge_check.isChecked())
         worker.signals.vm_deleted.connect(lambda msg, w=worker: (
             self._notifications.show(msg),
             self.status_label.setText(msg),
@@ -1092,9 +1099,11 @@ class MainWindow(QMainWindow):
             return
         vm_type = vm_info["type"]
         with_local_disks = dialog.get_with_local_disks()
+        running = bool(vm and vm.status_value == "running")
         from ..backend import MigrateVmWorker
         worker = MigrateVmWorker(cfg, node, vmid, vm_type, target,
-                                 with_local_disks=with_local_disks)
+                                 with_local_disks=with_local_disks,
+                                 running=running)
         worker.signals.vm_migrated.connect(lambda msg: (
             self._notifications.show(msg),
             self.status_label.setText(msg),
@@ -1218,10 +1227,23 @@ class MainWindow(QMainWindow):
             self._run_worker(worker)
             self.status_label.setText(tr("Converting VM {vmid} to template...").format(vmid=vmid))
         elif direction == "to_vm":
+            vm = self._vm_repo.get(host_name, vmid)
+            vm_type = vm.vm_type.value if vm else "qemu"
+            if vm_type != "qemu":
+                self._notifications.show(
+                    tr("Converting a container template back to a container "
+                       "is not supported"), error=True)
+                return
             from PySide6.QtWidgets import QMessageBox
-            msg = QMessageBox(QMessageBox.Question, tr("Confirm"),
+            msg = QMessageBox(QMessageBox.Warning, tr("Confirm"),
                              tr("Convert template {vmid} to VM?").format(vmid=vmid),
                              QMessageBox.Yes | QMessageBox.No, parent=self)
+            # the reverse conversion is not a supported PVE operation:
+            # PUT config template=0 just clears the flag (audit D6)
+            msg.setInformativeText(tr(
+                "PVE does not officially support this operation: the "
+                "template flag is silently cleared and volumes remain "
+                "base volumes — linked clones may break."))
             if msg.exec() != QMessageBox.Yes:
                 return
             from ..backend import ConvertToVmWorker

@@ -503,7 +503,6 @@
   "Linux 2.6+": "Linux 2.6+",
   "Linux 2.6+ / 3.x / 4.x": "Linux 2.6+ / 3.x / 4.x",
   "Lithuanian": "Литовская",
-  "Live migration of containers (LXC) is not supported by PVE": "Живая миграция контейнеров (LXC) не поддерживается PVE",
   "Loading detailed info...": "Загрузка подробной информации...",
   "Loading tasks...": "Загрузка задач...",
   "Loading...": "Загрузка...",
@@ -1097,7 +1096,6 @@
   "VM {vmid} converted to template": "ВМ {vmid} конвертирована в шаблон",
   "VM {vmid} created on {node}": "ВМ {vmid} создана на {node}",
   "VM {vmid} deleted from {node}": "ВМ {vmid} удалена с {node}",
-  "VM {vmid} migration to {target} started": "Миграция ВМ {vmid} на {target} запущена",
   "VM {vmid}: opening noVNC console...": "ВМ {vmid}: открытие консоли noVNC...",
   "VM {vmid}: opening {ctype} console...": "ВМ {vmid}: открытие консоли {ctype}...",
   "VM {vmid}: {action} completed": "ВМ {vmid}: {action} завершён",
@@ -1287,5 +1285,11 @@
   "{}% used — no growth detected": "{}% занято — роста не обнаружено",
   "~{}–∞ days left": "~{}–∞ дней до заполнения",
   "data {} days old": "данные {} дн. назад",
-  "snapshot scan incomplete: {} guests failed": "скан снимков неполный: {} гостей не проверено"
+  "snapshot scan incomplete: {} guests failed": "скан снимков неполный: {} гостей не проверено",
+  "Restart migration: the container will be rebooted on the target node": "Restart-миграция: контейнер будет перезапущен на целевой ноде",
+  "VM {vmid} migrated to {target}": "ВМ {vmid} мигрирована на {target}",
+  "Migration of VM {vmid} failed: {err}": "Миграция ВМ {vmid} не удалась: {err}",
+  "Purge from HA resources and backup jobs": "Удалить из HA-ресурсов и заданий резервного копирования",
+  "Converting a container template back to a container is not supported": "Обратное преобразование шаблона контейнера в контейнер не поддерживается",
+  "PVE does not officially support this operation: the template flag is silently cleared and volumes remain base volumes — linked clones may break.": "PVE официально не поддерживает эту операцию: флаг шаблона молча снимается, тома остаются базовыми — связанные клоны могут сломаться."
 }

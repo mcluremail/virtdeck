@@ -83,16 +83,11 @@ class VmAPI:
 
     def resize_disk(self, node: str, vmid: int | str, vm_type: str,
                     disk: str, size: str) -> object:
-        """PUT .../resize (QEMU) or .../resize (LXC).
+        """PUT .../resize (QEMU and LXC — the endpoint shape is the same).
 
         Body params are passed raw: requests form-encodes them, so
         pre-quoting with _q() would double-encode (e.g. "+10G" -> "%252B10G").
         """
-        if vm_type == "qemu":
-            return self._s.call(
-                self._resource(node, vmid, vm_type).resize.put,
-                disk=disk, size=size,
-            )
         return self._s.call(
             self._resource(node, vmid, vm_type).resize.put,
             disk=disk, size=size,
@@ -130,14 +125,25 @@ class VmAPI:
         """POST .../clone."""
         return self._s.call(self._resource(node, vmid, vm_type).clone.post, **params)
 
-    def migrate(self, node: str, vmid: int | str, target: str,
-                with_local_disks: bool = True) -> object:
-        """POST /nodes/{node}/qemu/{vmid}/migrate (QEMU only)."""
+    def migrate(self, node: str, vmid: int | str, vm_type: str, target: str,
+                with_local_disks: bool = True, *, online: bool = False,
+                restart: bool = False) -> object:
+        """POST /nodes/{node}/{qemu|lxc}/{vmid}/migrate.
+
+        Supported by PVE 7/8/9 for both guest types. A running QEMU VM
+        needs ``online`` (live migration); a running LXC container needs
+        ``online`` (CRIU) or ``restart`` (restart migration — the CT is
+        rebooted on the target node). A stopped guest needs neither.
+        """
         params: dict = {"target": target}
         if with_local_disks:
             params["with-local-disks"] = 1
+        if online:
+            params["online"] = 1
+        if restart:
+            params["restart"] = 1
         return self._s.call(
-            self._s.proxmox.nodes(_q(node)).qemu(_q(vmid)).migrate.post, **params
+            self._resource(node, vmid, vm_type).migrate.post, **params
         )
 
     def convert_to_template(self, node: str, vmid: int | str) -> object:
@@ -192,9 +198,9 @@ class VmAPI:
         PVE raises a websocket-ready listener (qm vncproxy --websocket).
         proxy_host is optional: without it PVE picks the address itself."""
         if vm_type == "lxc":
-            post = self._s.proxmox.nodes(_q(node)).lxc(vmid).vncproxy.post
+            post = self._s.proxmox.nodes(_q(node)).lxc(_q(vmid)).vncproxy.post
         else:
-            post = self._s.proxmox.nodes(_q(node)).qemu(vmid).vncproxy.post
+            post = self._s.proxmox.nodes(_q(node)).qemu(_q(vmid)).vncproxy.post
         params: dict = {"websocket": 1}
         if proxy_host:
             params["proxy"] = proxy_host
