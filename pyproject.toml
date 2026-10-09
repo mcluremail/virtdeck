@@ -27,7 +27,7 @@ dependencies = [
     "requests>=2.32.0",
     "urllib3>=1.26",
     "pyqtgraph>=0.12",
-    "cryptography>=42.0.0",
+    "cryptography>=38.0",
     "keyring>=24.0",
     # On Windows the app ships with bundled deps (PyInstaller build), so the
     # noVNC console bridge must always be there; on Linux it is optional

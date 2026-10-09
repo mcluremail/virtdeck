@@ -15,7 +15,7 @@ BuildRequires: python3-setuptools
 
 Requires:      python3
 Requires:      python3-pyside6
-Requires:      python3-proxmoxer
+Recommends:    python3-proxmoxer
 Requires:      python3-requests
 Requires:      python3-urllib3
 Requires:      python3-pyqtgraph

@@ -58,7 +58,7 @@ jobs:
     name: Build .rpm package
     runs-on: ubuntu-latest
     container:
-      image: fedora:40
+      image: fedora:41
     steps:
       - uses: actions/checkout@v4
       - name: Install build deps
@@ -191,7 +191,10 @@ jobs:
       - name: Install .rpm and import-check (Fedora 41)
         if: matrix.pkg == 'rpm'
         run: |
-          dnf install -y ./pkg/virtdeck-*.rpm
+          dnf install -y python3-pip ./pkg/virtdeck-*.rpm
+          # proxmoxer is not packaged in the Fedora repos — comes from pip
+          # exactly as documented in the release notes
+          pip3 install --break-system-packages proxmoxer
           python3 -c "from virtdeck import main; import virtdeck; print('rpm smoke OK', virtdeck.__version__)"
 
   create-release:
@@ -229,7 +232,7 @@ jobs:
             Установка .rpm:
             ```
             sudo dnf install virtdeck-*.rpm
-            pip install proxmoxer
+            pip3 install --break-system-packages proxmoxer
             sudo dnf install virt-viewer
             ```
 
