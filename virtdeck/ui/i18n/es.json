@@ -1276,5 +1276,6 @@
   "Oldest {} days": "La más antigua {} días",
   "Unknown snapshot age": "Edad de instantáneas desconocida",
   "Up to date": "Versión actualizada",
-  "Scanning... {}/{}": "Analizando… {}/{}"
+  "Scanning... {}/{}": "Analizando… {}/{}",
+  "~{} days left (sparse history — rough estimate)": "~{} días para llenarse (historial escaso — estimación aproximada)"
 }

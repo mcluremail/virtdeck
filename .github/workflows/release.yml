@@ -154,9 +154,43 @@ jobs:
           name: windows-installer
           path: virtdeck-*-setup.exe
 
+  smoke-packages:
+    name: "Smoke: install .deb / .rpm"
+    needs: [build-deb, build-rpm]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkg: deb
+            artifact: deb-package
+            image: ubuntu:24.04
+          - pkg: rpm
+            artifact: rpm-package
+            image: fedora:41
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: Download ${{ matrix.pkg }} artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: pkg/
+      - name: Install .deb and import-check (Ubuntu 24.04)
+        if: matrix.pkg == 'deb'
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ./pkg/virtdeck_*.deb
+          python3 -c "from virtdeck import main; import virtdeck; print('deb smoke OK', virtdeck.__version__)"
+      - name: Install .rpm and import-check (Fedora 41)
+        if: matrix.pkg == 'rpm'
+        run: |
+          dnf install -y ./pkg/virtdeck-*.rpm
+          python3 -c "from virtdeck import main; import virtdeck; print('rpm smoke OK', virtdeck.__version__)"
+
   create-release:
     name: Create GitHub Release
-    needs: [build-python, build-deb, build-rpm, build-windows, build-windows-installer]
+    needs: [build-python, build-deb, build-rpm, build-windows, build-windows-installer, smoke-packages]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -177,7 +211,7 @@ jobs:
           body: |
             ## VirtDeck ${{ github.ref_name }}
 
-            Скачать: `.deb` для Debian/Ubuntu, `.rpm` для Fedora/RHEL, `.zip` для Windows, `.tar.gz` / `.whl` для pip.
+            Скачать: `.deb` для Debian/Ubuntu, `.rpm` для Fedora/RHEL, `.zip` для Windows; `.tar.gz` / `.whl` — установка из исходников.
 
             Установка .deb:
             ```
@@ -198,10 +232,5 @@ jobs:
             Распакуйте .zip в любую папку, запустите virtdeck.exe.
             Для консоли VM установите virt-viewer:
             https://virt-manager.org/download/
-            ```
-
-            Установка через pip:
-            ```
-            pip install virtdeck
             ```
           files: artifacts/*

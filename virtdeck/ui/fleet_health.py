@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from ..backend.fleet import ClusterBundle, FleetHealthWorker
 from ..domain.fleet import GuestBackupState
 from ..fleet.drift import detect_drift
+from ..fleet.runway import SPARSE
 from .api.fleet import scan_fleet_snapshots
 from .i18n import tr
 from .icons import get_icon
@@ -293,11 +294,16 @@ class FleetHealthDialog(QDialog):
                 sev = _SEV_WARN
             else:
                 continue
-            if est.days_left_low is not None \
+            if est.quality == SPARSE:
+                # no CI — a bare day count reads as false precision (B24)
+                detail = tr("~{} days left (sparse history — rough estimate)") \
+                    .format(int(est.days_left))
+            elif est.days_left_low is not None \
                     and est.days_left_high is not None:
                 detail = tr("~{}–{} days left").format(
                     int(est.days_left_low), int(est.days_left_high))
             else:
+                # ok-quality forecasts always carry a CI; defensive fallback
                 detail = tr("~{} days left").format(int(est.days_left))
             key = ("host", est.node, bundle.report.cluster)
             rows.append((self._issue_row(f"{est.storage} ({est.node})",

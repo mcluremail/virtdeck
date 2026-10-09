@@ -156,18 +156,27 @@ def test_runway_severity_colors(qtbot, api):
     wait_loaded(qtbot, dlg)
     report = dlg._bundles[0].report
 
-    def est(days: float) -> RunwayEstimate:
+    def est(days: float, quality: str = "ok") -> RunwayEstimate:
+        ci = quality == "ok"
         return RunwayEstimate(node="pve01", storage="local", used_bytes=80,
                               total_bytes=100, slope_bytes_per_day=1.0,
-                              days_left=days, days_left_low=days - 1,
-                              days_left_high=days + 1, points_used=48,
-                              quality="ok")
+                              days_left=days,
+                              days_left_low=days - 1 if ci else None,
+                              days_left_high=days + 1 if ci else None,
+                              points_used=48, quality=quality)
 
     dlg._bundles = [ClusterBundle(report=report, runway=(est(5.0),))]
     dlg._render()
     row = find_issue(dlg._tree, "Storage filling up")
     assert row.foreground(2).color() == QColor(Color.DANGER)
     assert "~4–6 days left" in row.text(3)
+
+    # sparse history: point estimate without CI — cautious wording (B24)
+    dlg._bundles = [ClusterBundle(report=report, runway=(est(5.0, "sparse"),))]
+    dlg._render()
+    row = find_issue(dlg._tree, "Storage filling up")
+    assert row.foreground(2).color() == QColor(Color.DANGER)
+    assert "rough estimate" in row.text(3)
 
     dlg._bundles = [ClusterBundle(report=report, runway=(est(20.0),))]
     dlg._render()

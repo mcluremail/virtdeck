@@ -1276,5 +1276,6 @@
   "Oldest {} days": "最旧 {} 天",
   "Unknown snapshot age": "快照时间未知",
   "Up to date": "版本最新",
-  "Scanning... {}/{}": "扫描中… {}/{}"
+  "Scanning... {}/{}": "扫描中… {}/{}",
+  "~{} days left (sparse history — rough estimate)": "~{} 天后写满（历史数据稀少，粗略估计）"
 }

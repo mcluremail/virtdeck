@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+**New features**
+- Fleet Health: the storage runway forecast now communicates data quality — a sparse-history estimate (few rrddata points, no confidence interval) is shown as "~N days left (sparse history — rough estimate)" instead of a bare day count; reliable forecasts keep their 95% confidence-interval range (i18n version 34)
+
+**Internal**
+- Release pipeline: the new `smoke-packages` job installs the built `.deb` (Ubuntu 24.04) and `.rpm` (Fedora 41) in clean containers and import-checks the installed package before the GitHub Release is created — broken packages now block the release; release notes no longer reference the removed pip install channel
+
 ## v3.0.0 — Fleet Health, theme engine, command palette (production desktop)
 
 **New features**

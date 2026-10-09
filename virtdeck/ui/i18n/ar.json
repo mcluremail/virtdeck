@@ -1276,5 +1276,6 @@
   "Oldest {} days": "الأقدم {} يومًا",
   "Unknown snapshot age": "عمر اللقطات غير معروف",
   "Up to date": "الإصدار محدث",
-  "Scanning... {}/{}": "جارٍ الفحص… {}/{}"
+  "Scanning... {}/{}": "جارٍ الفحص… {}/{}",
+  "~{} days left (sparse history — rough estimate)": "~{} يوم قبل الامتلاء (سجل قصير — تقدير تقريبي)"
 }
