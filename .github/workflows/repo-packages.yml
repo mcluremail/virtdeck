@@ -86,7 +86,7 @@ jobs:
       - name: Build rpm from the PyPI sdist
         run: |
           set -e
-          dnf install -y -q python3-pip rpm-build
+          dnf install -y -q python3-pip python3-devel python3-setuptools rpm-build
           if [ -z "${PROXMOXER}" ]; then
             PROXMOXER=$(curl -fsSL https://pypi.org/pypi/proxmoxer/json | python3 -c 'import json,sys; print(json.load(sys.stdin)["info"]["version"])')
           fi
