@@ -180,8 +180,10 @@ jobs:
           printf '%s\n' "$KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           RSH="ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
-          rsync -v -e "$RSH" upload/*.deb repo-upload@repo.mclure.ru:apt/
-          rsync -v -e "$RSH" upload/*.rpm repo-upload@repo.mclure.ru:rpm/
+          for s in bookworm noble trixie; do
+            rsync -v -e "$RSH" upload/virtdeck_*.deb repo-upload@repo.mclure.ru:apt/$s/
+          done
+          rsync -v -e "$RSH" upload/virtdeck-*.rpm repo-upload@repo.mclure.ru:rpm/
           echo "the server regenerates and signs the indexes automatically"
 
   smoke-packages:

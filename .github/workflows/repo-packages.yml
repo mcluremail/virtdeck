@@ -51,26 +51,29 @@ jobs:
           set -e
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-pip
+          PYVER=$(python3 -c 'import sys; print(f"{sys.version_info[3]}.{sys.version_info[4]}")')
+          PYNEXT=$(python3 -c 'import sys; print(f"{sys.version_info[3]}.{sys.version_info[4]+1}")')
+          ABLABEL="py${PYVER//./}"
           SITE=/tmp/stage/usr/lib/python3/dist-packages
           mkdir -p /tmp/stage/DEBIAN $SITE
           pip3 install --no-compile --break-system-packages --target $SITE "PySide6==${PYSIDE}"
           SIZE=$(du -sk /tmp/stage | cut -f1)
           cat > /tmp/stage/DEBIAN/control <<EOF
           Package: python3-pyside6
-          Version: ${PYSIDE}-1
+          Version: ${PYSIDE}-1+${ABLABEL}
           Section: python
           Priority: optional
           Architecture: amd64
           Installed-Size: ${SIZE}
-          Depends: python3 (>= 3.9), libgl1, libegl1, libxkbcommon0, libdbus-1-3, libx11-6, libxcb1, libx11-xcb1, libfontconfig1, ${GLIB}, libnss3
+          Depends: python3 (>= ${PYVER}), python3 (<< ${PYNEXT}), libgl1, libegl1, libxkbcommon0, libdbus-1-3, libx11-6, libxcb1, libx11-xcb1, libfontconfig1, ${GLIB}, libnss3
           Maintainer: Taurus McLure <taurus@mclure.ru>
           Description: Qt 6 bindings for Python 3 (PySide6, from the official wheel)
            Full PySide6 (Essentials + Addons incl. WebEngine), converted from the
-           official manylinux wheel. Hosted at repo.mclure.ru because PySide6 is
-           not packaged in the Debian/Ubuntu archives.
+           official manylinux wheel for python${PYVER}. Hosted at repo.mclure.ru
+           because PySide6 is not packaged in the Debian/Ubuntu archives.
           EOF
           dpkg-deb --build --root-owner-group /tmp/stage \
-            "/tmp/python3-pyside6_${PYSIDE}-1_amd64.deb"
+            "/tmp/python3-pyside6_${PYSIDE}-1+${ABLABEL}_amd64.deb"
       - uses: actions/upload-artifact@v4
         with:
           name: pyside6-deb-${{ matrix.id }}
@@ -135,9 +138,16 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: "pyside6-deb-*"
-          merge-multiple: true
-          path: upload/apt/
+          name: pyside6-deb-bookworm
+          path: upload/apt/bookworm/
+      - uses: actions/download-artifact@v4
+        with:
+          name: pyside6-deb-noble
+          path: upload/apt/noble/
+      - uses: actions/download-artifact@v4
+        with:
+          name: pyside6-deb-trixie
+          path: upload/apt/trixie/
       - uses: actions/download-artifact@v4
         with:
           name: proxmoxer-rpm
@@ -151,6 +161,6 @@ jobs:
           printf '%s\n' "$KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           RSH="ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
-          rsync -v -e "$RSH" upload/apt/*.deb repo-upload@repo.mclure.ru:apt/
+          rsync -rv -e "$RSH" upload/apt/ repo-upload@repo.mclure.ru:apt/
           rsync -v -e "$RSH" upload/rpm/*.rpm repo-upload@repo.mclure.ru:rpm/
           echo "the server regenerates and signs the indexes automatically"
