@@ -1,0 +1,156 @@
+name: Repo packages
+
+# One-shot / re-runnable builder for the packages hosted at repo.mclure.ru
+# that are NOT available in the distro archives:
+#   python3-pyside6   (deb: bookworm py3.11 / noble py3.12 / trixie py3.13)
+#   python3-proxmoxer (rpm: fedora/41)
+# Built from the official upstream wheels/sdist and uploaded to the repo's
+# incoming/ with the restricted deploy key; the server regenerates and signs
+# the indexes automatically (systemd path unit + /srv/repo/publish.sh).
+# Rebuild these only when a new distro release / python version is adopted.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pyside6_version:
+        description: "PySide6 version on PyPI (pinned default)"
+        default: "6.8.3"
+        required: false
+      proxmoxer_version:
+        description: "proxmoxer version on PyPI (empty = latest)"
+        default: ""
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  pyside6-deb:
+    name: Build python3-pyside6 (${{ matrix.id }})
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: bookworm
+            image: debian:bookworm
+            glib: libglib2.0-0
+          - id: noble
+            image: ubuntu:24.04
+            glib: libglib2.0-0t64
+          - id: trixie
+            image: debian:trixie
+            glib: libglib2.0-0t64
+    env:
+      PYSIDE: ${{ inputs.pyside6_version }}
+      GLIB: ${{ matrix.glib }}
+    steps:
+      - name: Stage PySide6 wheel tree into a deb
+        run: |
+          set -e
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-pip
+          SITE=/tmp/stage/usr/lib/python3/dist-packages
+          mkdir -p /tmp/stage/DEBIAN $SITE
+          pip3 install --no-compile --break-system-packages --target $SITE "PySide6==${PYSIDE}"
+          SIZE=$(du -sk /tmp/stage | cut -f1)
+          cat > /tmp/stage/DEBIAN/control <<EOF
+          Package: python3-pyside6
+          Version: ${PYSIDE}-1
+          Section: python
+          Priority: optional
+          Architecture: amd64
+          Installed-Size: ${SIZE}
+          Depends: python3 (>= 3.9), libgl1, libegl1, libxkbcommon0, libdbus-1-3, libx11-6, libxcb1, libx11-xcb1, libfontconfig1, ${GLIB}, libnss3
+          Maintainer: Taurus McLure <taurus@mclure.ru>
+          Description: Qt 6 bindings for Python 3 (PySide6, from the official wheel)
+           Full PySide6 (Essentials + Addons incl. WebEngine), converted from the
+           official manylinux wheel. Hosted at repo.mclure.ru because PySide6 is
+           not packaged in the Debian/Ubuntu archives.
+          EOF
+          dpkg-deb --build --root-owner-group /tmp/stage \
+            "/tmp/python3-pyside6_${PYSIDE}-1_amd64.deb"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyside6-deb-${{ matrix.id }}
+          path: /tmp/python3-pyside6_*.deb
+
+  proxmoxer-rpm:
+    name: Build python3-proxmoxer (fedora/41)
+    runs-on: ubuntu-latest
+    container: fedora:41
+    env:
+      PROXMOXER: ${{ inputs.proxmoxer_version }}
+    steps:
+      - name: Build rpm from the PyPI sdist
+        run: |
+          set -e
+          dnf install -y -q python3-pip rpm-build
+          if [ -z "${PROXMOXER}" ]; then
+            PROXMOXER=$(curl -fsSL https://pypi.org/pypi/proxmoxer/json | python3 -c 'import json,sys; print(json.load(sys.stdin)["info"]["version"])')
+          fi
+          echo "proxmoxer version: ${PROXMOXER}"
+          mkdir -p /tmp/rpmbuild/BUILD /tmp/rpmbuild/RPMS /tmp/rpmbuild/SOURCES /tmp/rpmbuild/SPECS
+          curl -fsSL -o /tmp/rpmbuild/SOURCES/proxmoxer-${PROXMOXER}.tar.gz \
+            "https://files.pythonhosted.org/packages/source/p/proxmoxer/proxmoxer-${PROXMOXER}.tar.gz"
+          cat > /tmp/rpmbuild/SPECS/python3-proxmoxer.spec <<EOF
+          Name:           python3-proxmoxer
+          Version:        ${PROXMOXER}
+          Release:        1%{?dist}
+          Summary:        Python wrapper for the Proxmox 2.x API (HTTP and SSH)
+          License:        MIT
+          URL:            https://github.com/proxmoxer/proxmoxer
+          Source0:        proxmoxer-%{version}.tar.gz
+          BuildArch:      noarch
+          BuildRequires:  python3-devel
+          BuildRequires:  python3-setuptools
+          %description
+          Proxmoxer is a wrapper around the Proxmox REST API. Hosted at
+          repo.mclure.ru because it is not packaged in the Fedora repositories.
+          The rpm is built on the same Fedora release the virtdeck rpm targets,
+          so the generated python3.Xdist(proxmoxer) provides match exactly.
+          %prep
+          %autosetup -n proxmoxer-%{version}
+          %build
+          %py3_build
+          %install
+          %py3_install
+          %files
+          %{python3_sitelib}/proxmoxer/
+          %{python3_sitelib}/proxmoxer-*/
+          EOF
+          rpmbuild -bb --define "_topdir /tmp/rpmbuild" \
+            /tmp/rpmbuild/SPECS/python3-proxmoxer.spec
+          cp /tmp/rpmbuild/RPMS/noarch/*.rpm /tmp/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proxmoxer-rpm
+          path: /tmp/python3-proxmoxer-*.rpm
+
+  publish:
+    name: Publish to repo.mclure.ru
+    needs: [pyside6-deb, proxmoxer-rpm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "pyside6-deb-*"
+          merge-multiple: true
+          path: upload/apt/
+      - uses: actions/download-artifact@v4
+        with:
+          name: proxmoxer-rpm
+          path: upload/rpm/
+      - name: rsync into repo incoming/
+        env:
+          KEY: ${{ secrets.REPO_DEPLOY_KEY }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          RSH="ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          rsync -v -e "$RSH" upload/apt/*.deb repo-upload@repo.mclure.ru:apt/
+          rsync -v -e "$RSH" upload/rpm/*.rpm repo-upload@repo.mclure.ru:rpm/
+          echo "the server regenerates and signs the indexes automatically"

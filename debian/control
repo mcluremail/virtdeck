@@ -13,6 +13,7 @@ Rules-Requires-Root: no
 Package: virtdeck
 Architecture: all
 Depends: ${python3:Depends}, ${misc:Depends},
+         python3-pyside6,
          python3-proxmoxer,
          python3-requests,
          python3-urllib3,
