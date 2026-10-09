@@ -187,6 +187,32 @@ jobs:
           done
           rsync -v -e "$RSH" upload/virtdeck-*.rpm repo-upload@repo.mclure.ru:rpm/
           echo "the server regenerates and signs the indexes automatically"
+      - name: Wait until the server publishes this exact build
+        run: |
+          rpm_sha=$(sha256sum upload/virtdeck-*.rpm | cut -d' ' -f1)
+          deb_sha=$(sha256sum upload/virtdeck_*.deb | cut -d' ' -f1)
+          echo "local artifacts: rpm ${rpm_sha:0:12}…, deb ${deb_sha:0:12}…"
+          ok_rpm=0; ok_deb=0
+          for i in $(seq 1 20); do
+            sleep 15
+            if [ "$ok_rpm" = 0 ]; then
+              if curl -fsSL https://repo.mclure.ru/rpm/fedora/41/repodata/repomd.xml -o /tmp/repomd.xml; then
+                href=$(grep -oP '(?<=href=")[^"]*-primary\.xml\.zst' /tmp/repomd.xml | head -1)
+                live=$(curl -fsSL "https://repo.mclure.ru/rpm/fedora/41/$href" | zstd -dc 2>/dev/null \
+                  | sed 's|<package type="rpm">|\n&|g' | grep 'virtdeck-3' \
+                  | grep -oP '(?<=<checksum type="sha256">)[a-f0-9]+' | head -1)
+                if [ "$live" = "$rpm_sha" ]; then ok_rpm=1; echo "rpm: repo serves this build ✓"; fi
+              fi
+            fi
+            if [ "$ok_deb" = 0 ]; then
+              live_deb=$(curl -fsSL https://repo.mclure.ru/apt/dists/bookworm/main/binary-amd64/Packages.gz \
+                | zcat | awk '/^Package: virtdeck$/{f=1} f&&/^SHA256: /{print $2; exit}')
+              if [ "$live_deb" = "$deb_sha" ]; then ok_deb=1; echo "deb: repo serves this build ✓"; fi
+            fi
+            [ "$ok_rpm" = 1 ] && [ "$ok_deb" = 1 ] && exit 0
+          done
+          echo "the server did not publish this build in 5 minutes"
+          exit 1
 
   smoke-packages:
     name: "Smoke: install .deb / .rpm"
