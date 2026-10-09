@@ -68,10 +68,46 @@ Download `virtdeck-windows.zip` or `virtdeck-*-setup.exe` from [GitHub Releases]
 
 For SPICE console, install [virt-viewer for Windows](https://virt-manager.org/download/).
 
+### Package repository (Debian / Ubuntu / Fedora) — recommended
+
+`repo.mclure.ru` hosts VirtDeck plus the packages the distro archives lack:
+full PySide6 (incl. WebEngine for the built-in console) and `proxmoxer`
+on Fedora. No pip steps needed.
+
+**Debian 12 (bookworm) / 13 (trixie) / Ubuntu 24.04 (noble):**
+
+```bash
+sudo install -d /etc/apt/keyrings
+curl -fsSL https://repo.mclure.ru/KEY.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/virtdeck.gpg
+echo "deb [signed-by=/etc/apt/keyrings/virtdeck.gpg] https://repo.mclure.ru/apt bookworm main" \
+  | sudo tee /etc/apt/sources.list.d/virtdeck.list
+sudo apt update
+sudo apt install virtdeck
+```
+
+(Ubuntu 24.04 — replace `bookworm` with `noble`; Debian 13 — with `trixie`.)
+
+**Fedora 41:**
+
+```bash
+sudo tee /etc/yum.repos.d/virtdeck.repo <<'EOF'
+[virtdeck]
+name=VirtDeck
+baseurl=https://repo.mclure.ru/rpm/fedora/41
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://repo.mclure.ru/KEY.gpg
+EOF
+sudo dnf install virtdeck
+```
+
+Launch from the menu or via `virtdeck`.
+
 ### From source (any Linux)
 
 ```bash
-# download and unpack virtdeck-3.0.0.tar.gz (or .whl) from Releases,
+# download and unpack virtdeck-3.0.1.tar.gz (or .whl) from Releases,
 # then install the dependencies:
 pip install PySide6 proxmoxer requests urllib3 pyqtgraph cryptography keyring
 virtdeck
@@ -115,11 +151,14 @@ pip install websockets
 
 ### .deb package (Debian / Ubuntu)
 
-Download `.deb` from [GitHub Releases](https://github.com/mcluremail/virtdeck/releases):
+The repository above is the primary install path. If you prefer a bare `.deb`
+from [GitHub Releases](https://github.com/mcluremail/virtdeck/releases), note
+that it depends on `python3-pyside6`, which only exists in our repository —
+add the repository first (see above), then:
 
 ```bash
 # download .deb from release page
-sudo dpkg -i virtdeck_*.deb
+sudo apt install ./virtdeck_*.deb   # apt resolves the dependencies
 # virt-viewer (if SPICE/VNC console via remote-viewer needed)
 sudo apt install virt-viewer
 # optional: built-in noVNC console

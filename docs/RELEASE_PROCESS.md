@@ -56,6 +56,28 @@
 `audit/<дата>`, исправления — отдельным коммитом до релизного. Пример
 последовательности: `... → аудит-коммит (тег audit/2026-09-10) → release-коммит (тег v2.13.0)`.
 
+## Публикация в пакетный репозиторий (repo.mclure.ru)
+
+После пуша тега конвейер `release.yml` работает так: сборка артефактов →
+`publish-repo` (rsync .deb/.rpm в `/srv/repo/incoming/` по deploy-ключу) →
+smoke-гейт, который ставит virtdeck из репозитория как пользователь
+(apt: bookworm/noble/trixie, dnf: fedora/41) → create-release. Репозиторий
+предоставляет то, чего нет в архивах дистрибутивов: PySide6 (полный,
+включая WebEngine, сконвертирован из официального wheel) и proxmoxer
+(rpm, собранный на том же релизе Fedora, что и virtdeck-rpm, чтобы
+автогенерированные `python3.Xdist(proxmoxer)` requirements совпадали).
+
+- Индексы перегенерирует и подписывает сервер (`/srv/repo/publish.sh`,
+  systemd path-unit за каталогом `incoming/`); GPG-ключ подписи не покидает
+  сервер, публичник — `https://repo.mclure.ru/KEY.gpg`.
+- Секрет `REPO_DEPLOY_KEY` — ключ, ограниченный forced-command
+  (`rrsync /srv/repo/incoming`) у пользователя `repo-upload`.
+- Пересборка пакетов репозитория (новый релиз дистрибутива или питона):
+  `.github/workflows/repo-packages.yml` (workflow_dispatch).
+- Серверная часть на хосте repo.mclure.ru: nginx vhost `repo`
+  (`127.0.0.1:8443 ssl proxy_protocol`, docroot `/srv/repo/public`), haproxy
+  гоняет всё не-plvpn SNI в nginx по умолчанию, сертификаты — certbot webroot.
+
 ## Чеклист (свернуть в один проход перед коммитом)
 
 - [ ] CHANGELOG: новая секция поверх, все фичи/фиксы релиза, английский
