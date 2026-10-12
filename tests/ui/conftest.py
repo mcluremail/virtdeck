@@ -35,6 +35,14 @@ def pytest_runtest_teardown(item):
     outside a loop (that segfaults in PySide6: GC re-entrancy while large
     widget trees are destroyed).  Must be a hook, not a fixture: fixtures
     are torn down before the pytest-qt hook runs.
+
+    Known upstream limitation: PySide6/shiboken 6.12.0 corrupts python
+    refcounts when this drain destroys pytest-qt-tracked widget trees
+    (flaky fatal ``bool_dealloc`` at interpreter shutdown; confirmed by
+    bisection on 2026-10-12, unfixable from our side).  6.8.x (the apt
+    repo) and 6.11.x (uv.lock) are clean.  The CI pytest job installs
+    floating deps and is red on this until a 6.12.x patch — do not
+    re-diagnose, check the PySide changelog first.
     """
     result = yield
     if QCoreApplication.instance() is None:

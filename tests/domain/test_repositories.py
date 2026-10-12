@@ -279,3 +279,106 @@ class TestPoolRepository:
         repo.add(Pool(poolid="web"))
         repo.clear()
         assert len(repo) == 0
+
+
+# --- Audit 4 / D4: index consistency when a VM moves between nodes ---
+
+
+class TestVmMovesBetweenNodes:
+    def test_move_removes_ghost_from_old_node_bucket(self):
+        """A VM that migrated to another node must not stay in the old
+        node's bucket: filter_by_host/count_by_host must not report a
+        ghost (audit 4, D4)."""
+        repo = VmRepository()
+        repo.add(make_vm("h1", 100, node="pve01"))
+        repo.add(make_vm("h1", 101, node="pve02"))
+
+        repo.add(make_vm("h1", 100, node="pve02"))  # migration
+
+        assert [v.vmid for v in repo.filter_by_host("h1", "pve01")] == []
+        assert sorted(v.vmid for v in repo.filter_by_host("h1", "pve02")) == [100, 101]
+        assert repo.count_by_host("h1", "pve01") == (0, 0)
+        assert repo.count_by_host("h1", "pve02") == (2, 2)
+        assert len(repo) == 2  # no duplicates by (host, vmid)
+
+    def test_move_updates_node_of_stored_object(self):
+        repo = VmRepository()
+        repo.add(make_vm("h1", 100, node="pve01"))
+        repo.add(make_vm("h1", 100, node="pve02"))
+        assert repo.get("h1", 100).node == "pve02"
+
+    def test_move_back_and_forth(self):
+        repo = VmRepository()
+        for node in ("pve02", "pve01", "pve02"):
+            repo.add(make_vm("h1", 100, node=node))
+        assert [v.vmid for v in repo.filter_by_host("h1", "pve01")] == []
+        assert [v.vmid for v in repo.filter_by_host("h1", "pve02")] == [100]
+        assert len(repo) == 1
+
+    def test_replace_on_same_node_keeps_single_entry(self):
+        repo = VmRepository()
+        repo.add(make_vm("h1", 100, node="pve01", status=VmStatus.RUNNING))
+        repo.add(make_vm("h1", 100, node="pve01", status=VmStatus.STOPPED))
+        assert len(repo) == 1
+        assert repo.filter_by_host("h1", "pve01")[0].status is VmStatus.STOPPED
+        assert repo.count_by_host("h1", "pve01") == (1, 0)
+
+    def test_other_nodes_unaffected_by_move(self):
+        repo = VmRepository()
+        repo.add(make_vm("h1", 100, node="pve01"))
+        repo.add(make_vm("h1", 101, node="pve01"))
+        repo.add(make_vm("h1", 102, node="pve03"))
+        repo.add(make_vm("h2", 200, node="pve01"))
+
+        repo.add(make_vm("h1", 100, node="pve02"))  # only VM 100 moves
+
+        assert sorted(v.vmid for v in repo.filter_by_host("h1", "pve01")) == [101]
+        assert sorted(v.vmid for v in repo.filter_by_host("h1", "pve02")) == [100]
+        assert sorted(v.vmid for v in repo.filter_by_host("h1", "pve03")) == [102]
+        assert sorted(v.vmid for v in repo.filter_by_host("h2", "pve01")) == [200]
+        assert repo.count_by_host("h2", "pve01") == (1, 1)
+
+    def test_move_between_hosts_is_separate_identity(self):
+        """Same vmid on different hosts is a different identity — both stay."""
+        repo = VmRepository()
+        repo.add(make_vm("h1", 100, node="pve01"))
+        repo.add(make_vm("h2", 100, node="pve01"))
+        assert len(repo) == 2
+
+    def test_remove_host_clears_all_buckets(self):
+        repo = VmRepository()
+        repo.add(make_vm("h1", 100, node="pve01"))
+        repo.add(make_vm("h1", 101, node="pve02"))
+        repo.remove_host("h1")
+        assert len(repo) == 0
+        assert repo.filter_by_host("h1", "pve01") == []
+        assert repo.filter_by_host("h1", "pve02") == []
+
+
+class TestStorageIndexConsistency:
+    """Storage identity includes the node, so a "move" is a different
+    object — but replace and remove_host must keep buckets consistent."""
+
+    def test_replace_keeps_single_entry(self):
+        repo = StorageRepository()
+        repo.add(make_storage("h1", "pve01", "local"))
+        repo.add(make_storage("h1", "pve01", "local"))
+        assert len(repo) == 1
+        assert len(repo.filter_by_host("h1", "pve01")) == 1
+
+    def test_same_storage_name_on_different_nodes(self):
+        """PVE has a 'local' storage on every node — separate objects."""
+        repo = StorageRepository()
+        repo.add(make_storage("h1", "pve01", "local"))
+        repo.add(make_storage("h1", "pve02", "local"))
+        assert len(repo) == 2
+        assert len(repo.filter_by_host("h1", "pve01")) == 1
+        assert len(repo.filter_by_host("h1", "pve02")) == 1
+
+    def test_remove_host_clears_buckets(self):
+        repo = StorageRepository()
+        repo.add(make_storage("h1", "pve01", "local"))
+        repo.add(make_storage("h1", "pve02", "local"))
+        repo.remove_host("h1")
+        assert len(repo) == 0
+        assert repo.filter_by_host("h1", "pve02") == []

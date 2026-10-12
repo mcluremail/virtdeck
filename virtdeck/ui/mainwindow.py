@@ -196,6 +196,9 @@ class MainWindow(QMainWindow):
         self._tray_state = "ok"
         self._tray_minimize_to_tray = True
         self._soft_had_errors = False
+        # host_name -> error text of hosts whose soft worker failed: their
+        # previous known-good data is kept, nodes are only flagged ERROR
+        self._soft_errors: dict[str, str] = {}
         if QSystemTrayIcon.isSystemTrayAvailable():
             self._init_tray()
 
@@ -405,18 +408,34 @@ class MainWindow(QMainWindow):
         if cached_res:
             try:
                 cluster_name_cache = {}
+                # Only restore hosts that are still in the configuration
+                # and not skipped (audit 4, D5): a removed host must not
+                # resurrect from the cache. Keyed by config name — for a
+                # cluster representative it is the config's name that ends
+                # up in host_name, never the PVE node name.
+                valid_hosts = {
+                    cfg.get("name", "") for cfg in self.nodes_cfg
+                    if not cfg.get("skip", False)
+                    and cfg.get("type", "pve") != "pbs"
+                }
                 for cfg in self.nodes_cfg:
                     cn = cfg.get("cluster", "") or ""
                     cluster_name_cache[cfg.get("name", "")] = cn
                 for n_dict in cached_res.get("nodes", []):
                     hn = n_dict.get("host_name", "")
+                    if hn not in valid_hosts:
+                        continue
                     cn = cluster_name_cache.get(hn, "")
                     ic = n_dict.get("_is_cluster", False)
                     self._node_repo.add(DomainNode.from_pve(n_dict, hn, cn, ic))
                 for v_dict in cached_res.get("vms", []):
+                    if v_dict.get("host_name", "") not in valid_hosts:
+                        continue
                     self._vm_repo.add(DomainVm.from_pve(v_dict, v_dict.get("host_name", "")))
                 for s_dict in cached_res.get("storages", []):
                     hn = s_dict.get("host_name", "")
+                    if hn not in valid_hosts:
+                        continue
                     cn = cluster_name_cache.get(hn, "")
                     self._storage_repo.add(DomainStorage.from_pve(s_dict, hn, cn))
                 self.detail_panel.set_lists(
@@ -1493,19 +1512,27 @@ class MainWindow(QMainWindow):
         self.all_pools.clear()
         self._first_selection_done = False
         self._tasks_started = False
-        self._node_repo.clear()
-        self._vm_repo.clear()
-        self._storage_repo.clear()
+        self._soft_errors.clear()
+        # Repositories are NOT cleared here (audit 4.1): each worker
+        # replaces its own host's snapshot on "ok", so a host whose worker
+        # is rejected or fails keeps its last known-good data.  Only hosts
+        # that left the configuration are dropped.
+        active_cfgs = [cfg for cfg in self.nodes_cfg
+                       if not cfg.get("skip", False)
+                       and cfg.get("type", "pve") != "pbs"]
+        active_names = {cfg.get("name") for cfg in active_cfgs}
+        for host in [h for h in {n.host_name for n in self._node_repo.all()}
+                     if h and h not in active_names]:
+            self._node_repo.remove_host(host)
+            self._vm_repo.remove_host(host)
+            self._storage_repo.remove_host(host)
         self._pool_repo.clear()
 
         self.tree_panel.start_loading()
 
-        active_cfgs = [cfg for cfg in self.nodes_cfg
-                       if not cfg.get("skip", False)
-                       and cfg.get("type", "pve") != "pbs"]
-
         refresh_gen = self._refresh.begin_hard()
 
+        started = 0
         for cfg in active_cfgs:
             worker = FetchWorker(cfg)
             worker.signals.result_ready.connect(
@@ -1515,8 +1542,14 @@ class MainWindow(QMainWindow):
             # worker never reports and would block finalization forever
             if self._run_worker(worker):
                 self._refresh.track_hard(worker)
+                started += 1
 
-        if not active_cfgs:
+        if not active_cfgs or started == 0:
+            # Nothing runs (empty config or the pool rejected every worker):
+            # no report will ever arrive — restore the UI from the current
+            # repositories right away instead of waiting in loading stubs
+            # forever (audit 4, D3).  The cache is not rewritten here: the
+            # snapshot is not fresher than before.
             self.tree_panel.update_data(
                 self._node_repo.all(), self._vm_repo.all(), self._storage_repo.all(), final=True,
                 node_repo=self._node_repo, vm_repo=self._vm_repo,
@@ -1525,6 +1558,7 @@ class MainWindow(QMainWindow):
                 self._node_repo.all(), self._vm_repo.all(), self._storage_repo.all(),
                 node_repo=self._node_repo, vm_repo=self._vm_repo
             )
+            self._first_selection_done = True
             self._update_status_bar()
 
     @Slot(str, str, dict)
@@ -1559,6 +1593,12 @@ class MainWindow(QMainWindow):
         if status == "ok":
             is_cluster = worker.node_cfg.get("cluster_rep", False) if worker else False
             cluster_name = (worker.node_cfg.get("cluster", "") or "") if worker else ""
+            # A confirmed full response replaces THIS host's snapshot
+            # entirely: resources really removed on the server disappear,
+            # while other hosts' data stays untouched (audit 4.1).
+            self._node_repo.remove_host(host)
+            self._vm_repo.remove_host(host)
+            self._storage_repo.remove_host(host)
             for node in data.get("nodes", []):
                 node["host_name"] = host
                 node["_is_cluster"] = is_cluster
@@ -1573,14 +1613,15 @@ class MainWindow(QMainWindow):
             for pd in data.get("pools", []):
                 self._pool_repo.add(DomainPool.from_pve(pd))
             self.all_pools = self._pool_repo.all()
-            # Collect ISO images (host_name -> list volid)
+            # Collect ISO images (host_name -> list volid).  An empty list
+            # from a successful response is a confirmed absence — replace
+            # the previous data; a failed optional fetch omits the key, so
+            # stale entries survive (audit 4.1).
             for iso_host, isos in data.get("iso_images", {}).items():
-                if isos:
-                    self.all_iso_images[iso_host] = isos
-            # Collect HA groups (host_name -> [group, ...])
+                self.all_iso_images[iso_host] = isos
+            # Collect HA groups (host_name -> [group, ...]) — same rule.
             ha_list = [HaGroup.from_pve(g) for g in data.get("ha_groups", [])]
-            if ha_list:
-                self.all_ha_groups[host] = ha_list
+            self.all_ha_groups[host] = ha_list
         else:
             is_cluster_err = worker.node_cfg.get("cluster_rep", False) if worker else False
             err_msg = data.get("error", "Unknown error")
@@ -1602,7 +1643,7 @@ class MainWindow(QMainWindow):
                     "_is_cluster": is_cluster_err
                 }
                 self._node_repo.add(DomainNode.from_pve(err_node, host, "", is_cluster_err))
-            from ..utils import parse_pve_error
+            from .utils import parse_pve_error
             reason = parse_pve_error(err_msg)
             self._notifications.show(
                 tr("Connection error: {host} — {reason}").format(host=host, reason=reason),
@@ -1706,6 +1747,14 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------
     def soft_refresh(self):
         now = time.time()
+        # Hard-cycle watchdog (audit 4, D3): unreported hard workers would
+        # block finalization forever. After the ceiling, leave the loading
+        # state — late worker results still apply per-host when they
+        # arrive (their generation stays current). Checked before the
+        # interval guard so a hung cycle is finalized regardless of the
+        # soft refresh schedule.
+        if self._refresh.hard_timed_out():
+            self._finalize_hard_timeout()
         if now - self.last_refresh_ts < self.refresh_interval:
             return
         if self._refresh.soft_running:
@@ -1727,6 +1776,7 @@ class MainWindow(QMainWindow):
         self._soft_vm_repo.clear()
         self._soft_storage_repo.clear()
         self._soft_had_errors = False
+        self._soft_errors.clear()
 
         active_cfgs = [cfg for cfg in self.nodes_cfg
                        if not cfg.get("skip", False)
@@ -1740,7 +1790,10 @@ class MainWindow(QMainWindow):
         # until timeout. Start only what fits; the rest waits for the next tick.
         capacity = max(0, MAX_WORKERS - len(self._workers))
         if capacity == 0:
+            # D7: leave the soft state cleanly — the spinner must not spin
+            # for a cycle that never started; the next tick retries.
             self._refresh.finish_soft()
+            self._soft_refresh_active = False
             return
         if len(active_cfgs) > capacity:
             active_cfgs = active_cfgs[:capacity]
@@ -1751,6 +1804,23 @@ class MainWindow(QMainWindow):
                 lambda data, w=worker, g=soft_gen: (self.on_soft_refresh_result(data, w, g), self._discard_worker(w))
             )
             self._run_worker(worker)
+
+    def _finalize_hard_timeout(self):
+        """Leave the loading state after a hung hard cycle (audit 4, D3).
+
+        Workers stuck in a hung thread are NOT stopped by this: a late
+        result still applies per-host (same generation stays current).
+        The cache is not rewritten here — a late report or the next soft
+        cycle persists the merged data.
+        """
+        self._refresh.finish_hard()
+        self.tree_panel.update_data(
+            self._node_repo.all(), self._vm_repo.all(), self._storage_repo.all(), final=True,
+            node_repo=self._node_repo, vm_repo=self._vm_repo,
+        )
+        self._update_status_bar()
+        self._notifications.show(
+            tr("Update timed out — showing last known data"))
 
     @Slot(dict)
     def on_soft_refresh_result(self, data, worker=None, gen=0):
@@ -1772,84 +1842,95 @@ class MainWindow(QMainWindow):
                 st_dict["host_name"] = host
                 self._soft_storage_repo.add(DomainStorage.from_pve(st_dict, host, cluster_name))
         else:
+            # Do NOT put an empty error stub into the soft repos (audit 4,
+            # D1): the merge below keeps the host's previous known-good
+            # data and only flags its nodes with the error. An error stub
+            # would erase the host's VMs/storages from the UI and cache.
             self._soft_had_errors = True
-            err_msg = data.get("error", "Unknown error")
-            existing_nodes = self._soft_node_repo.get_by_host(host)
-            if existing_nodes:
-                # A node of this host already exists (short name) — flag it
-                # with the error instead of adding a duplicate named with
-                # the config's Hostname
-                for old in existing_nodes:
-                    self._soft_node_repo.add(
-                        replace(old, status=NodeStatus.ERROR, error=err_msg))
-            else:
-                err_node = {
-                    "node": host,
-                    "status": "error",
-                    "error": err_msg,
-                    "host_name": host,
-                    "_display_name": host,
-                }
-                self._soft_node_repo.add(DomainNode.from_pve(err_node, host, "", False))
+            self._soft_errors[host] = data.get("error", "Unknown error")
 
         # PBS servers don't take part in soft refresh, but they used to be
         # counted in active_count — the loop never finished and the cache
         # was never saved.
         if self._refresh.soft_result(gen):
-            if self._soft_node_repo or self._soft_vm_repo:
-                try:
-                    old_sig = _repo_signature(
-                        self._node_repo, self._vm_repo, self._storage_repo)
-                    # Swap: replace main repos with soft repos' contents
-                    self._node_repo.clear()
-                    self._vm_repo.clear()
-                    self._storage_repo.clear()
-                    for n in self._soft_node_repo.all():
-                        self._node_repo.add(n)
-                    for v in self._soft_vm_repo.all():
-                        self._vm_repo.add(v)
-                    for s in self._soft_storage_repo.all():
-                        self._storage_repo.add(s)
-                    new_sig = _repo_signature(
-                        self._node_repo, self._vm_repo, self._storage_repo)
-                    if old_sig != new_sig:
-                        self.tree_panel.update_data(
-                            self._node_repo.all(), self._vm_repo.all(),
-                            self._storage_repo.all(), final=True,
-                            node_repo=self._node_repo, vm_repo=self._vm_repo,
-                        )
+            try:
+                old_sig = _repo_signature(
+                    self._node_repo, self._vm_repo, self._storage_repo)
+                # Per-host merge instead of the old wholesale clear+swap
+                # (audit 4, D1): hosts that reported "ok" replace their own
+                # snapshot entirely — resources really removed on the server
+                # disappear; hosts that errored keep their last known-good
+                # data with ERROR flags; hosts that did not take part in
+                # this soft cycle are untouched.
+                for h in {n.host_name for n in self._soft_node_repo.all()}:
+                    self._node_repo.remove_host(h)
+                    self._vm_repo.remove_host(h)
+                    self._storage_repo.remove_host(h)
+                for n in self._soft_node_repo.all():
+                    self._node_repo.add(n)
+                for v in self._soft_vm_repo.all():
+                    self._vm_repo.add(v)
+                for s in self._soft_storage_repo.all():
+                    self._storage_repo.add(s)
+                # Errored hosts: flag their existing nodes with the error;
+                # when the host has no data at all (first run offline), add
+                # a stub so the failure stays visible.
+                for h, err_msg in self._soft_errors.items():
+                    existing = self._node_repo.get_by_host(h)
+                    if existing:
+                        for old in existing:
+                            self._node_repo.add(
+                                replace(old, status=NodeStatus.ERROR,
+                                        error=err_msg))
                     else:
-                        self.tree_panel.update_node_statuses(
-                            self._node_repo.all(), self._vm_repo.all(),
-                            node_repo=self._node_repo, vm_repo=self._vm_repo,
-                        )
-                    self.detail_panel.set_lists(
-                        self._node_repo.all(), self._vm_repo.all(), self._storage_repo.all(),
-                        node_repo=self._node_repo, vm_repo=self._vm_repo
+                        err_node = {
+                            "node": h,
+                            "status": "error",
+                            "error": err_msg,
+                            "host_name": h,
+                            "_display_name": h,
+                        }
+                        self._node_repo.add(DomainNode.from_pve(err_node, h, "", False))
+                new_sig = _repo_signature(
+                    self._node_repo, self._vm_repo, self._storage_repo)
+                if old_sig != new_sig:
+                    self.tree_panel.update_data(
+                        self._node_repo.all(), self._vm_repo.all(),
+                        self._storage_repo.all(), final=True,
+                        node_repo=self._node_repo, vm_repo=self._vm_repo,
                     )
-                    self.detail_panel.refresh_current_view()
-                    # Pass through pools/HA already collected during hard
-                    # refresh — soft refresh has no ProxmoxAPI and can't
-                    # re-collect them
-                    self.detail_panel.all_pools = self.all_pools
-                    self.detail_panel.all_ha_groups = self.all_ha_groups
-                    self._detect_status_changes()
-                    self._update_status_bar()
-                    from ..config import save_resources_cache
-                    save_resources_cache(
-                        [dict(n) for n in self._node_repo.all()],
-                        [dict(v) for v in self._vm_repo.all()],
-                        [dict(s) for s in self._storage_repo.all()],
+                else:
+                    self.tree_panel.update_node_statuses(
+                        self._node_repo.all(), self._vm_repo.all(),
+                        node_repo=self._node_repo, vm_repo=self._vm_repo,
                     )
-                    if self._offline_mode:
-                        self._offline_mode = False
-                        self._offline_ts = None
-                except Exception as exc:
-                    logger.debug("soft_refresh error", exc_info=True)
-                    self._notifications.show(
-                        tr("Error: {err}").format(err=str(exc)[:100]),
-                        error=True,
-                    )
+                self.detail_panel.set_lists(
+                    self._node_repo.all(), self._vm_repo.all(), self._storage_repo.all(),
+                    node_repo=self._node_repo, vm_repo=self._vm_repo
+                )
+                self.detail_panel.refresh_current_view()
+                # Pass through pools/HA already collected during hard
+                # refresh — soft refresh has no ProxmoxAPI and can't
+                # re-collect them
+                self.detail_panel.all_pools = self.all_pools
+                self.detail_panel.all_ha_groups = self.all_ha_groups
+                self._detect_status_changes()
+                self._update_status_bar()
+                from ..config import save_resources_cache
+                save_resources_cache(
+                    [dict(n) for n in self._node_repo.all()],
+                    [dict(v) for v in self._vm_repo.all()],
+                    [dict(s) for s in self._storage_repo.all()],
+                )
+                if self._offline_mode:
+                    self._offline_mode = False
+                    self._offline_ts = None
+            except Exception as exc:
+                logger.debug("soft_refresh error", exc_info=True)
+                self._notifications.show(
+                    tr("Error: {err}").format(err=str(exc)[:100]),
+                    error=True,
+                )
             self._soft_node_repo.clear()
             self._soft_vm_repo.clear()
             self._soft_storage_repo.clear()

@@ -7,6 +7,7 @@ is complete and when a stuck soft refresh should be reset by timeout.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 
@@ -20,10 +21,13 @@ class RefreshCoordinator:
     - the soft cycle is reset by timeout or by a new hard refresh.
     """
 
-    def __init__(self, soft_timeout: float = 90.0) -> None:
+    def __init__(self, soft_timeout: float = 90.0,
+                 hard_timeout: float = 180.0) -> None:
         self.soft_timeout = soft_timeout
+        self.hard_timeout = hard_timeout
         self._hard_gen = 0
         self._hard_pending: set[Any] = set()
+        self._hard_start = 0.0
         self._soft_gen = 0
         self._soft_running = False
         self._soft_start = 0.0
@@ -40,6 +44,7 @@ class RefreshCoordinator:
         """Start a hard refresh: reset pending. Returns the new generation."""
         self._hard_gen += 1
         self._hard_pending = set()
+        self._hard_start = time.monotonic()
         return self._hard_gen
 
     def track_hard(self, worker: Any) -> None:
@@ -56,6 +61,24 @@ class RefreshCoordinator:
     @property
     def hard_pending_count(self) -> int:
         return len(self._hard_pending)
+
+    def hard_timed_out(self, now: float | None = None) -> bool:
+        """Whether a hard cycle with unreported workers exceeded its ceiling.
+
+        Workers stuck in a hung thread are NOT considered stopped by this
+        (their late results still apply per-host when they arrive); the
+        timeout only lets the UI leave the loading state instead of
+        waiting forever (audit 4, D3).
+        """
+        now = time.monotonic() if now is None else now
+        return bool(self._hard_pending) and \
+            (now - self._hard_start > self.hard_timeout)
+
+    def finish_hard(self) -> None:
+        """Force-complete the current hard cycle (timeout watchdog):
+        unreported workers are no longer awaited. Late results of the same
+        generation stay current and still apply per-host."""
+        self._hard_pending.clear()
 
     # -- soft refresh ---------------------------------------------------
 

@@ -26,9 +26,49 @@ class FakeProvider:
         self.pools = MagicMock()
         self.access = MagicMock()
         self.rrd = MagicMock()
+        # Part of the provider contract (M0.5 compat matrix)
+        self.report_version = MagicMock()
 
     def close(self):
         self.closed = True
+
+
+class FakePveApi:
+    """Provider facade whose API objects answer with real (empty by
+    default) lists: a confirmed absence of resources, not a failure."""
+
+    def __init__(self, *, nodes=None, vms=None, storages=None,
+                 resources=None, pools=None, ha=None, iso=None):
+        self._nodes = nodes if nodes is not None else []
+        self._vms = vms if vms is not None else []
+        self._storages = storages if storages is not None else []
+        self._resources = resources if resources is not None else []
+        self._pools = pools if pools is not None else []
+        self._ha = ha if ha is not None else []
+        self._iso = iso if iso is not None else []
+        self.report_version = MagicMock()
+        self.nodes = SimpleNamespace(
+            list=lambda: list(self._nodes),
+            get_status=lambda n: {"pveversion": "8.2.4", "memory": {},
+                                  "rootfs": {}, "cpuinfo": {}},
+            get_version=lambda n: {},
+            list_storage=lambda n: list(self._storages),
+        )
+        self.vms = SimpleNamespace(
+            list_qemu=lambda n: [v for v in self._vms if v.get("type") == "qemu"],
+            list_lxc=lambda n: [v for v in self._vms if v.get("type") == "lxc"],
+        )
+        self.cluster = SimpleNamespace(
+            list_ha_groups=lambda: list(self._ha),
+            list_resources=lambda: list(self._resources),
+        )
+        self.pools = SimpleNamespace(
+            list=lambda: list(self._pools),
+            get=lambda p: {},
+        )
+        self.storage = SimpleNamespace(
+            list_content=lambda n, s, content="iso": list(self._iso),
+        )
 
 # --- _verify_ssl ---
 

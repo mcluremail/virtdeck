@@ -91,8 +91,21 @@ class VmRepository:
         self._by_host_node: dict[tuple[str, str], list[Vm]] = {}
 
     def add(self, vm: Vm) -> None:
-        """Add or replace a VM — O(1) dedup by ``(host_name, vmid)``."""
+        """Add or replace a VM — O(1) dedup by ``(host_name, vmid)``.
+
+        If the VM moved to another node since the previous snapshot, the
+        stale entry is removed from the old node's bucket — otherwise
+        ``filter_by_host()``/``count_by_host()`` keep reporting a ghost VM
+        on the node it left (audit 4, D4).
+        """
         key = (vm.host_name, vm.vmid)
+        old = self._by_key.get(key)
+        if old is not None and old.node != vm.node:
+            old_bucket = self._by_host_node.get((old.host_name, old.node))
+            if old_bucket is not None:
+                self._by_host_node[(old.host_name, old.node)] = [
+                    v for v in old_bucket if v.vmid != vm.vmid
+                ]
         self._by_key[key] = vm
         bucket_key = (vm.host_name, vm.node)
         bucket = self._by_host_node.setdefault(bucket_key, [])

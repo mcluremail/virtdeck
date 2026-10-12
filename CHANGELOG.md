@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — data integrity: refresh, cache and snapshots (external audit stage 4)
+
+**Bug fixes**
+- Refresh snapshots: the absence of an answer is no longer the absence of resources. FetchWorker classified failures of mandatory API requests (cluster resources; node status; guest/storage listings) as `status="ok"` with empty lists, so the UI erased a host's real resources from the tree and the persistent cache whenever the host was unreachable. Results are now `ok` (every mandatory source completed successfully — an empty list is a confirmed absence, not a failure), `partial` (the host identity is confirmed, some mandatory resource lists are not — the consumer keeps the previous snapshot) or `error` (nothing confirmed). A thread that outlives its join deadline counts as data that never arrived; optional sources (pools, HA, versions, storage details, ISO images) never affect the status
+- Soft refresh merges per-host snapshots instead of swapping the whole world: a host that answered replaces its own snapshot entirely (resources really removed on the server disappear), a host whose worker failed keeps its last known-good data with its nodes flagged ERROR, hosts that did not take part stay untouched. Previously one dead host wiped its VMs/storages, and a fully failed cycle wiped every host and rewrote the persistent cache with that emptiness
+- Hard refresh no longer clears the repositories at cycle start: each worker replaces only its own host's confirmed snapshot, so a host whose worker was rejected by a full pool (or failed) keeps its data. When nothing can be started the UI leaves the loading state immediately instead of waiting forever, and a watchdog (180 s ceiling) force-finalizes a hard cycle whose workers stopped reporting — late reports still apply per-host, stale generations never overwrite newer state
+- Repository indexes: moving a VM to another node no longer leaves a ghost in the old node's bucket — `filter_by_host()`/`count_by_host()` no longer report the pre-migration placement
+- Startup cache: hosts removed from the configuration or excluded by skip are no longer resurrected from the cache; cluster representatives are matched by config name, so PVE node names inside a cluster snapshot are never filtered out. The first hard cycle no longer clears the freshly loaded cache — cached hosts keep serving until their own fresh confirmed answer replaces them
+- The error branch of a failed refresh worker crashed on a broken internal import (`virtdeck.utils` instead of `virtdeck.ui.utils`), skipping the notification, the tree update and the cache save for that cycle
+- ISO/HA lists of a successful response replace the previous data even when the new list is empty (a confirmed absence), while a failed optional fetch no longer pretends "no ISOs" — the previous list survives
+
 ## v3.0.2 — provider/API layer fixes (external audit stage 3.1)
 
 **Bug fixes**

@@ -14,12 +14,41 @@ class FetchSignals(QObject):
     finished = Signal()
 class FetchWorker(QRunnable):
     """Fetches the node summary via QThreadPool.
-    Independent API requests run in parallel via threading.Thread."""
+    Independent API requests run in parallel via threading.Thread.
+
+    Result status semantics (audit 4.1) — "absence of an answer is not the
+    absence of resources":
+
+    - ``ok``: every MANDATORY source completed successfully — its thread
+      finished before the join deadline and raised nothing.  Empty lists
+      at this point are a confirmed absence of resources (a valid empty
+      snapshot), not a failure.
+      Mandatory: cluster path — ``/cluster/resources``; standalone path —
+      node status plus the qemu/lxc/storage listings.
+    - ``partial``: the host identity is confirmed but a mandatory resource
+      list failed or its thread outlived the join deadline.  The consumer
+      must keep the previous snapshot of this host; ``data["error"]``
+      names the missing sources.
+    - ``error``: the mandatory core is unavailable entirely (no confirmed
+      data at all).  The consumer keeps the previous snapshot and flags
+      the host as errored.
+
+    Optional sources — pools, HA groups, node versions, per-node storage
+    details, ISO images — never affect the status: their failure only
+    means their enrichment data is missing, which cannot be mistaken for
+    resource removal.  A failed optional source omits its key (or keeps
+    it empty) so stale UI data survives instead of being replaced by a
+    fake "nothing".
+    """
+
     def __init__(self, node_cfg):
         super().__init__()
         self.node_cfg = node_cfg
         self.signals = FetchSignals()
         self._cancelled = False
+        # Join ceilings for the MANDATORY phases (tests shrink them)
+        self.join_phase1 = 20
+        self.join_standalone = 30
 
     def cancel(self):
         self._cancelled = True
@@ -52,6 +81,12 @@ class FetchWorker(QRunnable):
             pool_lock = threading.Lock()
             ha_lock = threading.Lock()
             res_lock = threading.Lock()
+            # Failures of the MANDATORY core, filled by the worker threads:
+            # core_errors — no confirmed data at all ("error"),
+            # list_errors  — the host is confirmed, some resource lists are
+            #                not ("partial").
+            core_errors: list[str] = []
+            list_errors: list[str] = []
 
             def fetch_pools():
                 nonlocal vmid_to_pool, pools
@@ -126,6 +161,10 @@ class FetchWorker(QRunnable):
                             short = n["node"]
                             n["_display_name"] = f"{short}@{cluster_name}" if cluster_name else short
                 except Exception as e:
+                    # mandatory: without /cluster/resources there is no
+                    # confirmed snapshot at all
+                    with res_lock:
+                        core_errors.append(f"cluster resources: {e}")
                     logger.debug("backend error: %s", e)
 
             phase1 = []
@@ -137,9 +176,19 @@ class FetchWorker(QRunnable):
             for t in phase1:
                 t.start()
             for t in phase1:
-                t.join(timeout=20)
+                t.join(timeout=self.join_phase1)
             if self._cancelled:
                 return
+            if is_cluster_rep:
+                # A thread outliving its join deadline means its data never
+                # arrived — the core is not confirmed (audit 4.1: a timed
+                # out thread must not be treated as a complete result).
+                res_thread = phase1[2]
+                if res_thread.is_alive():
+                    with res_lock:
+                        core_errors.append(
+                            f"cluster resources did not finish "
+                            f"in {self.join_phase1:g}s")
 
             # -- Parallel phase 2: storage details per node / standalone data --
             iso_images = {}
@@ -242,9 +291,12 @@ class FetchWorker(QRunnable):
                         provider.report_version(node_name,
                                                 node_status.get("pveversion"))
                     except Exception as e:
-                        # Surface the failure as an error node instead of
-                        # silently emitting an empty "ok" result.
+                        # Mandatory: without the node status there is no
+                        # confirmed snapshot at all. Surface the failure as
+                        # an error node instead of silently emitting an
+                        # empty "ok" result.
                         with res_lock:
+                            core_errors.append(f"node status: {e}")
                             nodes = [{
                                 "node": self.node_cfg["name"],
                                 "host_name": self.node_cfg["name"],
@@ -292,13 +344,23 @@ class FetchWorker(QRunnable):
                             vms = vms_local
                             storages = storages_local
                     except Exception as e:
+                        # Mandatory lists: their failure must not look like
+                        # a confirmed absence of VMs/storages — mark the
+                        # snapshot partial (the node itself is confirmed).
+                        with res_lock:
+                            list_errors.append(f"guest/storage lists: {e}")
                         logger.debug("backend error: %s", e)
 
                 standalone_thread = threading.Thread(target=fetch_standalone, daemon=True)
                 standalone_thread.start()
                 if self._cancelled:
                     return
-                standalone_thread.join(timeout=30)
+                standalone_thread.join(timeout=self.join_standalone)
+                if standalone_thread.is_alive():
+                    with res_lock:
+                        core_errors.append(
+                            f"standalone node data did not finish "
+                            f"in {self.join_standalone:g}s")
 
                 # Re-apply pool after the pool threads finish
                 # (fetch_pools may still be running when fetch_standalone
@@ -352,8 +414,9 @@ class FetchWorker(QRunnable):
                     with iso_lock:
                         iso_images[nhost] = sorted(seen.values(), key=lambda x: x["volid"])
                 except Exception:
-                    with iso_lock:
-                        iso_images[nhost] = []
+                    # Optional source: omit the key so the consumer keeps
+                    # the previous ISO list instead of a fake "no ISOs".
+                    logger.debug("iso listing failed for %s", nhost, exc_info=True)
 
             if self._cancelled:
                 return
@@ -368,16 +431,38 @@ class FetchWorker(QRunnable):
                 return
 
             # -- Emit result --
-            self.signals.result_ready.emit({
-                "host": self.node_cfg["name"],
-                "status": "ok",
-                "nodes": nodes,
-                "vms": vms,
-                "storages": storages,
-                "pools": pools,
-                "iso_images": iso_images,
-                "ha_groups": ha_groups
-            })
+            if core_errors:
+                # No confirmed data at all.
+                self.signals.result_ready.emit({
+                    "host": self.node_cfg["name"],
+                    "status": "error",
+                    "error": "; ".join(core_errors),
+                })
+            elif list_errors:
+                # The host is confirmed, some mandatory resource lists are
+                # not: the consumer must keep the previous snapshot.
+                self.signals.result_ready.emit({
+                    "host": self.node_cfg["name"],
+                    "status": "partial",
+                    "error": "incomplete snapshot — " + "; ".join(list_errors),
+                    "nodes": nodes,
+                    "vms": vms,
+                    "storages": storages,
+                    "pools": pools,
+                    "iso_images": iso_images,
+                    "ha_groups": ha_groups,
+                })
+            else:
+                self.signals.result_ready.emit({
+                    "host": self.node_cfg["name"],
+                    "status": "ok",
+                    "nodes": nodes,
+                    "vms": vms,
+                    "storages": storages,
+                    "pools": pools,
+                    "iso_images": iso_images,
+                    "ha_groups": ha_groups
+                })
         except Exception as e:
             try:
                 self.signals.result_ready.emit({
