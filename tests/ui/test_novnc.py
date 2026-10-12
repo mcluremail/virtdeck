@@ -3,8 +3,19 @@
 import asyncio
 from unittest.mock import MagicMock
 
+import pytest
+
 from virtdeck.backend import NoVncWorker
+from virtdeck.ui.console import bridge as _bridge_mod
 from virtdeck.ui.console.page import build_console_html
+
+# The WsBridge stop-race tests monkeypatch the websockets module — they
+# need the optional novnc extra (CI installs it; a minimal dev venv may
+# not have it, and with websockets=None the bridge thread never starts).
+requires_websockets = pytest.mark.skipif(
+    _bridge_mod.websockets is None,
+    reason="the optional 'websockets' extra is not installed",
+)
 
 
 class TestBuildWsUrl:
@@ -305,6 +316,7 @@ class TestWsBridgeShutdown:
         loop.close()
 
 
+@requires_websockets
 class TestWsBridgeStopRace:
     """Regression: stop() before port_ready / before the thread starts
     leaves no unhandled exceptions and no leaked threads."""

@@ -47,7 +47,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libegl1 libgl1
-          pip install -e .[dev]
+          pip install -e .[dev,novnc]
 
       - name: Run tests
         env:

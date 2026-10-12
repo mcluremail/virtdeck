@@ -110,5 +110,21 @@ class TestRetheme:
                           show_progress=True)
         qtbot.addWidget(card)
         assert card.minimumHeight() <= card.sizeHint().height()
-        # content must fit: title + value + subtitle + bar
-        assert card.sizeHint().height() >= 100
+        assert card.maximumHeight() >= card.sizeHint().height()
+        # content must fit: title + value + subtitle + bar plus the layout
+        # chrome (14px margins, 2px spacing, explicit 4px/8px spacers).
+        # Derived from the card's own hints, not a pixel constant — the
+        # original bug was a fixed height clipping the 18pt value; font
+        # metrics differ across environments (CI has no desktop fonts).
+        required = (
+            card._title_label.sizeHint().height()
+            + 4
+            + card._value_label.sizeHint().height()
+            + 2
+            + card._subtitle_label.sizeHint().height()
+            + 2
+            + 8
+            + card._bar.sizeHint().height()
+            + 28
+        )
+        assert card.sizeHint().height() >= required

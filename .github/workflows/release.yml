@@ -188,7 +188,10 @@ jobs:
           rsync -v -e "$RSH" upload/virtdeck-*.rpm repo-upload@repo.mclure.ru:rpm/
           echo "the server regenerates and signs the indexes automatically"
       - name: Wait until the server publishes this exact build
+        env:
+          REF: ${{ github.ref_name }}
         run: |
+          version="${REF#v}"
           rpm_sha=$(sha256sum upload/virtdeck-*.rpm | cut -d' ' -f1)
           deb_sha=$(sha256sum upload/virtdeck_*.deb | cut -d' ' -f1)
           echo "local artifacts: rpm ${rpm_sha:0:12}…, deb ${deb_sha:0:12}… (the server signs rpms, so rpm is matched by consistency)"
@@ -204,7 +207,7 @@ jobs:
                   /<\/package>/ {inblk=0; if (buf ~ /<name>virtdeck</ && match(buf, /<checksum type="sha256"[^>]*>[a-f0-9]+/)) { s=substr(buf, RSTART, RLENGTH); sub(/.*>/, "", s); print s }}')
                 # the server signs rpms after upload, so compare against the
                 # served file itself, not the CI artifact
-                curl -fsSL https://repo.mclure.ru/rpm/fedora/41/virtdeck-3.0.1-1.fc41.noarch.rpm -o /tmp/virtdeck.rpm
+                curl -fsSL "https://repo.mclure.ru/rpm/fedora/41/virtdeck-${version}-1.fc41.noarch.rpm" -o /tmp/virtdeck.rpm
                 served=$(sha256sum /tmp/virtdeck.rpm | cut -d' ' -f1)
                 if [ -n "$live" ] && [ "$live" = "$served" ]; then ok_rpm=1; echo "rpm: repo metadata matches the served package ✓"; fi
               fi
