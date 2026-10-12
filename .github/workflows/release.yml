@@ -201,10 +201,10 @@ jobs:
             if [ "$ok_rpm" = 0 ]; then
               if curl -fsSL https://repo.mclure.ru/rpm/fedora/41/repodata/repomd.xml -o /tmp/repomd.xml; then
                 href=$(grep -oP '(?<=href=")[^"]*-primary\.xml\.zst' /tmp/repomd.xml | head -1)
-                live=$(curl -fsSL "https://repo.mclure.ru/rpm/fedora/41/$href" | zstd -dc 2>/dev/null | awk '
+                live=$(curl -fsSL "https://repo.mclure.ru/rpm/fedora/41/$href" | zstd -dc 2>/dev/null | awk -v want="$version" '
                   /<package type="rpm">/ {inblk=1; buf=""}
                   inblk {buf = buf "\n" $0}
-                  /<\/package>/ {inblk=0; if (buf ~ /<name>virtdeck</ && match(buf, /<checksum type="sha256"[^>]*>[a-f0-9]+/)) { s=substr(buf, RSTART, RLENGTH); sub(/.*>/, "", s); print s }}')
+                  /<\/package>/ {inblk=0; if (buf ~ /<name>virtdeck</ && match(buf, "<version [^>]*ver=\"" want "\"") && match(buf, /<checksum type="sha256"[^>]*>[a-f0-9]+/)) { s=substr(buf, RSTART, RLENGTH); sub(/.*>/, "", s); print s }}')
                 # the server signs rpms after upload, so compare against the
                 # served file itself, not the CI artifact
                 curl -fsSL "https://repo.mclure.ru/rpm/fedora/41/virtdeck-${version}-1.fc41.noarch.rpm" -o /tmp/virtdeck.rpm
@@ -213,8 +213,13 @@ jobs:
               fi
             fi
             if [ "$ok_deb" = 0 ]; then
+              # the pool is append-only: several virtdeck versions stay
+              # indexed, so select the stanza of THIS build, not the first
               live_deb=$(curl -fsSL https://repo.mclure.ru/apt/dists/bookworm/main/binary-amd64/Packages.gz \
-                | zcat | awk '/^Package: virtdeck$/{f=1} f&&/^SHA256: /{print $2; exit}')
+                | zcat | awk -v ver="${version}-1" '
+                  /^Package: / {pkg=$2}
+                  /^Version: / {hit=(pkg=="virtdeck" && $2==ver)}
+                  /^SHA256: /  {if (hit) {print $2; exit}}')
               if [ "$live_deb" = "$deb_sha" ]; then ok_deb=1; echo "deb: repo serves this build ✓"; fi
             fi
             [ "$ok_rpm" = 1 ] && [ "$ok_deb" = 1 ] && exit 0
