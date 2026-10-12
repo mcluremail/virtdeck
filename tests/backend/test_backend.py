@@ -88,6 +88,102 @@ class TestSanitizeError:
         assert backend._sanitize_error(Exception("boom")) == "boom"
 
 
+class TestSanitizeErrorHostnames:
+    """D6: bare hostnames from requests/proxmoxer exceptions must not leak."""
+
+    def test_requests_quoted_host(self):
+        exc = Exception("HTTPSConnectionPool(host='pve1.lan', port=8006): "
+                        "Max retries exceeded")
+        msg = backend._sanitize_error(exc)
+        assert "pve1.lan" not in msg
+        assert "[host]" in msg
+        assert "Max retries exceeded" in msg  # diagnostic value kept
+
+    def test_fqdn_with_port(self):
+        msg = backend._sanitize_error(
+            Exception("connection to pve1.lan:8006 failed"))
+        assert "pve1.lan" not in msg
+        assert "[host]" in msg
+        assert "connection" in msg and "failed" in msg
+
+    def test_ipv4_port_still_stripped(self):
+        msg = backend._sanitize_error(
+            Exception("connect to 192.168.1.10:8006 refused"))
+        assert "192.168.1.10" not in msg
+
+    def test_timestamps_not_masked(self):
+        # timestamps and volid-ish text must survive sanitization
+        text = "TASK ERROR: backup 2026-01-01T00:00:00Z volume local:iso/x"
+        assert backend._sanitize_error(Exception(text)) == text
+
+    def test_task_error_text_preserved(self):
+        text = "TASK ERROR: volume 'local-zfs:subvol-101-disk-0' is full"
+        assert backend._sanitize_error(Exception(text)) == text
+
+    def test_credential_like_fragment_stripped(self):
+        # URLs may carry credentials — the URL pattern removes them whole
+        msg = backend._sanitize_error(
+            Exception("auth failed for https://root:secret@pve1.lan:8006/x"))
+        assert "root" not in msg and "secret" not in msg and "pve1.lan" not in msg
+
+
+class TestAwaitTask:
+    """D2: poll outcomes must be distinguished; D6: texts sanitized."""
+
+    @staticmethod
+    def _provider(poll_return):
+        p = FakeProvider()
+        p.tasks.poll = MagicMock(return_value=poll_return)
+        return p
+
+    def test_non_upid_result_is_synchronous(self):
+        ok, err = backend._await_task(FakeProvider(), "n1", {"data": None})
+        assert ok is True and err == ""
+
+    def test_stopped_ok(self):
+        p = self._provider(("stopped", "OK"))
+        assert backend._await_task(p, "n1", "UPID:x") == (True, "")
+
+    def test_stopped_failed_carries_task_error(self):
+        p = self._provider(("stopped", "TASK ERROR: volume full"))
+        ok, err = backend._await_task(p, "n1", "UPID:x")
+        assert ok is False
+        assert err == "TASK ERROR: volume full"
+
+    def test_stopped_failed_sanitized(self):
+        p = self._provider(("stopped",
+                            "TASK ERROR: see https://pve1.lan:8006/docs"))
+        ok, err = backend._await_task(p, "n1", "UPID:x")
+        assert ok is False
+        assert "pve1.lan" not in err and "https://" not in err
+
+    def test_poll_failed_means_unknown_outcome(self):
+        p = self._provider(("poll_failed",
+                            "HTTPSConnectionPool(host='pve1.lan', port=8006)"))
+        ok, err = backend._await_task(p, "n1", "UPID:x")
+        assert ok is False
+        assert "outcome unknown" in err
+        assert "pve1.lan" not in err  # D6: sanitized
+
+    def test_timeout_is_not_a_failure_claim(self):
+        p = self._provider(("timeout", ""))
+        ok, err = backend._await_task(p, "n1", "UPID:x", timeout=120)
+        assert ok is False
+        assert err == "still running after 120 s"
+
+    def test_unknown_status_defensive(self):
+        p = self._provider(("weird", ""))
+        ok, err = backend._await_task(p, "n1", "UPID:x")
+        assert ok is False
+        assert "weird" in err
+
+    def test_poll_args_forwarded(self):
+        p = self._provider(("stopped", "OK"))
+        backend._await_task(p, "n1", "UPID:x", timeout=300)
+        p.tasks.poll.assert_called_once_with("n1", "UPID:x",
+                                             timeout=300, interval=1.0)
+
+
 # --- _cleanup_vv ---
 
 

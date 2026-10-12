@@ -7,6 +7,11 @@ Covers: /cluster/resources, /cluster/status, /cluster/nextid,
 
 from __future__ import annotations
 
+from ._errors import (
+    ProxmoxApiError,
+    ProxmoxNotFoundError,
+    ProxmoxTimeoutError,
+)
 from ._session import ProxmoxSession, _q
 
 
@@ -15,6 +20,10 @@ class ClusterAPI:
 
     def __init__(self, session: ProxmoxSession) -> None:
         self._s = session
+        # None = /cluster/jobs availability not probed yet (PVE8+ has it,
+        # PVE7 does not).  Probed lazily with a harmless GET and cached for
+        # the provider's lifetime.
+        self._jobs_endpoint: bool | None = None
 
     def list_resources(self) -> list[dict]:
         """GET /cluster/resources — all nodes/vms/storages."""
@@ -129,52 +138,123 @@ class ClusterAPI:
         """GET /cluster/jobs — all scheduled jobs (PVE8+)."""
         return self._s.call(self._s.proxmox.cluster.jobs.get)
 
+    def _jobs_data(self) -> list | None:
+        """GET /cluster/jobs data, or None when the endpoint is absent.
+
+        The availability probe is cached for the provider's lifetime:
+        PVE8+ serves /cluster/jobs, PVE7 answers 404/501.  Anything else
+        (auth, validation, network, timeout) propagates — a failure must
+        not be mistaken for an old PVE.
+        """
+        if self._jobs_endpoint is False:
+            return None
+        try:
+            data = self._s.call(self._s.proxmox.cluster.jobs.get)
+            self._jobs_endpoint = True
+            return data
+        except ProxmoxApiError as exc:
+            if exc.status_code in (404, 501):
+                self._jobs_endpoint = False
+                return None
+            raise
+        except ProxmoxNotFoundError:
+            self._jobs_endpoint = False
+            return None
+
+    def _use_jobs_path(self, pve_major: int) -> bool:
+        """True when writes should target /cluster/jobs (PVE8+ and present).
+
+        On first use in this session the availability probe (a harmless
+        GET) runs; afterwards the cached answer decides, so a write never
+        fails over to the legacy path after a failed/timed-out request —
+        the decision is made BEFORE the write is issued.
+        """
+        if pve_major < 8:
+            return False
+        if self._jobs_endpoint is None:
+            self._jobs_data()
+        return bool(self._jobs_endpoint)
+
+    @staticmethod
+    def _raise_ambiguous(exc: Exception, action: str) -> None:
+        """Re-raise a timeout as an explicit "outcome unknown" error.
+
+        A timed-out write may still have been applied by the server; the
+        caller (UI) must offer refreshing the job list, not retrying.
+        """
+        raise type(exc)(
+            f"{exc}; {action} may still have been applied on the server — "
+            f"refresh the job list to verify"
+        ) from exc
+
     def list_all_jobs(self, pve_major: int = 7) -> list[dict]:
-        """List vzdump jobs, trying /cluster/jobs first on PVE8+."""
-        if pve_major >= 8:
-            try:
-                data = self.list_jobs()
-                if isinstance(data, dict):
-                    data = data.get("data", data)
-                if isinstance(data, list):
-                    return [j for j in data if j.get("type", "vzdump") == "vzdump"]
-            except Exception:
-                pass
+        """List vzdump jobs, trying /cluster/jobs first on PVE8+.
+
+        Falls back to /cluster/backup only when /cluster/jobs is
+        provably absent (PVE7).  Other errors propagate so the UI shows
+        them instead of an empty job list.
+        """
+        data = self._jobs_data() if pve_major >= 8 else None
+        if data is not None:
+            if isinstance(data, dict):
+                data = data.get("data", data)
+            if isinstance(data, list):
+                return [j for j in data if j.get("type", "vzdump") == "vzdump"]
         data = self.list_backup_jobs()
         if isinstance(data, dict):
             data = data.get("data", data)
         return data if isinstance(data, list) else []
 
     def create_backup_job(self, params: dict, pve_major: int = 7) -> object:
-        """POST /cluster/backup or /cluster/jobs (PVE8+)."""
-        if pve_major >= 8:
+        """POST /cluster/jobs (PVE8+) or /cluster/backup (legacy path).
+
+        The path is decided before the request (see _use_jobs_path); a
+        timed-out creation is never retried automatically — the server
+        may have created the job, and a silent second POST would
+        duplicate it.  Timeouts are re-raised with an explicit "outcome
+        unknown" hint.
+        """
+        if self._use_jobs_path(pve_major):
+            p = dict(params)
+            p["type"] = "vzdump"
             try:
-                p = dict(params)
-                p["type"] = "vzdump"
                 return self._s.call(self._s.proxmox.cluster.jobs.post, **p)
-            except Exception:
-                pass
+            except ProxmoxTimeoutError as exc:
+                self._raise_ambiguous(exc, "job creation")
         return self._s.call(self._s.proxmox.cluster.backup.post, **params)
 
     def update_backup_job(self, job_id: str, params: dict, pve_major: int = 7) -> object:
-        """PUT /cluster/backup/{id} or /cluster/jobs/{id} (PVE8+)."""
+        """PUT /cluster/jobs/{id} (PVE8+) or /cluster/backup/{id}.
+
+        Same policy as create: the path is decided up front, errors from
+        the primary path propagate (a 404 there means the job itself is
+        absent), and a timeout is re-raised as "outcome unknown".
+        """
         p = {k: v for k, v in params.items() if k != "id"}
-        if pve_major >= 8:
+        if self._use_jobs_path(pve_major):
+            pj = dict(p)
+            pj["type"] = "vzdump"
             try:
-                pj = dict(p)
-                pj["type"] = "vzdump"
                 return self._s.call(
                     self._s.proxmox.cluster.jobs(_q(job_id)).put, **pj
                 )
-            except Exception:
-                pass
+            except ProxmoxTimeoutError as exc:
+                self._raise_ambiguous(exc, "the update")
         return self._s.call(self._s.proxmox.cluster.backup(_q(job_id)).put, **p)
 
     def delete_backup_job(self, job_id: str, pve_major: int = 7) -> object:
-        """DELETE /cluster/backup/{id} or /cluster/jobs/{id} (PVE8+)."""
-        if pve_major >= 8:
+        """DELETE /cluster/jobs/{id} (PVE8+) or /cluster/backup/{id}.
+
+        No automatic retry after a timeout: the server may have deleted
+        the job even though the client saw no answer.  The timeout is
+        re-raised with an explicit "outcome unknown" hint so the UI can
+        suggest refreshing the job list instead of a blind retry.
+        """
+        if self._use_jobs_path(pve_major):
             try:
-                return self._s.call(self._s.proxmox.cluster.jobs(_q(job_id)).delete)
-            except Exception:
-                pass
+                return self._s.call(
+                    self._s.proxmox.cluster.jobs(_q(job_id)).delete
+                )
+            except ProxmoxTimeoutError as exc:
+                self._raise_ambiguous(exc, "the deletion")
         return self._s.call(self._s.proxmox.cluster.backup(_q(job_id)).delete)

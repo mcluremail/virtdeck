@@ -5,6 +5,7 @@ Uses mock objects to simulate proxmoxer responses without real PVE connections.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -28,6 +29,7 @@ from virtdeck.provider import (
     VmAPI,
     from_exception,
 )
+from virtdeck.provider._session import _q
 
 # -- _errors tests --
 
@@ -91,6 +93,40 @@ class TestErrors:
         result = from_exception(exc)
         assert isinstance(result, ProxmoxApiError)
         assert result.code == "api"
+
+    def test_status_code_wins_over_message_text(self):
+        # FakeResourceException mimics proxmoxer: exact status attribute;
+        # a message that merely CONTAINS "401" must not misclassify a 400
+        exc = FakeResourceException(400, "Bad Request", "VM 401 not found")
+        result = from_exception(exc)
+        assert isinstance(result, ProxmoxApiError)
+        assert result.status_code == 400
+
+    @pytest.mark.parametrize("status,cls", [
+        (401, ProxmoxAuthError),
+        (404, ProxmoxNotFoundError),
+        (504, ProxmoxTimeoutError),
+        (501, ProxmoxApiError),
+        (500, ProxmoxApiError),
+    ])
+    def test_exact_status_classification(self, status, cls):
+        result = from_exception(FakeResourceException(status, "msg"))
+        assert isinstance(result, cls)
+        assert result.status_code == status
+
+    def test_403_permission_vs_auth(self):
+        perm = from_exception(FakeResourceException(
+            403, "Forbidden", "permission check failed"))
+        assert isinstance(perm, ProxmoxPermissionError)
+        assert perm.status_code == 403
+        auth = from_exception(FakeResourceException(403, "Forbidden", "no"))
+        assert isinstance(auth, ProxmoxAuthError)
+        assert auth.status_code == 403
+
+    def test_requests_exception_without_status_falls_back(self):
+        # requests exceptions carry no status_code — regex path applies
+        result = from_exception(Exception("404 Client Error: not found"))
+        assert isinstance(result, ProxmoxNotFoundError)
 
 
 class FakeResourceException(Exception):
@@ -412,11 +448,35 @@ class TestClusterAPI:
         assert result[0]["type"] == "vzdump"
 
     def test_list_all_jobs_pve8_fallback(self, mock_session):
-        mock_session.proxmox.cluster.jobs.get = MagicMock(side_effect=Exception("no jobs"))
+        # 404/501 from /cluster/jobs = endpoint absent (PVE7) → legacy path
+        mock_session.proxmox.cluster.jobs.get = MagicMock(
+            side_effect=ProxmoxApiError("no jobs", status_code=404))
         mock_session.proxmox.cluster.backup.get = MagicMock(return_value=[{"id": "bk1"}])
         api = ClusterAPI(mock_session)
         result = api.list_all_jobs(pve_major=8)
         assert len(result) == 1
+        mock_session.proxmox.cluster.backup.get.assert_called_once()
+
+    def test_list_all_jobs_pve8_501_fallback(self, mock_session):
+        mock_session.proxmox.cluster.jobs.get = MagicMock(
+            side_effect=ProxmoxApiError("not implemented", status_code=501))
+        mock_session.proxmox.cluster.backup.get = MagicMock(return_value=[])
+        api = ClusterAPI(mock_session)
+        assert api.list_all_jobs(pve_major=8) == []
+
+    @pytest.mark.parametrize("exc", [
+        ProxmoxApiError("storage error", status_code=500),
+        ProxmoxTimeoutError("read timed out"),
+        ProxmoxAuthError("401 ticket invalid"),
+    ])
+    def test_list_all_jobs_pve8_no_fallback_on_other_errors(self, mock_session, exc):
+        # a read failure on /cluster/jobs must surface, not silently
+        # degrade to a legacy listing (which could look like "no jobs")
+        mock_session.proxmox.cluster.jobs.get = MagicMock(side_effect=exc)
+        api = ClusterAPI(mock_session)
+        with pytest.raises(type(exc)):
+            api.list_all_jobs(pve_major=8)
+        mock_session.proxmox.cluster.backup.get.assert_not_called()
 
     def test_list_all_jobs_pve7(self, mock_session):
         mock_session.proxmox.cluster.backup.get = MagicMock(return_value=[{"id": "bk1"}])
@@ -425,19 +485,120 @@ class TestClusterAPI:
         assert len(result) == 1
 
     def test_create_backup_job_pve8(self, mock_session):
+        mock_session.proxmox.cluster.jobs.get = MagicMock(return_value=[])
         mock_session.proxmox.cluster.jobs.post = MagicMock(return_value="OK")
         api = ClusterAPI(mock_session)
         api.create_backup_job({"storage": "local"}, pve_major=8)
-        mock_session.proxmox.cluster.jobs.post.assert_called_once()
+        mock_session.proxmox.cluster.jobs.post.assert_called_once_with(
+            storage="local", type="vzdump"
+        )
 
-    def test_delete_backup_job_pve8_fallback(self, mock_session):
+    def test_create_backup_job_pve8_endpoint_absent(self, mock_session):
+        # probe says PVE7 → legacy path, /cluster/jobs never written
+        mock_session.proxmox.cluster.jobs.get = MagicMock(
+            side_effect=ProxmoxApiError("no jobs", status_code=404))
+        mock_session.proxmox.cluster.backup.post = MagicMock(return_value="OK")
+        api = ClusterAPI(mock_session)
+        api.create_backup_job({"storage": "local"}, pve_major=8)
+        mock_session.proxmox.cluster.backup.post.assert_called_once_with(
+            storage="local"
+        )
+        mock_session.proxmox.cluster.jobs.post.assert_not_called()
+
+    def test_create_backup_job_pve8_timeout_not_retried(self, mock_session):
+        # D3: a timed-out create may have been applied — never silently
+        # repeat it on the legacy path (duplicate job)
+        mock_session.proxmox.cluster.jobs.get = MagicMock(return_value=[])
+        mock_session.proxmox.cluster.jobs.post = MagicMock(
+            side_effect=ProxmoxTimeoutError("read timed out"))
+        mock_session.proxmox.cluster.backup.post = MagicMock()
+        api = ClusterAPI(mock_session)
+        with pytest.raises(ProxmoxTimeoutError, match="may still have been applied"):
+            api.create_backup_job({"storage": "local"}, pve_major=8)
+        mock_session.proxmox.cluster.backup.post.assert_not_called()
+
+    def test_create_backup_job_pve8_validation_not_masked(self, mock_session):
+        # D3: a 400 must reach the user, not be swallowed by a legacy retry
+        mock_session.proxmox.cluster.jobs.get = MagicMock(return_value=[])
+        mock_session.proxmox.cluster.jobs.post = MagicMock(
+            side_effect=ProxmoxApiError("storage 'x' does not exist",
+                                        status_code=400))
+        mock_session.proxmox.cluster.backup.post = MagicMock()
+        api = ClusterAPI(mock_session)
+        with pytest.raises(ProxmoxApiError, match="storage 'x'"):
+            api.create_backup_job({"storage": "x"}, pve_major=8)
+        mock_session.proxmox.cluster.backup.post.assert_not_called()
+
+    def test_backup_job_probe_cached(self, mock_session):
+        # the availability probe runs once per session, writes reuse it
+        mock_session.proxmox.cluster.jobs.get = MagicMock(return_value=[])
+        mock_session.proxmox.cluster.jobs.post = MagicMock(return_value="OK")
+        api = ClusterAPI(mock_session)
+        api.create_backup_job({"storage": "local"}, pve_major=8)
+        api.create_backup_job({"storage": "local"}, pve_major=8)
+        assert mock_session.proxmox.cluster.jobs.get.call_count == 1
+        assert mock_session.proxmox.cluster.jobs.post.call_count == 2
+
+    def test_delete_backup_job_pve8_timeout_not_retried(self, mock_session):
+        # D3: a timed-out delete may have been applied — re-raised with an
+        # explicit "outcome unknown" hint, no automatic retry
+        mock_session.proxmox.cluster.jobs.get = MagicMock(return_value=[])
         chain_j = mock_session.proxmox.cluster.jobs
-        chain_j.return_value.delete = MagicMock(side_effect=Exception("fail"))
+        chain_j.return_value.delete = MagicMock(
+            side_effect=ProxmoxTimeoutError("read timed out"))
+        chain_b = mock_session.proxmox.cluster.backup
+        chain_b.return_value.delete = MagicMock()
+        api = ClusterAPI(mock_session)
+        with pytest.raises(ProxmoxTimeoutError, match="may still have been applied"):
+            api.delete_backup_job("job1", pve_major=8)
+        chain_b.return_value.delete.assert_not_called()
+
+    def test_delete_backup_job_pve8_endpoint_absent(self, mock_session):
+        # probe says PVE7 → legacy path decides BEFORE any write attempt
+        mock_session.proxmox.cluster.jobs.get = MagicMock(
+            side_effect=ProxmoxApiError("no jobs", status_code=404))
         chain_b = mock_session.proxmox.cluster.backup
         chain_b.return_value.delete = MagicMock(return_value=None)
         api = ClusterAPI(mock_session)
         api.delete_backup_job("job1", pve_major=8)
         chain_b.assert_called_with("job1")
+        chain_b.return_value.delete.assert_called_once()
+
+    def test_delete_backup_job_pve8_404_job_absent(self, mock_session):
+        # on a live PVE8+ endpoint a 404 means the job is absent —
+        # must be raised as-is, not masked by a legacy re-delete
+        mock_session.proxmox.cluster.jobs.get = MagicMock(return_value=[])
+        chain_j = mock_session.proxmox.cluster.jobs
+        chain_j.return_value.delete = MagicMock(
+            side_effect=ProxmoxApiError("no such job", status_code=404))
+        chain_b = mock_session.proxmox.cluster.backup
+        api = ClusterAPI(mock_session)
+        with pytest.raises(ProxmoxApiError, match="no such job"):
+            api.delete_backup_job("job1", pve_major=8)
+        chain_b.return_value.delete.assert_not_called()
+
+    def test_update_backup_job_pve8(self, mock_session):
+        mock_session.proxmox.cluster.jobs.get = MagicMock(return_value=[])
+        chain = mock_session.proxmox.cluster.jobs
+        chain.return_value.put = MagicMock(return_value="OK")
+        api = ClusterAPI(mock_session)
+        api.update_backup_job("job1", {"id": "job1", "schedule": "02:00"},
+                              pve_major=8)
+        chain.assert_called_with("job1")
+        chain.return_value.put.assert_called_once_with(
+            schedule="02:00", type="vzdump"
+        )
+
+    def test_update_backup_job_pve8_timeout_not_retried(self, mock_session):
+        mock_session.proxmox.cluster.jobs.get = MagicMock(return_value=[])
+        chain = mock_session.proxmox.cluster.jobs
+        chain.return_value.put = MagicMock(
+            side_effect=ProxmoxTimeoutError("read timed out"))
+        mock_session.proxmox.cluster.backup.return_value.put = MagicMock()
+        api = ClusterAPI(mock_session)
+        with pytest.raises(ProxmoxTimeoutError, match="may still have been applied"):
+            api.update_backup_job("job1", {"schedule": "03:00"}, pve_major=8)
+        mock_session.proxmox.cluster.backup.return_value.put.assert_not_called()
 
     def test_create_backup_job_pve7(self, mock_session):
         mock_session.proxmox.cluster.backup.post = MagicMock(return_value="OK")
@@ -584,7 +745,7 @@ class TestVmAPI:
         qemu_chain = chain.return_value.qemu
         qemu_chain.return_value.migrate.post = MagicMock(return_value="UPID:123")
         api = VmAPI(mock_session)
-        api.migrate("n1", 100, "n2", with_local_disks=True)
+        api.migrate("n1", 100, "qemu", "n2", with_local_disks=True)
         qemu_chain.return_value.migrate.post.assert_called_once_with(
             target="n2", **{"with-local-disks": 1}
         )
@@ -701,6 +862,220 @@ class TestStorageAPI:
         storage_chain.return_value.post.assert_called_once()
 
 
+class TestContentUrlEncoding:
+    """URL construction for content delete/move — against the REAL proxmoxer.
+
+    proxmoxer splits a resource-id string on "/" and inserts the parts raw
+    into the URL (proxmoxer/core.py ProxmoxResource.__call__), so a volid
+    like ``local:iso/debian-12.iso`` MUST be percent-encoded via ``_q()``
+    before it goes into the resource chain — otherwise it breaks the API
+    path into an extra segment and PVE answers 404.  Mock-based call
+    assertions cannot catch this (a MagicMock accepts anything); only the
+    real URL builder can.  No network: token auth defers login, and
+    ``ProxmoxSession.call`` is intercepted before the verb fires.
+    """
+
+    @pytest.fixture()
+    def url_capture(self, monkeypatch):
+        """Real ProxmoxSession whose call() records the request URL."""
+        session = ProxmoxSession({
+            "host": "h.example", "user": "root@pam",
+            "token_name": "t", "token_value": "v", "trust_ssl": True,
+        })
+        captured: dict = {}
+
+        def fake_call(fn, **kwargs):
+            captured["url"] = fn.__self__._store["base_url"]
+            captured["kwargs"] = kwargs
+            return "UPID:test"
+
+        monkeypatch.setattr(session, "call", fake_call)
+        return session, captured
+
+    @staticmethod
+    def _path(url: str) -> str:
+        prefix = "https://h.example:8006/api2/json"
+        assert url.startswith(prefix), url
+        return url[len(prefix):]
+
+    # -- delete_content --
+
+    @pytest.mark.parametrize("volid", [
+        "local:iso/debian-12.iso",
+        "local:iso/deb+12 (1).iso",
+        "local:iso/50%off (1).iso",
+        "pbs:backup/vm/100/2026-01-01T00:00:00Z",
+        "local-zfs:subvol-101-disk-0",  # no slash — must stay one segment
+    ])
+    def test_delete_content_volid_single_segment(self, url_capture, volid):
+        session, captured = url_capture
+        api = StorageAPI(session)
+        api.delete_content("pve01", "local", volid)
+        path = self._path(captured["url"])
+        # exactly one segment after /content/, percent-encoded
+        assert path.count("/content/") == 1, path
+        tail = path.rsplit("/content/", 1)[1]
+        assert "/" not in tail, f"volid broke the path: {path}"
+        assert tail == _q(volid), path
+        assert path == (f"/nodes/pve01/storage/local/content/{_q(volid)}")
+
+    def test_delete_content_storage_encoded(self, url_capture):
+        session, captured = url_capture
+        api = StorageAPI(session)
+        api.delete_content("pve01", "my storage", "local:iso/x.iso")
+        assert self._path(captured["url"]).startswith(
+            "/nodes/pve01/storage/my%20storage/content/")
+
+    # -- move_content --
+
+    def test_move_content_volid_single_segment(self, url_capture):
+        session, captured = url_capture
+        api = StorageAPI(session)
+        api.move_content("pve01", "local", "local:iso/debian-12.iso",
+                         "nfs1", target_vmid=100, delete_source=True)
+        path = self._path(captured["url"])
+        tail = path.rsplit("/content/", 1)[1]
+        assert "/" not in tail, f"volid broke the path: {path}"
+        assert tail == _q("local:iso/debian-12.iso"), path
+        # form params passed untouched (requests encodes them)
+        assert captured["kwargs"] == {
+            "target_storage": "nfs1", "target_vmid": 100, "delete": 1,
+        }
+
+    def test_move_content_form_params_untouched(self, url_capture):
+        session, captured = url_capture
+        api = StorageAPI(session)
+        api.move_content("pve01", "local", "local:iso/x.iso", "nfs1")
+        assert captured["kwargs"] == {"target_storage": "nfs1"}
+
+
+class TestStorageUploadErrors:
+    """D4: upload_file failures must be classified ProxmoxApiError with the
+    HTTP status preserved, and parsing must never raise by itself."""
+
+    @pytest.fixture()
+    def api(self):
+        session = ProxmoxSession({
+            "host": "h.example", "user": "root@pam",
+            "token_name": "t", "token_value": "v", "trust_ssl": True,
+        })
+        return StorageAPI(session)
+
+    @staticmethod
+    def _fake_post(resp):
+        return MagicMock(return_value=resp)
+
+    @staticmethod
+    def _resp(ok=True, status=200, body=None, text="", reason=None):
+        r = SimpleNamespace(ok=ok, status_code=status, text=text,
+                            reason=reason)
+        if body is None:
+            r.json = MagicMock(side_effect=ValueError("no json"))
+        else:
+            r.json = MagicMock(return_value=body)
+        return r
+
+    def _upload(self, api, monkeypatch, resp=None, exc=None, tmp_path=None):
+        import requests as requests_mod
+        f = tmp_path / "test.iso"
+        f.write_bytes(b"x" * 1024)
+        if exc is not None:
+            monkeypatch.setattr(requests_mod, "post",
+                                MagicMock(side_effect=exc))
+        else:
+            monkeypatch.setattr(requests_mod, "post",
+                                self._fake_post(resp))
+        return api.upload_file("n1", "local", "iso", str(f))
+
+    # -- error classification --
+
+    def test_401_classified(self, api, monkeypatch, tmp_path):
+        resp = self._resp(ok=False, status=401,
+                          body={"data": {"message": "ticket invalid"}})
+        with pytest.raises(ProxmoxApiError) as ei:
+            self._upload(api, monkeypatch, resp, tmp_path=tmp_path)
+        assert ei.value.status_code == 401
+        assert "ticket invalid" in str(ei.value)
+
+    def test_403_classified(self, api, monkeypatch, tmp_path):
+        resp = self._resp(ok=False, status=403,
+                          body={"data": {"message": "permission check failed"}})
+        with pytest.raises(ProxmoxApiError) as ei:
+            self._upload(api, monkeypatch, resp, tmp_path=tmp_path)
+        assert ei.value.status_code == 403
+        assert "permission" in str(ei.value)
+
+    def test_413_classified(self, api, monkeypatch, tmp_path):
+        resp = self._resp(ok=False, status=413,
+                          body={"data": {"message": "file too large"}})
+        with pytest.raises(ProxmoxApiError) as ei:
+            self._upload(api, monkeypatch, resp, tmp_path=tmp_path)
+        assert ei.value.status_code == 413
+
+    def test_500_invalid_json_body(self, api, monkeypatch, tmp_path):
+        # pveproxy-style HTML/plain error: no JSON — fall back to
+        # reason/body snippet without raising during parsing
+        resp = self._resp(ok=False, status=500, body=None,
+                          text="<html>oops</html>", reason="Internal Error")
+        with pytest.raises(ProxmoxApiError) as ei:
+            self._upload(api, monkeypatch, resp, tmp_path=tmp_path)
+        assert ei.value.status_code == 500
+        assert "Internal Error" in str(ei.value)
+
+    def test_599_anyevent_hint(self, api, monkeypatch, tmp_path):
+        resp = self._resp(ok=False, status=599, body=None,
+                          text="garbled", reason=None)
+        with pytest.raises(ProxmoxApiError) as ei:
+            self._upload(api, monkeypatch, resp, tmp_path=tmp_path)
+        assert ei.value.status_code == 599
+        assert "pveproxy" in str(ei.value)
+
+    def test_network_error_classified(self, api, monkeypatch, tmp_path):
+        import requests as requests_mod
+        with pytest.raises(ProxmoxTimeoutError):
+            self._upload(api, monkeypatch, exc=requests_mod.exceptions.ConnectTimeout(
+                "Read timed out. (read timeout=300)"), tmp_path=tmp_path)
+
+    # -- success paths --
+
+    def test_success_returns_upid(self, api, monkeypatch, tmp_path):
+        resp = self._resp(ok=True, status=200, body={"data": "UPID:n1:1"})
+        upid = self._upload(api, monkeypatch, resp, tmp_path=tmp_path)
+        assert upid == "UPID:n1:1"
+
+    def test_success_invalid_json_no_crash(self, api, monkeypatch, tmp_path):
+        resp = self._resp(ok=True, status=200, body=None, text="junk")
+        with pytest.raises(ProxmoxApiError, match="not valid JSON"):
+            self._upload(api, monkeypatch, resp, tmp_path=tmp_path)
+
+    def test_success_non_dict_json_no_crash(self, api, monkeypatch, tmp_path):
+        resp = self._resp(ok=True, status=200, body=["unexpected"])
+        with pytest.raises(ProxmoxApiError, match="unexpected upload response"):
+            self._upload(api, monkeypatch, resp, tmp_path=tmp_path)
+
+    def test_read_capped_no_whole_file_in_ram(self, api, monkeypatch, tmp_path):
+        # D4/R5: a read(-1) caller must not pull the whole file into memory
+        import requests as requests_mod
+        f = tmp_path / "big.iso"
+        f.write_bytes(b"\0" * (1024 * 1024))
+        sizes = []
+
+        def reading_post(url, **kwargs):
+            wrapper = kwargs["files"]["filename"][1]
+            while True:
+                chunk = wrapper.read(-1)
+                if not chunk:
+                    break
+                sizes.append(len(chunk))
+            return self._resp(ok=True, status=200, body={"data": "UPID:x"})
+
+        monkeypatch.setattr(requests_mod, "post", reading_post)
+        upid = api.upload_file("n1", "local", "iso", str(f))
+        assert upid == "UPID:x"
+        assert sizes and max(sizes) <= 262144
+        assert sum(sizes) == 1024 * 1024  # the file is streamed fully
+
+
 class TestPoolAPI:
     def test_list(self, mock_session):
         mock_session.proxmox.pools.get = MagicMock(return_value=[{"poolid": "p1"}])
@@ -755,6 +1130,83 @@ class TestTaskAPI:
         api = TaskAPI(mock_session)
         status, exitstatus = api.poll("n1", "UPID:123", timeout=0.1, interval=0.05)
         assert status == "timeout"
+
+    def test_poll_transient_error_tolerated(self, mock_session):
+        # D2: one network blip mid-poll must not fail the operation —
+        # the task completed fine on the server
+        chain = mock_session.proxmox.nodes
+        tasks_chain = chain.return_value.tasks
+        tasks_chain.return_value.status.get = MagicMock(side_effect=[
+            {"data": {"status": "running"}},
+            ProxmoxNetworkError("connection reset by peer"),
+            {"data": {"status": "stopped", "exitstatus": "OK"}},
+        ])
+        api = TaskAPI(mock_session)
+        status, exitstatus = api.poll("n1", "UPID:123", timeout=5, interval=0.01)
+        assert (status, exitstatus) == ("stopped", "OK")
+
+    def test_poll_budget_exhausted_poll_failed(self, mock_session):
+        # 4 consecutive transport failures with budget 3 → outcome UNKNOWN
+        chain = mock_session.proxmox.nodes
+        tasks_chain = chain.return_value.tasks
+        tasks_chain.return_value.status.get = MagicMock(
+            side_effect=ProxmoxNetworkError("connection reset by peer"))
+        api = TaskAPI(mock_session)
+        status, detail = api.poll("n1", "UPID:123", timeout=5, interval=0.01)
+        assert status == "poll_failed"
+        assert "connection reset" in detail
+        # all reads attempted (not a fast bail-out), none succeeded
+        assert tasks_chain.return_value.status.get.call_count == 4
+
+    def test_poll_success_resets_budget(self, mock_session):
+        # alternating error/success never exhausts the consecutive budget
+        chain = mock_session.proxmox.nodes
+        tasks_chain = chain.return_value.tasks
+        err = ProxmoxNetworkError("blip")
+        tasks_chain.return_value.status.get = MagicMock(side_effect=[
+            {"data": {"status": "running"}},
+            err,
+            {"data": {"status": "running"}},
+            err,
+            {"data": {"status": "stopped", "exitstatus": "OK"}},
+        ])
+        api = TaskAPI(mock_session)
+        status, exitstatus = api.poll("n1", "UPID:123", timeout=5, interval=0.01)
+        assert (status, exitstatus) == ("stopped", "OK")
+
+    def test_poll_nontransport_fails_fast(self, mock_session):
+        # auth/permission errors cannot heal — fail immediately, no budget
+        chain = mock_session.proxmox.nodes
+        tasks_chain = chain.return_value.tasks
+        tasks_chain.return_value.status.get = MagicMock(
+            side_effect=ProxmoxAuthError("401 ticket invalid"))
+        api = TaskAPI(mock_session)
+        status, detail = api.poll("n1", "UPID:123", timeout=5, interval=0.01)
+        assert status == "poll_failed"
+        assert "401" in detail
+        assert tasks_chain.return_value.status.get.call_count == 1
+
+    def test_poll_empty_payloads_poll_failed(self, mock_session):
+        chain = mock_session.proxmox.nodes
+        tasks_chain = chain.return_value.tasks
+        tasks_chain.return_value.status.get = MagicMock(return_value={})
+        api = TaskAPI(mock_session)
+        status, detail = api.poll("n1", "UPID:123", timeout=5, interval=0.01,
+                                  max_poll_failures=2)
+        assert status == "poll_failed"
+        assert "empty" in detail
+
+    def test_poll_task_failure_distinct_from_poll_failure(self, mock_session):
+        # a FAILED task is a definite result, not an unknown outcome
+        chain = mock_session.proxmox.nodes
+        tasks_chain = chain.return_value.tasks
+        tasks_chain.return_value.status.get = MagicMock(
+            return_value={"data": {"status": "stopped",
+                                   "exitstatus": "TASK ERROR: volume full"}})
+        api = TaskAPI(mock_session)
+        status, detail = api.poll("n1", "UPID:123", timeout=5, interval=0.01)
+        assert status == "stopped"
+        assert detail == "TASK ERROR: volume full"
 
 
 class TestRrdAPI:

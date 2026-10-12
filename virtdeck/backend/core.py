@@ -1,6 +1,7 @@
 """Shared helpers for backend workers: SSL handling, error sanitizing, task await."""
 
 import os
+import re
 
 import urllib3
 
@@ -29,14 +30,33 @@ def _q(value):
     """URL-encode a path segment for proxmoxer."""
     from urllib.parse import quote
     return quote(str(value), safe="")
+_RE_URL = re.compile(r'https?://[^\s\'"]+')
+_RE_IPV4_PORT = re.compile(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+\b')
+# quoted host as it appears in requests/urllib3 exceptions:
+# "HTTPSConnectionPool(host='pve1.lan', port=8006)"
+_RE_QUOTED_HOST = re.compile(r"\bhost='[^']+'")
+# dotted hostname (FQDN-like) with a port: "connection to pve1.lan:8006 failed".
+# The leading label must contain a letter and the name must be dotted, so
+# timestamps ("00:00:00Z") and volid-ish text ("local:iso") are untouched.
+_RE_FQDN_PORT = re.compile(r'\b(?![\d.]+\b:)[a-zA-Z][\w-]*(?:\.[\w-]+)+:\d{2,5}\b')
+
+
 def _sanitize_error(exc):
-    """Sanitize exception message for UI display — strip URLs, hostnames, credential fragments."""
+    """Sanitize exception message for UI display — strip URLs, hostnames, credential fragments.
+
+    Surgical by design: only transport-identifying fragments are replaced
+    ([url]/[host]); the diagnostic substance (error classes, PVE messages,
+    paths, timestamps) is preserved for the user.
+    """
     msg = str(exc)
-    import re as _re
     # Strip URLs
-    msg = _re.sub(r'https?://[^\s\'"]+', '[url]', msg)
+    msg = _RE_URL.sub('[url]', msg)
     # Strip host:port patterns
-    msg = _re.sub(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+\b', '[host]', msg)
+    msg = _RE_IPV4_PORT.sub('[host]', msg)
+    # Strip quoted hosts from requests exceptions: host='pve1.lan'
+    msg = _RE_QUOTED_HOST.sub("[host]", msg)
+    # Strip dotted hostnames with ports: pve1.lan:8006
+    msg = _RE_FQDN_PORT.sub('[host]', msg)
     # Limit length
     if len(msg) > 150:
         msg = msg[:150] + "..."
@@ -51,21 +71,30 @@ def _await_task(provider, node_name, result, timeout=120):
     PVE returns a UPID for async operations and a data payload for
     synchronous ones. Returns (True, "") on success — task finished with
     exitstatus OK, or the call completed synchronously without a UPID —
-    and (False, errmsg) on task failure or timeout.
+    and (False, errmsg) on task failure, unreadable status or timeout.
+
+    Distinguishes (audit stage 3): a FAILED task (exitstatus text from
+    PVE) from an UNREADABLE one (poll_failed — the outcome is unknown,
+    the task may still be running) from a client-side deadline (timeout).
+    All error texts are sanitized before they reach the UI.
     """
     upid = result.get("data", result) if isinstance(result, dict) else result
     if not (isinstance(upid, str) and upid.startswith("UPID:")):
         return True, ""
-    status, exitstatus = provider.tasks.poll(
+    status, detail = provider.tasks.poll(
         node_name, upid, timeout=timeout, interval=1.0
     )
-    if status == "stopped" and exitstatus == "OK":
-        return True, ""
+    if status == "stopped":
+        if detail == "OK":
+            return True, ""
+        return False, _sanitize_error(detail) if detail else "task failed"
+    if status == "poll_failed":
+        return False, _sanitize_error(
+            f"task outcome unknown — status poll failed: {detail}")
     if status == "timeout":
-        # the task is still alive in PVE — not a failure, but not a
-        # success either; the caller must not claim "completed"
         return False, f"still running after {int(timeout)} s"
-    return False, exitstatus or status
+    # defensive: unknown poll status — treat like unreadable state
+    return False, _sanitize_error(detail) if detail else f"unknown task status: {status}"
 
 # ----------------------------------------------------------------------
 # VmSnapshotCreateWorker

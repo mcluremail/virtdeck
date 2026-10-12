@@ -5,6 +5,7 @@ are used by several files (test_runtime_contract, test_optimistic).
 """
 
 import pytest
+from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
 
 from tests.ui.runtime_contract import (
     install_autofire_dialogs,
@@ -12,6 +13,36 @@ from tests.ui.runtime_contract import (
     install_guard,
     install_pyqtgraph_shims,
 )
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_teardown(item):
+    """Drain Qt's deferred-delete queue after every UI test teardown.
+
+    pytest-qt closes tracked widgets in its own ``pytest_runtest_teardown``
+    hook (``close()`` + ``deleteLater()``), but DeferredDelete events are
+    only delivered by a NESTED event loop — at loop level 0 they stay
+    queued forever.  Widgets then accumulate across the whole UI suite
+    (each MainWindow contributes hundreds) and every
+    ``QApplication.setStyleSheet`` (theme load/retheme) re-polishes all of
+    them, degrading the suite quadratically (a full run went from minutes
+    to 30+).
+
+    This wrapper runs OUTSIDE pytest-qt's (which is registered
+    ``trylast``): after it has queued the deletes, we spin a short nested
+    event loop, which delivers them through Qt's normal machinery — small
+    batches, in a real loop, never via ``sendPostedEvents(DeferredDelete)``
+    outside a loop (that segfaults in PySide6: GC re-entrancy while large
+    widget trees are destroyed).  Must be a hook, not a fixture: fixtures
+    are torn down before the pytest-qt hook runs.
+    """
+    result = yield
+    if QCoreApplication.instance() is None:
+        return result
+    loop = QEventLoop()
+    QTimer.singleShot(0, loop.quit)
+    loop.exec()
+    return result
 
 
 @pytest.fixture()

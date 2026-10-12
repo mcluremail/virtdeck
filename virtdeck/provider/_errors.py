@@ -13,6 +13,9 @@ class ProxmoxError(Exception):
     """Base for all Proxmox API errors."""
 
     code: str = "unknown"
+    # HTTP status when the error came from an API response (None for
+    # transport-level errors).  Set by from_exception / ProxmoxApiError.
+    status_code: int | None = None
 
 
 class ProxmoxAuthError(ProxmoxError):
@@ -96,8 +99,21 @@ def _classify_anyevent(exc: Exception, msg: str) -> ProxmoxNetworkError | None:
     return ProxmoxNetworkError(f"HTTP {code} — {hint} | {msg}")
 
 
+def _with_status(err: ProxmoxError, status: int | None) -> ProxmoxError:
+    """Attach the HTTP status to a classified error (probe-friendly)."""
+    if status is not None:
+        err.status_code = status
+    return err
+
+
 def from_exception(exc: Exception) -> ProxmoxError:
-    """Classify a raw exception from requests/proxmoxer into a ProxmoxError subclass."""
+    """Classify a raw exception from requests/proxmoxer into a ProxmoxError subclass.
+
+    An exact ``status_code`` attribute (proxmoxer ResourceException) wins
+    over message-text matching: it cannot false-positive on VMIDs or task
+    texts that merely contain "401"/"404".  The regexes remain as the
+    fallback for exceptions without a status (requests/urllib3 errors).
+    """
     if isinstance(exc, ProxmoxError):
         return exc
     msg = str(exc)
@@ -106,6 +122,21 @@ def from_exception(exc: Exception) -> ProxmoxError:
     anyevent = _classify_anyevent(exc, msg)
     if anyevent is not None:
         return anyevent
+
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int):
+        if status == 401:
+            return _with_status(ProxmoxAuthError(msg), status)
+        if status == 403:
+            cls = (ProxmoxPermissionError if _RE_PERMISSION.search(msg)
+                   else ProxmoxAuthError)
+            return _with_status(cls(msg), status)
+        if status == 404:
+            return _with_status(ProxmoxNotFoundError(msg), status)
+        if status == 504:
+            return _with_status(ProxmoxTimeoutError(msg), status)
+        return _with_status(ProxmoxApiError(msg), status)
+
     if exc_name == "TimeoutError" or "Timeout" in exc_name or _RE_TIMEOUT.search(msg):
         return ProxmoxTimeoutError(msg)
     if _RE_PERMISSION.search(msg):
