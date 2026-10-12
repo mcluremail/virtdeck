@@ -285,6 +285,8 @@ jobs:
           body: |
             ## VirtDeck ${{ github.ref_name }}
 
+            Сайт: **https://virtdeck.mclure.ru**
+
             Скачать: `.deb` для Debian/Ubuntu, `.rpm` для Fedora/RHEL, `.zip` для Windows; `.tar.gz` / `.whl` — установка из исходников.
 
             Debian 12 / 13 и Ubuntu 24.04 — из пакета-репозитория (PySide6 приедет оттуда же, pip не нужен):

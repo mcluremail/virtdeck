@@ -8,6 +8,8 @@ A fast, native desktop client for Proxmox VE — monitor clusters and hosts, man
 
 VirtDeck speaks directly to the PVE API (port 8006) and to PBS (port 8007), and adds what no competitor has: **Fleet Health** — a single report across all your independent clusters: backup compliance, version drift, storage runway and snapshot sprawl.
 
+**Website:** [virtdeck.mclure.ru](https://virtdeck.mclure.ru)
+
 ![VirtDeck](Screenshots/main.png?v=3)
 
 ## Highlights
@@ -28,11 +30,13 @@ VirtDeck speaks directly to the PVE API (port 8006) and to PBS (port 8007), and 
 | Platform | Format | Link |
 |----------|--------|------|
 | Windows | .zip / .exe installer | [Releases](https://github.com/mcluremail/virtdeck/releases) |
-| Debian / Ubuntu | .deb | [Releases](https://github.com/mcluremail/virtdeck/releases) |
-| Fedora / RHEL | .rpm | [Releases](https://github.com/mcluremail/virtdeck/releases) |
+| Debian / Ubuntu | package repository | [Installation](#installation) — `apt install virtdeck` |
+| Fedora / RHEL | package repository | [Installation](#installation) — `dnf install virtdeck` |
 | Any | .tar.gz / .whl | [Releases](https://github.com/mcluremail/virtdeck/releases) |
 
-Latest release: [v3.0.0](https://github.com/mcluremail/virtdeck/releases/tag/v3.0.0)
+Downloads are also listed on the [website](https://virtdeck.mclure.ru).
+
+Latest release: [v3.0.1](https://github.com/mcluremail/virtdeck/releases/tag/v3.0.1)
 
 ## Changelog
 
