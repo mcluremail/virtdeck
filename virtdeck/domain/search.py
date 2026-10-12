@@ -96,11 +96,12 @@ def global_search(
 
     for pool in pool_repo.all():
         if _matches(q, pool.poolid):
+            # Same poolid may exist on independent hosts — show which one
             results.append(SearchResult(
                 kind="pool",
                 label=pool.poolid,
-                detail="",
-                key=("pool", pool.poolid),
+                detail=pool.host_name,
+                key=("pool", pool.poolid, pool.host_name),
             ))
 
     for storage in storage_repo.all():

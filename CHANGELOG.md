@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — concurrent refresh consistency (external audit stage 4.2)
+
+**Bug fixes**
+- Late answers: a refresh answer is judged by the attempt it was made in, not by its arrival time. `RefreshCoordinator` now stamps every attempt with a monotonic epoch (incremented when an attempt starts or is discarded) and records the epoch of the last snapshot APPLIED per host; an answer older than that is dropped silently — it does not overwrite the fresher snapshot, re-trigger notifications, re-run the first selection or rewrite the cache. Previously a hard cycle closed by the watchdog could still accept a late answer with stale content and wipe fresher data applied by a later soft cycle. A lone late answer for a host with no fresher data is still accepted, so the only available result is never lost
+- Pools: pool identity is now `(host_name, poolid)` — a poolid is unique within a PVE cluster/standalone instance but not across independent infrastructures, so identical ids of two hosts silently replaced each other before. A hard cycle no longer clears the shared pool repository: pools of hosts whose workers fail or are rejected keep their last known-good data, only hosts that left the configuration are dropped; a confirmed empty list clears the host's pools, a failed pool fetch signals "not fetched" (`pools: null`) instead of pretending "no pools". The create-VM dialog receives the pools of the host the VM is created on, and global search distinguishes same-id pools by host
+- Cluster config: two active representatives of the SAME configured cluster duplicated every node and VM in the repositories, counters and the tree. The first representative per cluster name is kept, the duplicates are dropped with an explicit notification instead of silently doubling resources. Clusters with different names but coinciding node names are treated as independent infrastructures and never merged — identity is the configured cluster name only, node names are not compared across clusters
+
 ## Unreleased — data integrity: refresh, cache and snapshots (external audit stage 4)
 
 **Bug fixes**

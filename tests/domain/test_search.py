@@ -138,7 +138,19 @@ class TestGlobalSearch:
         results = search("dev")
         assert len(results) == 1
         assert results[0].kind == "pool"
-        assert results[0].key == ("pool", "dev")
+        assert results[0].key == ("pool", "dev", "")
+
+    def test_pool_same_id_different_hosts_distinct_keys(self):
+        """Same poolid on two hosts — both found, keys distinguish them
+        (audit 4.2, D2)."""
+        repo = PoolRepository()
+        repo.add(Pool(poolid="prod", host_name="h1"))
+        repo.add(Pool(poolid="prod", host_name="h2"))
+        results = global_search("prod", NodeRepository(), VmRepository(),
+                                StorageRepository(), repo)
+        assert len(results) == 2
+        assert {r.key for r in results} == {("pool", "prod", "h1"),
+                                            ("pool", "prod", "h2")}
 
     def test_storage_standalone(self):
         results = search("ceph")

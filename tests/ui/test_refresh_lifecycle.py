@@ -24,6 +24,9 @@ from virtdeck.domain import (
     Node as DomainNode,
 )
 from virtdeck.domain import (
+    Pool as DomainPool,
+)
+from virtdeck.domain import (
     Storage as DomainStorage,
 )
 from virtdeck.domain import (
@@ -48,10 +51,10 @@ def _st(node="pve1", storage="local"):
             "content": "iso,vztmpl", "used": 1, "total": 10}
 
 
-def _ok(host, nodes, vms=(), storages=()):
+def _ok(host, nodes, vms=(), storages=(), pools=()):
     return {"host": host, "status": "ok", "nodes": list(nodes),
             "vms": list(vms), "storages": list(storages),
-            "pools": [], "iso_images": {}, "ha_groups": []}
+            "pools": list(pools), "iso_images": {}, "ha_groups": []}
 
 
 def _err(host, msg="connection refused"):
@@ -452,3 +455,346 @@ def test_cache_keeps_cluster_nodes_despite_name_difference(
         assert mw._vm_repo.get("cl1", 10) is not None
     finally:
         mw.close()
+
+
+# --- Audit 4.2 / D1: late answers and cycle competition ------------------
+
+
+def test_late_hard_answer_after_soft_does_not_overwrite(
+        main_window, monkeypatch):
+    """D1, the audit scenario: cycle A hangs, the watchdog closes it, a
+    soft cycle applies a fresher snapshot — the delayed answer of cycle A
+    must not overwrite it, neither in the repos nor in the cache."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    mw.nodes_cfg = [_cfg("h1")]
+
+    mw.refresh_data()
+    gen_a = mw._refresh.hard_gen
+    epoch_a = mw._refresh.epoch
+
+    # Watchdog closes cycle A; a soft cycle applies fresh data
+    mw._refresh._hard_start = time.monotonic() - (mw._refresh.hard_timeout + 1)
+    mw.last_refresh_ts = 0.0
+    mw.soft_refresh()
+    soft_gen = mw._refresh.soft_gen
+    epoch_soft = mw._refresh.epoch
+    mw.on_soft_refresh_result(
+        _ok("h1", nodes=[_node("pve1")], vms=[_vm(300, "pve1")],
+            storages=[_st("pve1")]),
+        created[-1], soft_gen, epoch_soft)
+    assert mw._vm_repo.get("h1", 300) is not None
+
+    # The delayed answer of cycle A arrives with old content
+    mw.on_worker_finished(
+        _ok("h1", nodes=[_node("pve1")], vms=[_vm(555, "pve1")],
+            storages=[_st("pve1")]),
+        created[0], gen_a, epoch_a)
+
+    assert mw._vm_repo.get("h1", 555) is None
+    assert mw._vm_repo.get("h1", 300) is not None
+    assert ("h1", 555) not in _cached_vmids()
+    assert ("h1", 300) in _cached_vmids()
+
+
+def test_lone_late_answer_is_not_lost(main_window, monkeypatch):
+    """D1: a late answer must be rejected only when something FRESHER has
+    already been applied for the host. A lone late answer (nothing fresher
+    applied) is still accepted instead of being lost."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    mw.nodes_cfg = [_cfg("h1")]
+
+    mw.refresh_data()
+    gen_a = mw._refresh.hard_gen
+    epoch_a = mw._refresh.epoch
+    assert mw._refresh.hard_pending_count == 1
+
+    # The watchdog force-finalizes the hung cycle; no soft cycle runs and
+    # nothing fresher is applied for h1
+    mw._refresh._hard_start = time.monotonic() - (mw._refresh.hard_timeout + 1)
+    mw.last_refresh_ts = time.time()
+    mw.soft_refresh()
+    assert mw._refresh.hard_pending_count == 0
+
+    # The only available answer arrives late — it must still apply
+    mw.on_worker_finished(
+        _ok("h1", nodes=[_node("pve1")], vms=[_vm(700, "pve1")],
+            storages=[_st("pve1")]),
+        created[0], gen_a, epoch_a)
+
+    assert mw._vm_repo.get("h1", 700) is not None
+    assert mw._node_repo.get("h1", "pve1") is not None
+
+
+def test_new_hard_cycle_discards_late_answers(main_window, monkeypatch):
+    """D1: a newly started hard cycle invalidates the hung previous one —
+    its late answers never apply; the new cycle's own answers do."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    mw.nodes_cfg = [_cfg("h1")]
+
+    mw.refresh_data()                       # cycle A hangs
+    gen_a = mw._refresh.hard_gen
+    epoch_a = mw._refresh.epoch
+    mw._refresh._hard_start = time.monotonic() - (mw._refresh.hard_timeout + 1)
+    mw.last_refresh_ts = time.time()
+    mw.soft_refresh()                       # watchdog finalizes A
+
+    mw.refresh_data()                       # cycle B starts
+    gen_b = mw._refresh.hard_gen
+    epoch_b = mw._refresh.epoch
+    assert gen_b > gen_a and epoch_b > epoch_a
+
+    # A's late answer: rejected (stale generation)
+    mw.on_worker_finished(
+        _ok("h1", nodes=[_node("pve1")], vms=[_vm(555, "pve1")],
+            storages=[_st("pve1")]),
+        created[0], gen_a, epoch_a)
+    assert mw._vm_repo.get("h1", 555) is None
+    assert mw._refresh.hard_pending_count == 1  # B still waits
+
+    # B's answer: applied
+    mw.on_worker_finished(
+        _ok("h1", nodes=[_node("pve1")], vms=[_vm(100, "pve1")],
+            storages=[_st("pve1")]),
+        created[1], gen_b, epoch_b)
+    assert mw._vm_repo.get("h1", 100) is not None
+    assert mw._refresh.hard_pending_count == 0
+
+
+def test_stale_answer_has_no_side_effects(main_window, monkeypatch):
+    """D1: a stale answer is dropped silently — no repeated finalization,
+    no cache rewrite, no status-line timestamp bump, no notifications."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    mw.nodes_cfg = [_cfg("h1")]
+
+    shown = []
+    from virtdeck.ui.notification import NotificationManager
+    monkeypatch.setattr(NotificationManager, "show",
+                        lambda self, msg, error=False: shown.append(msg))
+
+    mw.refresh_data()
+    gen_a = mw._refresh.hard_gen
+    epoch_a = mw._refresh.epoch
+
+    # A fresher soft answer applies first
+    mw._refresh._hard_start = time.monotonic() - (mw._refresh.hard_timeout + 1)
+    mw.last_refresh_ts = 0.0
+    mw.soft_refresh()
+    epoch_soft = mw._refresh.epoch
+    mw.on_soft_refresh_result(
+        _ok("h1", nodes=[_node("pve1")], vms=[_vm(300, "pve1")],
+            storages=[_st("pve1")]),
+        created[-1], mw._refresh.soft_gen, epoch_soft)
+    ts_after_soft = mw.last_refresh_ts
+
+    shown.clear()
+    # The stale hard answer of cycle A
+    mw.on_worker_finished(
+        _ok("h1", nodes=[_node("pve1")], vms=[_vm(555, "pve1")],
+            storages=[_st("pve1")]),
+        created[0], gen_a, epoch_a)
+
+    assert mw._vm_repo.get("h1", 555) is None
+    assert mw.last_refresh_ts == ts_after_soft     # no re-finalization
+    assert ("h1", 555) not in _cached_vmids()
+    assert shown == []                             # no notifications
+
+
+# --- Audit 4.2 / D2: pools survive partial failures ----------------------
+
+
+def _pool_seed(mw, host, poolid, comment=""):
+    mw._pool_repo.add(DomainPool.from_pve(
+        {"poolid": poolid, "comment": comment}, host))
+
+
+def test_partial_cycle_keeps_failed_host_pools(main_window, monkeypatch):
+    """D2: pools of a host whose worker was rejected keep their last
+    known-good data through the cycle."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    _pool_seed(mw, "h1", "web", "old")
+    _pool_seed(mw, "h2", "db", "two")
+    mw.nodes_cfg = [_cfg("h1"), _cfg("h2")]
+
+    from virtdeck.ui.mainwindow import MAX_WORKERS
+    for _ in range(MAX_WORKERS - 1):
+        mw._workers.add(MagicMock())
+
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+    epoch = mw._refresh.epoch
+    mw.on_worker_finished(
+        _ok("h1", nodes=[_node("pve1")],
+            pools=[{"poolid": "web", "comment": "new"}]),
+        created[0], gen, epoch)
+
+    # h1's pools replaced; h2's pools survived the cycle
+    assert mw._pool_repo.get("h1", "web").comment == "new"
+    assert mw._pool_repo.get("h2", "db").comment == "two"
+    assert {p.host_name for p in mw._pool_repo.all()} == {"h1", "h2"}
+
+
+def test_same_poolid_on_different_hosts_survives_cycle(
+        main_window, monkeypatch):
+    """D2: identical poolid on independent hosts must coexist — the
+    refresh of one host never replaces the other's pool."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    _pool_seed(mw, "h1", "web", "one")
+    _pool_seed(mw, "h2", "web", "two")
+    mw.nodes_cfg = [_cfg("h1"), _cfg("h2")]
+
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+    epoch = mw._refresh.epoch
+    mw.on_worker_finished(
+        _ok("h1", nodes=[_node("pve1")],
+            pools=[{"poolid": "web", "comment": "one-new"}]),
+        created[0], gen, epoch)
+    mw.on_worker_finished(
+        _ok("h2", nodes=[_node("pve2")],
+            pools=[{"poolid": "web", "comment": "two"}]),
+        created[1], gen, epoch)
+
+    assert mw._pool_repo.get("h1", "web").comment == "one-new"
+    assert mw._pool_repo.get("h2", "web").comment == "two"
+
+
+def test_confirmed_empty_pools_clear_host_pools(main_window, monkeypatch):
+    """D2: a confirmed empty pool list (successful response) replaces the
+    host's previous pools; a failed source (None) keeps them."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    _pool_seed(mw, "h1", "old", "one")
+    mw.nodes_cfg = [_cfg("h1")]
+
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+    epoch = mw._refresh.epoch
+
+    # Failed optional pool source: pools=None — previous data kept
+    payload = _ok("h1", nodes=[_node("pve1")])
+    payload["pools"] = None
+    mw.on_worker_finished(payload, created[0], gen, epoch)
+    assert mw._pool_repo.get("h1", "old") is not None
+
+    # Confirmed empty list — previous pools cleared
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+    epoch = mw._refresh.epoch
+    mw.on_worker_finished(
+        _ok("h1", nodes=[_node("pve1")], pools=[]),
+        created[-1], gen, epoch)
+    assert mw._pool_repo.get("h1", "old") is None
+
+
+def test_host_leaving_config_drops_its_pools(main_window, monkeypatch):
+    """D2: hosts removed from the configuration lose their pools at the
+    next cycle, while active hosts keep theirs."""
+    mw = main_window
+    _install_fake_fetch(monkeypatch)
+    _pool_seed(mw, "h1", "web", "one")
+    _pool_seed(mw, "h2", "db", "two")
+    mw.nodes_cfg = [_cfg("h1")]  # h2 left the config
+
+    mw.refresh_data()
+
+    assert mw._pool_repo.get("h1", "web") is not None
+    assert mw._pool_repo.get("h2", "db") is None
+
+
+# --- Audit 4.2 / D3: duplicate cluster representatives --------------------
+
+
+def test_duplicate_cluster_rep_dropped_with_notice(qtbot, monkeypatch,
+                                                   tmp_path):
+    """D3: two config entries of the SAME cluster keep only the first
+    representative and notify the user instead of duplicating resources."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    _install_fake_fetch(monkeypatch)
+    shown = []
+    from virtdeck.ui.notification import NotificationManager
+    monkeypatch.setattr(NotificationManager, "show",
+                        lambda self, msg, error=False: shown.append(msg))
+    from virtdeck.ui.mainwindow import MainWindow
+
+    rep_a = {"name": "cl1-a", "host": "10.0.0.1", "user": "u@pam",
+             "token_name": "t", "token_value": "s",
+             "cluster_rep": True, "cluster": "cl1"}
+    rep_b = {"name": "cl1-b", "host": "10.0.0.2", "user": "u@pam",
+             "token_name": "t", "token_value": "s",
+             "cluster_rep": True, "cluster": "cl1"}
+
+    created = _install_fake_fetch(monkeypatch)
+    mw = MainWindow(nodes_cfg=[rep_a, rep_b])
+    qtbot.addWidget(mw)
+    try:
+        assert [c["name"] for c in mw.nodes_cfg] == ["cl1-a"]
+        assert any("cl1" in m and "cl1-b" in m for m in shown)
+
+        created.clear()  # drop the workers of the __init__ cycle
+        mw.refresh_data()
+        assert len(created) == 1  # only cl1-a refreshes
+        assert created[0].node_cfg["name"] == "cl1-a"
+    finally:
+        mw.close()
+
+
+def test_same_node_names_different_clusters_stay_separate(
+        qtbot, monkeypatch, tmp_path):
+    """D3: clusters with DIFFERENT names but coinciding node names are
+    independent infrastructures — both refresh, no cross-matching."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    created = _install_fake_fetch(monkeypatch)
+    from virtdeck.ui.mainwindow import MainWindow
+
+    cl1 = {"name": "cl1", "host": "10.0.0.1", "user": "u@pam",
+           "token_name": "t", "token_value": "s",
+           "cluster_rep": True, "cluster": "cl1"}
+    cl2 = {"name": "cl2", "host": "10.0.0.2", "user": "u@pam",
+           "token_name": "t", "token_value": "s",
+           "cluster_rep": True, "cluster": "cl2"}
+
+    mw = MainWindow(nodes_cfg=[cl1, cl2])
+    qtbot.addWidget(mw)
+    try:
+        assert [c["name"] for c in mw.nodes_cfg] == ["cl1", "cl2"]
+        created.clear()  # drop the workers of the __init__ cycle
+        mw.refresh_data()
+        gen = mw._refresh.hard_gen
+        epoch = mw._refresh.epoch
+        assert len(created) == 2
+        for w, vmid in zip(created, (100, 200), strict=True):
+            mw.on_worker_finished(
+                _ok(w.node_cfg["name"], nodes=[_node("pve1")],
+                    vms=[_vm(vmid, "pve1")], storages=[_st("pve1")]),
+                w, gen, epoch)
+
+        # Distinct hosts: the same node name never merges the clusters
+        assert mw._node_repo.get("cl1", "pve1") is not None
+        assert mw._node_repo.get("cl2", "pve1") is not None
+        assert len(mw._node_repo.all()) == 2
+        assert len(mw._vm_repo.all()) == 2
+    finally:
+        mw.close()
+
+
+def test_dedupe_cluster_cfgs_helper(main_window):
+    """D3 unit: first representative per cluster name is kept; standalone
+    and non-representative configs are never touched."""
+    mw = main_window
+    cfgs = [
+        {"name": "s1", "cluster": False},
+        {"name": "a", "cluster_rep": True, "cluster": "cl1"},
+        {"name": "b", "cluster_rep": True, "cluster": "cl1"},
+        {"name": "c", "cluster_rep": True, "cluster": "cl2"},
+        {"name": "s2", "cluster": "Standalone"},
+        {"name": "d", "cluster_rep": True, "cluster": "cl1"},
+    ]
+    kept, dups = mw._dedupe_cluster_cfgs(cfgs)
+    assert [c["name"] for c in kept] == ["s1", "a", "c", "s2"]
+    assert dups == [("cl1", "b"), ("cl1", "d")]

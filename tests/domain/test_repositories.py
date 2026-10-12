@@ -254,13 +254,13 @@ class TestPoolRepository:
     def test_add_and_get(self):
         repo = PoolRepository()
         repo.add(Pool(poolid="web"))
-        assert repo.get("web") is not None
-        assert repo.get("web").poolid == "web"
+        assert repo.get("", "web") is not None
+        assert repo.get("", "web").poolid == "web"
 
     def test_add_replaces_existing(self):
         repo = PoolRepository()
-        repo.add(Pool(poolid="web"))
-        repo.add(Pool(poolid="web"))
+        repo.add(Pool(poolid="web", host_name="h1"))
+        repo.add(Pool(poolid="web", host_name="h1"))
         assert len(repo) == 1
 
     def test_empty_poolid_ignored(self):
@@ -270,15 +270,61 @@ class TestPoolRepository:
 
     def test_all_ids(self):
         repo = PoolRepository()
-        repo.add(Pool(poolid="web"))
-        repo.add(Pool(poolid="db"))
+        repo.add(Pool(poolid="web", host_name="h1"))
+        repo.add(Pool(poolid="db", host_name="h1"))
         assert set(repo.all_ids()) == {"web", "db"}
 
     def test_clear(self):
         repo = PoolRepository()
-        repo.add(Pool(poolid="web"))
+        repo.add(Pool(poolid="web", host_name="h1"))
         repo.clear()
         assert len(repo) == 0
+
+
+# --- Audit 4.2 / D2: pool identity is (host_name, poolid) ---
+
+
+class TestPoolHostScoping:
+    def test_same_poolid_on_different_hosts_coexist(self):
+        """poolid is unique within a PVE instance, not globally — two
+        unrelated hosts may both have a pool "web" and both must survive."""
+        repo = PoolRepository()
+        repo.add(Pool(poolid="web", comment="one", host_name="h1"))
+        repo.add(Pool(poolid="web", comment="two", host_name="h2"))
+        assert len(repo) == 2
+        assert repo.get("h1", "web").comment == "one"
+        assert repo.get("h2", "web").comment == "two"
+
+    def test_replace_only_touches_its_own_host(self):
+        repo = PoolRepository()
+        repo.add(Pool(poolid="web", comment="one", host_name="h1"))
+        repo.add(Pool(poolid="web", comment="two", host_name="h2"))
+        repo.add(Pool(poolid="web", comment="one-new", host_name="h1"))
+        assert repo.get("h1", "web").comment == "one-new"
+        assert repo.get("h2", "web").comment == "two"
+
+    def test_for_host(self):
+        repo = PoolRepository()
+        repo.add(Pool(poolid="web", host_name="h1"))
+        repo.add(Pool(poolid="db", host_name="h1"))
+        repo.add(Pool(poolid="web", host_name="h2"))
+        assert sorted(p.poolid for p in repo.for_host("h1")) == ["db", "web"]
+        assert [p.poolid for p in repo.for_host("h2")] == ["web"]
+        assert repo.for_host("h3") == []
+
+    def test_remove_host_keeps_other_hosts(self):
+        repo = PoolRepository()
+        repo.add(Pool(poolid="web", host_name="h1"))
+        repo.add(Pool(poolid="web", host_name="h2"))
+        repo.remove_host("h1")
+        assert len(repo) == 1
+        assert repo.get("h2", "web") is not None
+        assert repo.get("h1", "web") is None
+
+    def test_from_pve_carries_host(self):
+        p = Pool.from_pve({"poolid": "web", "comment": "c"}, "h1")
+        assert p.host_name == "h1"
+        assert Pool.from_pve({"poolid": "x"}).host_name == ""
 
 
 # --- Audit 4 / D4: index consistency when a VM moves between nodes ---

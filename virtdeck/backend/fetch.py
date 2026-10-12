@@ -71,6 +71,7 @@ class FetchWorker(QRunnable):
         # -- Parallel phase 1: pools, HA groups, resources --
             vmid_to_pool = {}
             pools = []
+            pools_failed = False
             ha_groups = []
             nodes = []
             vms = []
@@ -89,7 +90,7 @@ class FetchWorker(QRunnable):
             list_errors: list[str] = []
 
             def fetch_pools():
-                nonlocal vmid_to_pool, pools
+                nonlocal vmid_to_pool, pools, pools_failed
                 try:
                     pools_data = pool_api.list()
                     with pool_lock:
@@ -127,6 +128,10 @@ class FetchWorker(QRunnable):
                     for t in pool_threads:
                         t.join(timeout=10)
                 except Exception as e:
+                    # Optional source: signal "not fetched" (None) instead
+                    # of a fake "no pools" so the consumer keeps the
+                    # previous pool data of this host (audit 4.2, D2).
+                    pools_failed = True
                     logger.debug("backend error: %s", e)
 
             def fetch_ha():
@@ -431,6 +436,9 @@ class FetchWorker(QRunnable):
                 return
 
             # -- Emit result --
+            # pools is None when the optional pool source failed (consumer
+            # keeps the previous data); [] is a confirmed absence.
+            emitted_pools = None if pools_failed else pools
             if core_errors:
                 # No confirmed data at all.
                 self.signals.result_ready.emit({
@@ -448,7 +456,7 @@ class FetchWorker(QRunnable):
                     "nodes": nodes,
                     "vms": vms,
                     "storages": storages,
-                    "pools": pools,
+                    "pools": emitted_pools,
                     "iso_images": iso_images,
                     "ha_groups": ha_groups,
                 })
@@ -459,7 +467,7 @@ class FetchWorker(QRunnable):
                     "nodes": nodes,
                     "vms": vms,
                     "storages": storages,
-                    "pools": pools,
+                    "pools": emitted_pools,
                     "iso_images": iso_images,
                     "ha_groups": ha_groups
                 })

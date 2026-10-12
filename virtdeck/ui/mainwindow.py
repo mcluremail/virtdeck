@@ -114,6 +114,12 @@ class MainWindow(QMainWindow):
         theme.load()
 
         self.nodes_cfg = nodes_cfg or []
+        # Audit 4.2, D3: two active representatives of the SAME configured
+        # cluster duplicate nodes/VMs and counters — keep the first, drop
+        # the duplicates with an explicit notification.
+        self._dup_cluster_warnings: list[str] = []
+        self.nodes_cfg, dup_dropped = self._dedupe_cluster_cfgs(self.nodes_cfg)
+        self._warn_dup_clusters(dup_dropped)
         self._cfg_by_name = build_cfg_index(self.nodes_cfg)
         self.all_iso_images = {}
         self.all_ha_groups = {}
@@ -128,6 +134,8 @@ class MainWindow(QMainWindow):
         self._soft_node_repo = NodeRepository()
         self._soft_vm_repo = VmRepository()
         self._soft_storage_repo = StorageRepository()
+        # host_name -> attempt epoch of the soft answer for that host
+        self._soft_epochs: dict[str, int] = {}
 
         self._first_selection_done = False
         self._last_host_statuses = {}
@@ -191,6 +199,11 @@ class MainWindow(QMainWindow):
         self.tree_panel.vm_ha_remove_requested.connect(self._on_vm_ha_remove)
 
         self._notifications = NotificationManager(self)
+        # Deferred duplicate-cluster warnings (raised before the manager
+        # existed in __init__)
+        for msg in self._dup_cluster_warnings:
+            self._notifications.show(msg, error=True)
+        self._dup_cluster_warnings = []
 
         self._tray = None
         self._tray_state = "ok"
@@ -554,6 +567,7 @@ class MainWindow(QMainWindow):
         merged = import_config(path, merge=True)
         if merged is None:
             return
+        merged, dup_dropped = self._dedupe_cluster_cfgs(merged)
         self.nodes_cfg = merged
         self._cfg_by_name = build_cfg_index(self.nodes_cfg)
         self.tree_panel.set_servers(merged)
@@ -561,6 +575,7 @@ class MainWindow(QMainWindow):
         self.pbs_panel.update_nodes_cfg(merged)
         save_config(self.nodes_cfg)
         self.refresh_data()
+        self._warn_dup_clusters(dup_dropped)
         QMessageBox.information(self, tr("Import"),
                                 tr("Configuration imported ({count} hosts).").format(
                                     count=len(merged)))
@@ -574,13 +589,15 @@ class MainWindow(QMainWindow):
         if dialog.exec() != AddServerDialog.Accepted:
             return
         cfg = dialog.get_config()
-        self.nodes_cfg.append(cfg)
-        self._cfg_by_name[cfg.get("name", "")] = cfg
+        cfg, dup_dropped = self._dedupe_cluster_cfgs(self.nodes_cfg + [cfg])
+        self.nodes_cfg = cfg
+        self._cfg_by_name = build_cfg_index(self.nodes_cfg)
         self.tree_panel.set_servers(self.nodes_cfg)
         self.detail_panel.update_nodes_cfg(self.nodes_cfg)
         self.pbs_panel.update_nodes_cfg(self.nodes_cfg)
         save_config(self.nodes_cfg)
         self.refresh_data()
+        self._warn_dup_clusters(dup_dropped)
 
     # ------------------------------------------------------------
     # Create VM
@@ -588,7 +605,7 @@ class MainWindow(QMainWindow):
     def _on_vm_create_requested(self, node_name, host_name):
         from .create_vm_dialog import CreateVmDialog
         dialog = CreateVmDialog(self, nodes=self._node_repo.all(), storages=self._storage_repo.all(),
-                                pools=getattr(self, 'all_pools', []),
+                                pools=self._pool_repo.for_host(host_name),
                                 iso_images=getattr(self, 'all_iso_images', {}),
                                 ha_groups=getattr(self, 'all_ha_groups', {}))
         if dialog.exec() != CreateVmDialog.Accepted:
@@ -1513,6 +1530,7 @@ class MainWindow(QMainWindow):
         self._first_selection_done = False
         self._tasks_started = False
         self._soft_errors.clear()
+        self._soft_epochs.clear()
         # Repositories are NOT cleared here (audit 4.1): each worker
         # replaces its own host's snapshot on "ok", so a host whose worker
         # is rejected or fails keeps its last known-good data.  Only hosts
@@ -1526,17 +1544,24 @@ class MainWindow(QMainWindow):
             self._node_repo.remove_host(host)
             self._vm_repo.remove_host(host)
             self._storage_repo.remove_host(host)
-        self._pool_repo.clear()
+        # Pools are NOT cleared here (audit 4.2, D2): a host whose worker
+        # fails or is rejected keeps its pools. Only hosts that left the
+        # configuration are dropped.
+        for host in [h for h in {p.host_name for p in self._pool_repo.all()}
+                     if h and h not in active_names]:
+            self._pool_repo.remove_host(host)
 
         self.tree_panel.start_loading()
 
         refresh_gen = self._refresh.begin_hard()
 
         started = 0
+        refresh_epoch = self._refresh.epoch
         for cfg in active_cfgs:
             worker = FetchWorker(cfg)
             worker.signals.result_ready.connect(
-                lambda data, w=worker, g=refresh_gen: self.on_worker_finished(data, w, g)
+                lambda data, w=worker, g=refresh_gen, e=refresh_epoch:
+                    self.on_worker_finished(data, w, g, e)
             )
             # track_hard only for actually started workers: a rejected
             # worker never reports and would block finalization forever
@@ -1562,6 +1587,44 @@ class MainWindow(QMainWindow):
             self._update_status_bar()
 
     @Slot(str, str, dict)
+    def _dedupe_cluster_cfgs(self, cfgs):
+        """Audit 4.2, D3: keep the FIRST active representative per
+        configured cluster name and drop the duplicates.
+
+        Cluster identity here is the user-configured cluster name only:
+        node names / VMIDs are NOT compared across different cluster
+        names, because independent infrastructures may legitimately use
+        the same names.  A repeated representative for the same cluster
+        name cannot be verified to be the same infrastructure without a
+        live check, so it is not silently merged — it is dropped with an
+        explicit notification.
+        """
+        kept: list[dict] = []
+        dups: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for cfg in cfgs:
+            cl = cfg.get("cluster")
+            if (cfg.get("cluster_rep")
+                    and cl and cl not in (False, None, "Standalone")):
+                if cl in seen:
+                    dups.append((str(cl), cfg.get("name", "")))
+                    continue
+                seen.add(cl)
+            kept.append(cfg)
+        return kept, dups
+
+    def _warn_dup_clusters(self, dups) -> None:
+        """Notify about dropped duplicate cluster representatives."""
+        for cl, name in dups:
+            msg = tr(
+                "Cluster \"{cluster}\" is configured more than once "
+                "(host \"{name}\") — only the first connection is used"
+            ).format(cluster=cl, name=name)
+            if getattr(self, "_notifications", None) is not None:
+                self._notifications.show(msg, error=True)
+            else:
+                self._dup_cluster_warnings.append(msg)
+
     def _on_tree_item_selected(self, obj_type, obj_name, data):
         current_key = self.tree_panel.get_current_item_key()
         if current_key is not None:
@@ -1579,7 +1642,7 @@ class MainWindow(QMainWindow):
         self.detail_panel.show_details(obj_type, obj_name, data)
 
     @Slot(dict)
-    def on_worker_finished(self, data, worker=None, gen=0):
+    def on_worker_finished(self, data, worker=None, gen=0, epoch=None):
         if not self._refresh.hard_result_current(gen):
             return
         # Drop the worker from _workers right away: its finished (queued)
@@ -1590,6 +1653,11 @@ class MainWindow(QMainWindow):
         self._refresh.hard_done(worker, gen)
         status = data.get("status", "error")
         host = data.get("host", "")
+        # Audit 4.2, D1: a late answer of an already-finished attempt must
+        # not overwrite a fresher snapshot of this host, nor trigger side
+        # effects (notifications, first selection, cache save).
+        if epoch is not None and not self._refresh.answer_current(host, epoch):
+            return
         if status == "ok":
             is_cluster = worker.node_cfg.get("cluster_rep", False) if worker else False
             cluster_name = (worker.node_cfg.get("cluster", "") or "") if worker else ""
@@ -1609,9 +1677,15 @@ class MainWindow(QMainWindow):
             for st_dict in data.get("storages", []):
                 st_dict["host_name"] = host
                 self._storage_repo.add(DomainStorage.from_pve(st_dict, host, cluster_name))
-            # Collect pools (domain objects; the repo dedupes by poolid)
-            for pd in data.get("pools", []):
-                self._pool_repo.add(DomainPool.from_pve(pd))
+            # Collect pools (domain objects; identity is (host, poolid)).
+            # None means the optional pool source failed — keep the
+            # previous pool data of this host; [] is a confirmed absence
+            # and clears it (audit 4.2, D2).
+            pools_data = data.get("pools")
+            if pools_data is not None:
+                self._pool_repo.remove_host(host)
+                for pd in pools_data:
+                    self._pool_repo.add(DomainPool.from_pve(pd, host))
             self.all_pools = self._pool_repo.all()
             # Collect ISO images (host_name -> list volid).  An empty list
             # from a successful response is a confirmed absence — replace
@@ -1622,6 +1696,10 @@ class MainWindow(QMainWindow):
             # Collect HA groups (host_name -> [group, ...]) — same rule.
             ha_list = [HaGroup.from_pve(g) for g in data.get("ha_groups", [])]
             self.all_ha_groups[host] = ha_list
+            # Audit 4.2, D1: this attempt's snapshot of the host is now
+            # the freshest applied data
+            if epoch is not None:
+                self._refresh.note_applied(host, epoch)
         else:
             is_cluster_err = worker.node_cfg.get("cluster_rep", False) if worker else False
             err_msg = data.get("error", "Unknown error")
@@ -1777,6 +1855,7 @@ class MainWindow(QMainWindow):
         self._soft_storage_repo.clear()
         self._soft_had_errors = False
         self._soft_errors.clear()
+        self._soft_epochs.clear()
 
         active_cfgs = [cfg for cfg in self.nodes_cfg
                        if not cfg.get("skip", False)
@@ -1798,10 +1877,14 @@ class MainWindow(QMainWindow):
         if len(active_cfgs) > capacity:
             active_cfgs = active_cfgs[:capacity]
             soft_gen = self._refresh.begin_soft(len(active_cfgs), now)
+        soft_epoch = self._refresh.epoch
         for cfg in active_cfgs:
             worker = FetchWorker(cfg)
             worker.signals.result_ready.connect(
-                lambda data, w=worker, g=soft_gen: (self.on_soft_refresh_result(data, w, g), self._discard_worker(w))
+                lambda data, w=worker, g=soft_gen, e=soft_epoch: (
+                    self.on_soft_refresh_result(data, w, g, e),
+                    self._discard_worker(w)
+                )
             )
             self._run_worker(worker)
 
@@ -1823,12 +1906,14 @@ class MainWindow(QMainWindow):
             tr("Update timed out — showing last known data"))
 
     @Slot(dict)
-    def on_soft_refresh_result(self, data, worker=None, gen=0):
+    def on_soft_refresh_result(self, data, worker=None, gen=0, epoch=None):
         if not self._refresh.soft_result_current(gen):
             return
         status = data.get("status", "error")
         host = data.get("host", "")
         if status == "ok":
+            if epoch is not None:
+                self._soft_epochs[host] = epoch
             is_cluster = worker.node_cfg.get("cluster_rep", False) if worker else False
             cluster_name = (worker.node_cfg.get("cluster", "") or "") if worker else ""
             for node in data.get("nodes", []):
@@ -1872,6 +1957,12 @@ class MainWindow(QMainWindow):
                     self._vm_repo.add(v)
                 for s in self._soft_storage_repo.all():
                     self._storage_repo.add(s)
+                # Audit 4.2, D1: the soft snapshot of each answered host is
+                # now the freshest applied data — late hard answers of an
+                # older attempt must not overwrite it
+                if epoch is not None:
+                    for h in {n.host_name for n in self._soft_node_repo.all()}:
+                        self._refresh.note_applied(h, epoch)
                 # Errored hosts: flag their existing nodes with the error;
                 # when the host has no data at all (first run offline), add
                 # a stub so the failure stays visible.

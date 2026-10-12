@@ -222,35 +222,50 @@ class StorageRepository:
 
 
 class PoolRepository:
-    """Indexed collection of :class:`Pool` objects."""
+    """Indexed collection of :class:`Pool` objects.
+
+    Pool identity is ``(host_name, poolid)`` (audit 4.2, D2): a poolid is
+    unique within a PVE cluster / standalone instance but not across
+    independent infrastructures, so identical ids of different hosts must
+    coexist instead of silently replacing each other.
+    """
 
     def __init__(self) -> None:
-        self._by_id: dict[str, Pool] = {}
+        self._by_key: dict[tuple[str, str], Pool] = {}
 
     def add(self, pool: Pool) -> None:
-        """Add or replace — O(1) dedup by ``poolid``."""
+        """Add or replace — O(1) dedup by ``(host_name, poolid)``."""
         if pool.poolid:
-            self._by_id[pool.poolid] = pool
+            self._by_key[(pool.host_name, pool.poolid)] = pool
 
     def add_many(self, pools: list[Pool]) -> None:
         """Bulk add/replace."""
         for p in pools:
             self.add(p)
 
-    def get(self, poolid: str) -> Pool | None:
-        """O(1) lookup by ``poolid``."""
-        return self._by_id.get(poolid)
+    def get(self, host_name: str, poolid: str) -> Pool | None:
+        """O(1) lookup by ``(host_name, poolid)``."""
+        return self._by_key.get((host_name, poolid))
+
+    def for_host(self, host_name: str) -> list[Pool]:
+        """All pools reported by a specific host."""
+        return [p for (h, _pid), p in self._by_key.items() if h == host_name]
 
     def all(self) -> list[Pool]:
         """All pools as a list."""
-        return list(self._by_id.values())
+        return list(self._by_key.values())
 
     def all_ids(self) -> list[str]:
         """All pool IDs as a list of strings."""
-        return list(self._by_id.keys())
+        return list({p.poolid for p in self._by_key.values()})
+
+    def remove_host(self, host_name: str) -> None:
+        """Remove all pools reported by a host."""
+        for key in [k for k in self._by_key if k[0] == host_name]:
+            del self._by_key[key]
 
     def clear(self) -> None:
-        self._by_id.clear()
+        self._by_key.clear()
 
     def __len__(self) -> int:
-        return len(self._by_id)
+        return len(self._by_key)

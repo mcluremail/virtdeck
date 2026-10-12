@@ -159,6 +159,47 @@ def test_optional_source_failure_keeps_ok(qtbot, monkeypatch):
     assert len(data["nodes"]) == 1
 
 
+def test_failed_pool_source_signals_not_fetched(qtbot, monkeypatch):
+    """Audit 4.2, D2: a failed optional pool source emits ``pools: None``
+    (\"not fetched\") instead of a fake confirmed-empty list, so the
+    consumer keeps the previous pool data of the host."""
+    provider = FakeProvider()
+    resources = [{"type": "node", "node": "pve1", "status": "online"}]
+
+    def failing_pools():
+        raise RuntimeError("pools boom")
+
+    provider.cluster = SimpleNamespace(
+        list_resources=lambda: resources, list_ha_groups=lambda: [])
+    provider.pools = SimpleNamespace(list=failing_pools, get=lambda p: {})
+    provider.nodes = FakePveApi().nodes
+    provider.storage = FakePveApi().storage
+
+    data = _run_worker(monkeypatch, provider,
+                       {"name": "h1", "cluster_rep": True, "cluster": "c1"})
+
+    assert data["status"] == "ok"
+    assert data["pools"] is None
+
+
+def test_confirmed_empty_pools_emit_empty_list(qtbot, monkeypatch):
+    """A successful pool fetch returning nothing is a CONFIRMED absence:
+    an empty list, not None."""
+    provider = FakeProvider()
+    resources = [{"type": "node", "node": "pve1", "status": "online"}]
+    provider.cluster = SimpleNamespace(
+        list_resources=lambda: resources, list_ha_groups=lambda: [])
+    provider.pools = FakePveApi().pools  # list() -> []
+    provider.nodes = FakePveApi().nodes
+    provider.storage = FakePveApi().storage
+
+    data = _run_worker(monkeypatch, provider,
+                       {"name": "h1", "cluster_rep": True, "cluster": "c1"})
+
+    assert data["status"] == "ok"
+    assert data["pools"] == []
+
+
 def _raise_runtime(msg):
     def _inner(*args, **kwargs):
         raise RuntimeError(msg)

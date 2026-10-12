@@ -18,7 +18,13 @@ class RefreshCoordinator:
     - a worker's result is current only if its generation matches the
       current one (gen == 0 is treated as a legacy call without a generation);
     - the hard cycle completes once all workers of the generation reported;
-    - the soft cycle is reset by timeout or by a new hard refresh.
+    - the soft cycle is reset by timeout or by a new hard refresh;
+    - snapshot freshness (audit 4.2, D1): every answer carries the epoch of
+      the attempt it was made in; a host's snapshot is only replaced by an
+      attempt that is not OLDER than the last applied one.  Late answers of
+      a timed-out cycle never overwrite fresher data, while a lone late
+      answer (nothing fresher applied) is still accepted instead of being
+      lost.
     """
 
     def __init__(self, soft_timeout: float = 90.0,
@@ -33,6 +39,11 @@ class RefreshCoordinator:
         self._soft_start = 0.0
         self._soft_done = 0
         self._soft_expected = 0
+        # Monotonic attempt counter: incremented when an attempt starts
+        # (begin_hard/begin_soft) or is discarded (reset_soft)
+        self._epoch = 0
+        # host_name -> epoch of the last snapshot APPLIED for that host
+        self._host_epoch: dict[str, int] = {}
 
     # -- hard refresh ---------------------------------------------------
 
@@ -45,6 +56,7 @@ class RefreshCoordinator:
         self._hard_gen += 1
         self._hard_pending = set()
         self._hard_start = time.monotonic()
+        self._epoch += 1
         return self._hard_gen
 
     def track_hard(self, worker: Any) -> None:
@@ -77,7 +89,9 @@ class RefreshCoordinator:
     def finish_hard(self) -> None:
         """Force-complete the current hard cycle (timeout watchdog):
         unreported workers are no longer awaited. Late results of the same
-        generation stay current and still apply per-host."""
+        generation stay current and still apply per-host — unless a fresher
+        attempt already applied a snapshot for that host (see
+        :meth:`answer_current`)."""
         self._hard_pending.clear()
 
     # -- soft refresh ---------------------------------------------------
@@ -100,6 +114,7 @@ class RefreshCoordinator:
         self._soft_running = False
         self._soft_done = 0
         self._soft_expected = 0
+        self._epoch += 1
 
     def finish_soft(self) -> None:
         """Clear the running flag without invalidating the generation."""
@@ -115,6 +130,7 @@ class RefreshCoordinator:
         self._soft_done = 0
         self._soft_expected = expected
         self._soft_gen += 1
+        self._epoch += 1
         return self._soft_gen
 
     def soft_result_current(self, gen: int) -> bool:
@@ -126,3 +142,30 @@ class RefreshCoordinator:
             return False
         self._soft_done += 1
         return self._soft_done >= self._soft_expected
+
+    # -- attempt epochs (audit 4.2, D1) ----------------------------------
+
+    @property
+    def epoch(self) -> int:
+        """Monotonic attempt counter: incremented when a refresh attempt
+        starts or is discarded. Workers are stamped with it; answers carry
+        it back and are rejected when a fresher attempt already applied a
+        snapshot for their host."""
+        return self._epoch
+
+    def answer_current(self, host: str, epoch: int) -> bool:
+        """Whether an answer may still update ``host``'s snapshot.
+
+        Priority model: an answer is judged by the attempt it was made in,
+        NOT by the time it arrived (a late answer of a stale attempt has
+        fresher arrival time but older data).  The answer passes when its
+        epoch is not older than the last epoch applied for the host — so
+        a lone late answer for a host without any fresher data is still
+        accepted instead of being lost.
+        """
+        return self._host_epoch.get(host, -1) <= epoch
+
+    def note_applied(self, host: str, epoch: int) -> None:
+        """Record that a snapshot of ``host`` from ``epoch`` was applied."""
+        if epoch > self._host_epoch.get(host, -1):
+            self._host_epoch[host] = epoch
