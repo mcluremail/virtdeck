@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.0.2 — provider/API layer fixes (external audit stage 3.1)
+
+**Bug fixes**
+- Storage: deleting and moving storage content (ISO/backup volumes) is fixed for real PVE — the volume ID (`local:iso/name.iso`) was passed into the proxmoxer resource chain unencoded; proxmoxer splits such strings on "/" (turning them into extra URL segments), so every standard volid broke the API path and PVE answered 404. Both `volid` and `storage` are now percent-encoded; covered by URL-construction tests against the real installed proxmoxer, not mocks
+- Backup jobs (scheduled vzdump): the silent "/cluster/jobs → /cluster/backup" fallback on ANY error is gone. The API path is now chosen BEFORE the request (availability probed once per provider session with a harmless GET and cached); errors from the primary path propagate. This removes three verified hazards: a timed-out create silently re-POSTed to the legacy path and could duplicate the job; a 400 validation error was swallowed and the job was silently created on the legacy path; a timed-out delete re-ran and reported a misleading 404 while the job had actually been deleted. A timed-out write is re-raised with an explicit "may still have been applied — refresh the job list" hint
+- Task polling: one transient network failure during a long operation no longer reports the operation as failed while the PVE task keeps running. `TaskAPI.poll()` tolerates up to 3 consecutive transport failures within the unchanged deadline (a successful read resets the budget) and returns a distinct `poll_failed` ("outcome unknown") result instead of a fake task failure; auth/validation errors fail fast. A genuinely failed task still carries its real PVE exitstatus
+- Upload: failed file uploads raise a classified `ProxmoxApiError` with the HTTP status (401/403/413/5xx; pveproxy 595-599 get their usual hint) instead of a bare Exception the UI could not classify; a 200 with a broken/non-JSON body raises a clean error instead of crashing on parsing; oversized read chunks are capped (no whole-file buffering)
+- Error texts: messages reaching the UI via `_await_task` are sanitized now (previously only the outer worker exception was) — bare hostnames (`host='pve1.lan'`, `pve1.lan:8006`) are masked alongside URLs and IP:port, while timestamps, volids and the task's own error text survive intact
+- Error classification uses the exact HTTP status from proxmoxer exceptions first (`ResourceException.status_code`), with the message regexes only as a fallback — a 400 whose text merely contains "401"/"404" is no longer misclassified; all classified errors carry `.status_code`
+
+**Internal**
+- CI runs the full pytest suite now (3 python versions, offscreen Qt) — it previously never ran, so a stale test (`test_migrate`) sat red on main unnoticed. The UI suite no longer degrades quadratically: pytest-qt's deferred widget deletions were never delivered at event-loop level 0, so windows accumulated across tests and every theme re-application re-polished the whole pile (a full run went from 30+ min to ~1.5 min; a conftest teardown hook drains the deferred-delete queue after every test)
+
 ## v3.0.1 — honest VM/CT operations (external audit stage 2)
 
 **New features**

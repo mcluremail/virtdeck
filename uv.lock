@@ -866,7 +866,7 @@ wheels = [
 
 [[package]]
 name = "virtdeck"
-version = "3.0.0"
+version = "3.0.2"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
@@ -892,7 +892,7 @@ novnc = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cryptography", specifier = ">=42.0.0" },
+    { name = "cryptography", specifier = ">=38.0" },
     { name = "keyring", specifier = ">=24.0" },
     { name = "proxmoxer", specifier = ">=2.0" },
     { name = "pyqtgraph", specifier = ">=0.12" },
