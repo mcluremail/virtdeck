@@ -96,12 +96,12 @@ jobs:
           rpmbuild -bb --define "_topdir /tmp/rpmbuild" /tmp/rpmbuild/SPECS/virtdeck.spec
       - name: Copy .rpm
         run: |
-          mkdir -p artifacts/fedora/${{ matrix.fc }}
-          cp /tmp/rpmbuild/RPMS/noarch/*.rpm artifacts/fedora/${{ matrix.fc }}/
+          mkdir -p artifacts
+          cp /tmp/rpmbuild/RPMS/noarch/*.rpm artifacts/
       - uses: actions/upload-artifact@v4
         with:
           name: rpm-package-fc${{ matrix.fc }}
-          path: artifacts/**/*.rpm
+          path: artifacts/*.rpm
 
   build-windows:
     name: Build Windows .zip
@@ -188,8 +188,9 @@ jobs:
             mkdir -p upload/out/apt/$s
             cp upload/virtdeck_*.deb upload/out/apt/$s/
           done
-          # rpm goes to the directory of its %{dist} tag (fc43 / fc44)
-          for rpm in upload/virtdeck-*.rpm; do
+          # rpm goes to the directory of its %{dist} tag (fc43 / fc44);
+          # find is used because artifact nesting may vary
+          while IFS= read -r rpm; do
             case "$(basename "$rpm")" in
               *fc43*) rel=43 ;;
               *fc44*) rel=44 ;;
@@ -197,7 +198,7 @@ jobs:
             esac
             mkdir -p upload/out/rpm/fedora/$rel
             cp "$rpm" upload/out/rpm/fedora/$rel/
-          done
+          done < <(find upload -name 'virtdeck-*.rpm' -type f)
       - name: rsync apt/rpm into repo incoming/
         env:
           KEY: ${{ secrets.REPO_DEPLOY_KEY }}

@@ -142,12 +142,12 @@ jobs:
           EOF
           rpmbuild -bb --define "_topdir /tmp/rpmbuild" \
             /tmp/rpmbuild/SPECS/python3-proxmoxer.spec
-          mkdir -p /tmp/out/fedora/${{ matrix.fc }}
-          cp /tmp/rpmbuild/RPMS/noarch/*.rpm /tmp/out/fedora/${{ matrix.fc }}/
+          mkdir -p /tmp/relout
+          cp /tmp/rpmbuild/RPMS/noarch/*.rpm /tmp/relout/
       - uses: actions/upload-artifact@v4
         with:
           name: proxmoxer-rpm-fc${{ matrix.fc }}
-          path: /tmp/out/**/*.rpm
+          path: /tmp/relout/*.rpm
 
   publish:
     name: Publish to repo.mclure.ru
@@ -183,6 +183,24 @@ jobs:
           KEY: ${{ secrets.REPO_DEPLOY_KEY }}
         run: |
           set -e
+          # lift nested artifact contents into their canonical place (artifact
+          # nesting has bitten us before): deb -> upload/apt/<suite>/,
+          # rpm -> upload/rpm/fedora/<rel>/ routed by the %{dist} tag
+          find upload/apt -mindepth 3 -type f -name '*.deb' | while IFS= read -r f; do
+            suite=$(echo "$f" | cut -d/ -f3)
+            mv -f "$f" "upload/apt/$suite/"
+          done
+          find upload/rpm -type f -name '*.rpm' | while IFS= read -r f; do
+            case "$(basename "$f")" in
+              *fc43*) d=upload/rpm/fedora/43 ;;
+              *fc44*) d=upload/rpm/fedora/44 ;;
+              *) echo "unknown rpm dist tag: $f"; exit 1 ;;
+            esac
+            mkdir -p "$d"
+            [ "$(dirname "$f")" != "$d" ] && mv -f "$f" "$d/"
+          done
+          find upload -mindepth 2 -type d -empty -delete 2>/dev/null || true
+          ls -R upload | head -30
           mkdir -p ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
