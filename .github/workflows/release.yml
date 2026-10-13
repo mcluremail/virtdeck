@@ -225,17 +225,22 @@ jobs:
               eval "ok=\$ok_rpm_$rel"
               [ "$ok" = "1" ] && continue
               if curl -fsSL "https://repo.mclure.ru/rpm/fedora/$rel/repodata/repomd.xml" -o /tmp/repomd.xml; then
-                href=$(grep -oP '(?<=href=")[^"]*-primary\.xml\.zst' /tmp/repomd.xml | head -1)
-                live=$(curl -fsSL "https://repo.mclure.ru/rpm/fedora/$rel/$href" | zstd -dc 2>/dev/null | awk -v want="$version" '
+                href=$(grep -oP '(?<=href=")[^"]*-primary\.xml\.zst' /tmp/repomd.xml | head -1 || true)
+                live=""
+                if [ -n "$href" ]; then
+                  live=$(curl -fsSL "https://repo.mclure.ru/rpm/fedora/$rel/$href" | zstd -dc 2>/dev/null | awk -v want="$version" '
                   /<package type="rpm">/ {inblk=1; buf=""}
                   inblk {buf = buf "\n" $0}
-                  /<\/package>/ {inblk=0; if (buf ~ /<name>virtdeck</ && match(buf, "<version [^>]*ver=\"" want "\"") && match(buf, /<checksum type="sha256"[^>]*>[a-f0-9]+/)) { s=substr(buf, RSTART, RLENGTH); sub(/.*>/, "", s); print s }}')
+                  /<\/package>/ {inblk=0; if (buf ~ /<name>virtdeck</ && match(buf, "<version [^>]*ver=\"" want "\"") && match(buf, /<checksum type="sha256"[^>]*>[a-f0-9]+/)) { s=substr(buf, RSTART, RLENGTH); sub(/.*>/, "", s); print s }}' || true)
+                fi
                 # the server signs rpms after upload, so compare against the
-                # served file itself, not the CI artifact
-                curl -fsSL "https://repo.mclure.ru/rpm/fedora/$rel/virtdeck-${version}-1.fc${rel}.noarch.rpm" -o /tmp/virtdeck.rpm
-                served=$(sha256sum /tmp/virtdeck.rpm | cut -d' ' -f1)
-                if [ -n "$live" ] && [ "$live" = "$served" ]; then
-                  eval "ok_rpm_$rel=1"; echo "rpm fc$rel: repo metadata matches the served package ✓"
+                # served file itself, not the CI artifact; every network call
+                # here must tolerate a not-yet-published repo (implicit -e)
+                if curl -fsSL "https://repo.mclure.ru/rpm/fedora/$rel/virtdeck-${version}-1.fc${rel}.noarch.rpm" -o /tmp/virtdeck.rpm 2>/dev/null; then
+                  served=$(sha256sum /tmp/virtdeck.rpm | cut -d' ' -f1)
+                  if [ -n "$live" ] && [ "$live" = "$served" ]; then
+                    eval "ok_rpm_$rel=1"; echo "rpm fc$rel: repo metadata matches the served package ✓"
+                  fi
                 fi
               fi
             done
