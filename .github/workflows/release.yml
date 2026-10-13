@@ -295,7 +295,7 @@ jobs:
             > /etc/apt/sources.list.d/virtdeck.list
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq virtdeck
-          python3 -c "from virtdeck import main; import virtdeck; print('deb smoke OK', virtdeck.__version__)"
+          python3 -c "import PySide6.QtWebEngineWidgets; import virtdeck; print('deb smoke OK', virtdeck.__version__)"
       - name: Install from repo.mclure.ru (dnf / fedora ${{ matrix.suite }})
         if: matrix.pkg == 'rpm'
         run: |
