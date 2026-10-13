@@ -5,6 +5,8 @@ import os
 import sqlite3
 import sys
 import threading
+import unicodedata
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,34 @@ _OLD_JSON = "nodes.json"
 _KEYRING_SERVICE = "virtdeck"
 _KEYRING_SERVICE_LEGACY = "pvecenter"  # pre-3.0 name (PVECenter era)
 _DB_LOCK = threading.RLock()
+
+# Stage 5.1.2: True while conn_ids assigned at load exist only in memory.
+# Resource cache writes are blocked in this state (see
+# save_resources_cache) — the cache must never hold identifiers that the
+# persistent config does not confirm yet.
+_conn_ids_pending = False
+
+
+def conn_ids_pending() -> bool:
+    """True while assigned conn_ids are not anchored in the stored config."""
+    return _conn_ids_pending
+
+
+# ── name policy (stage 5.1) ────────────────────────────────────
+
+def normalize_name(name: str) -> str:
+    """Single name-normalization policy: NFC + strip outer whitespace."""
+    return unicodedata.normalize("NFC", str(name)).strip()
+
+
+def name_key(name: str) -> str:
+    """Case-insensitive identity key used for uniqueness checks."""
+    return normalize_name(name).casefold()
+
+
+def _new_conn_id() -> str:
+    """Stable connection identity, independent of the display name."""
+    return uuid.uuid4().hex
 
 # ── paths ──────────────────────────────────────────────────────
 
@@ -110,6 +140,22 @@ def _save_token(name: str, token_value: str):
         kr.set_password(_KEYRING_SERVICE, _keyring_key(name), token_value)
     except Exception as e:
         logger.error("keyring set_password failed for %s: %s", name, e)
+
+
+def _save_token_if_changed(name: str, token_value: str):
+    """Write the secret only when it actually changed (stage 5.1.1 §4:
+    re-imports and repeated saves must not churn the keyring)."""
+    kr = _get_keyring()
+    if kr is None:
+        logger.warning("keyring not available, token for %s not saved", name)
+        return
+    try:
+        current = kr.get_password(_KEYRING_SERVICE, _keyring_key(name))
+    except Exception:
+        current = None
+    if current == token_value:
+        return
+    _save_token(name, token_value)
 
 
 def _load_token(name: str) -> str | None:
@@ -216,60 +262,155 @@ def _validate_field(value):
 
 
 def _sanitize_cfg(cfg):
-    for field in ("host", "user", "token_name", "token_value", "group"):
+    for field in ("name", "host", "user", "token_name", "token_value", "group"):
         val = cfg.get(field, "")
         if val and not _validate_field(val):
             raise ValueError(f"Invalid characters in {field}")
 
 
+def mark_ambiguous(config_list: list[dict]) -> None:
+    """Flag entries whose normalized names collide (stage 5.1.1 §3).
+
+    Colliding entries are NOT merged, renamed or removed: they stay
+    visible with their own tokens and are excluded from refresh, cache
+    restore and token operations by the callers. The user resolves the
+    conflict explicitly. The flags are recomputed from scratch: shrinking
+    a group to one member clears its flag.
+    """
+    for cfg in config_list:
+        if isinstance(cfg, dict):
+            cfg.pop("_ambiguous", None)
+    groups: dict[str, list[dict]] = {}
+    for cfg in config_list:
+        groups.setdefault(name_key(cfg.get("name", "")), []).append(cfg)
+    for members in groups.values():
+        if len(members) > 1:
+            for cfg in members:
+                cfg["_ambiguous"] = True
+
+
+def ambiguous_name_keys(config_list: list[dict]) -> frozenset[str]:
+    """Normalized name keys of entries flagged as ambiguous."""
+    return frozenset(
+        name_key(c.get("name", "")) for c in config_list if c.get("_ambiguous"))
+
+
 def load_config() -> list[dict]:
     """Load nodes from sqlite, attach token_value from keyring.
-    Returns list of node dicts (never None — no password dialog needed)."""
+
+    Stage 5.1.2: entries without conn_id get one assigned, and the changed
+    rows are persisted in a single transaction BEFORE any refresh or cache
+    can consume the ids (write-only-what-changed: subsequent loads without
+    a save do not rewrite anything). On persistence failure the ids stay
+    in memory, conn_ids_pending() turns True and resource cache writes are
+    blocked until a successful save_config() anchors them. Entries whose
+    names collide after normalization are flagged ``_ambiguous`` — they
+    are not merged, renamed or removed.
+    """
+    global _conn_ids_pending
     for fn in (_OLD_DB,):
         _migrate_file(fn)
     _migrate_old_db()
 
     with _DB_LOCK:
         conn = _init_db()
-        cur = conn.execute("SELECT data FROM nodes")
+        cur = conn.execute("SELECT name, data FROM nodes")
         rows = cur.fetchall()
+
+        config = []
+        changed = []  # (pk_name, json_with_conn_id)
+        for pk_name, raw in rows:
+            try:
+                cfg = json.loads(raw)
+            except Exception:
+                logger.warning("load_config: skipping corrupt row %r", pk_name)
+                continue
+            disk_name = cfg.get("name", "")
+            if not disk_name or not _validate_field(disk_name):
+                logger.warning("load_config: skipping row %r with invalid name",
+                               pk_name)
+                continue
+            # The stored name stays the display truth; normalization is
+            # applied on write and for comparisons (name_key).
+            if not cfg.get("conn_id"):
+                cfg["conn_id"] = _new_conn_id()
+                clean = {k: v for k, v in cfg.items()
+                         if k != "token_value" and not k.startswith("_")}
+                changed.append((pk_name, json.dumps(clean, ensure_ascii=False)))
+            token = _load_token(disk_name)
+            cfg["token_value"] = token or ""
+            config.append(cfg)
+
+        if changed:
+            try:
+                for pk_name, new_json in changed:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO nodes (name, data) VALUES (?, ?)",
+                        (pk_name, new_json))
+                conn.commit()
+                _conn_ids_pending = False
+            except Exception as e:
+                conn.rollback()
+                _conn_ids_pending = True
+                logger.warning(
+                    "load_config: conn_id migration not persisted (%s); "
+                    "resource cache writes stay blocked until the config "
+                    "is saved successfully", e)
         conn.close()
 
-    config = []
-    for (raw,) in rows:
-        try:
-            cfg = json.loads(raw)
-        except Exception:
-            continue
-        name = cfg.get("name", "")
-        if name:
-            token = _load_token(name)
-            cfg["token_value"] = token or ""
-        config.append(cfg)
+    mark_ambiguous(config)
     return config
 
 
-def save_config(config_list: list[dict]):
-    """Save nodes to sqlite, token_value to keyring."""
-    tokens = []
+def save_config(config_list: list[dict],
+                known_ambiguous: frozenset[str] = frozenset()):
+    """Save nodes to sqlite, token_value to keyring.
+
+    Stage 5.1: names are normalized (NFC + strip) and must be unique up to
+    that normalization. A conflict group is tolerated only when its
+    normalized name is in ``known_ambiguous`` — a conflict that was loaded
+    from the database and not resolved yet; any NEW conflict raises
+    ValueError. Validation happens before the database is touched, so a
+    raise leaves the stored config and the keyring untouched. conn_id is
+    assigned to entries missing one, so every saved row is anchored; a
+    successful save also clears the conn_ids_pending state.
+    """
+    global _conn_ids_pending
+    prepared = []  # (name, json, token_value)
+    seen: dict[str, str] = {}
+    for cfg in config_list:
+        if not isinstance(cfg, dict):
+            continue
+        name = normalize_name(cfg.get("name", ""))
+        if not name:
+            continue
+        cfg["name"] = name
+        _sanitize_cfg(cfg)
+        key = name_key(name)
+        if key in seen and key not in known_ambiguous:
+            raise ValueError(
+                f'Duplicate connection name: "{seen[key]}" / "{name}"')
+        seen.setdefault(key, name)
+        if not cfg.get("conn_id"):
+            cfg["conn_id"] = _new_conn_id()
+        store = {k: v for k, v in cfg.items()
+                 if k != "token_value" and not k.startswith("_")}
+        prepared.append((name, json.dumps(store, ensure_ascii=False),
+                         cfg.get("token_value")))
+
     with _DB_LOCK:
         conn = _init_db()
         conn.execute("DELETE FROM nodes")
-        for cfg in config_list:
-            name = cfg.get("name", "")
-            if not name:
-                continue
-            _sanitize_cfg(cfg)
-            store = {k: v for k, v in cfg.items() if k != "token_value"}
+        for name, data_json, _token in prepared:
             conn.execute("INSERT OR REPLACE INTO nodes (name, data) VALUES (?, ?)",
-                         (name, json.dumps(store, ensure_ascii=False)))
-            token_value = cfg.get("token_value")
-            if token_value:
-                tokens.append((name, token_value))
+                         (name, data_json))
         conn.commit()
         conn.close()
-    for name, token_value in tokens:
-        _save_token(name, token_value)
+    for name, _data_json, token_value in prepared:
+        if token_value:
+            _save_token_if_changed(name, token_value)
+    # every saved row carries a conn_id — the ids are anchored now
+    _conn_ids_pending = False
 
 
 def delete_node_tokens(names: list[str]):
@@ -415,23 +556,69 @@ _ALLOWED_IMPORT_FIELDS = frozenset({
 
 
 def _validate_imported(imported):
-    result = []
+    """Normalize and filter imported entries.
+
+    Returns ``(entries, skipped)`` where skipped is a list of
+    ``(name, reason)`` pairs. Each entry is normalized (NFC + strip on the
+    name), must carry name/host/user and must pass _sanitize_cfg; a bad
+    entry is skipped with a reason instead of aborting the whole import.
+    ``conn_id`` never survives validation: a file-borne id is not proof of
+    identity (stage 5.1.1 §4).
+    """
+    entries, skipped = [], []
     for cfg in imported:
         if not isinstance(cfg, dict):
+            skipped.append(("", "not an object"))
             continue
-        name = cfg.get("name", "")
-        host = cfg.get("host", "")
+        name = normalize_name(cfg.get("name", ""))
+        host = str(cfg.get("host", "")).strip()
         user = cfg.get("user", "")
         if not name or not host or not user:
+            skipped.append((name or host or "?", "missing name/host/user"))
             continue
-        _sanitize_cfg(cfg)
+        try:
+            _sanitize_cfg(cfg)
+        except ValueError as e:
+            skipped.append((name, str(e)))
+            continue
         clean = {k: v for k, v in cfg.items() if k in _ALLOWED_IMPORT_FIELDS}
-        result.append(clean)
-    return result
+        clean["name"] = name
+        entries.append(clean)
+    return entries, skipped
 
 
-def import_config(src_path: str, merge: bool = True) -> list[dict] | None:
-    """Import encrypted bundle, merge with existing config."""
+def _import_key(cfg: dict) -> tuple:
+    """Identity key for import matching (stage 5.1.1 §4).
+
+    ``type`` must participate: a PBS entry at the same address as a PVE
+    entry is a different connection. ``host`` compares case-insensitively
+    (DNS names); ``port``/``proxy`` are attributes, not identity.
+    """
+    return (str(cfg.get("type", "pve")),
+            str(cfg.get("host", "")).strip().casefold(),
+            str(cfg.get("user", "")))
+
+
+def import_config(src_path: str, merge: bool = True,
+                  report: list[str] | None = None) -> list[dict] | None:
+    """Import encrypted bundle.
+
+    Returns the resulting config list (None on hard failure). When
+    ``report`` is a list, it is filled with human-readable lines
+    describing updated/added/skipped connections for the UI.
+
+    Modes (stage 5.1.1 §4):
+    - ``merge=True`` — merge: existing entries are matched by
+      (type, host, user); the LOCAL name and conn_id are kept and only
+      credential/option fields are imported; new entries get fresh local
+      conn_ids — a file-borne conn_id is never accepted, so a foreign
+      bundle cannot attach local cache rows.
+    - ``merge=False`` — full replace: the bundle becomes the whole config
+      and every entry gets a FRESH local conn_id. There is no reliable way
+      to tell a same-installation backup from a transfer, so no cache is
+      attached to restored entries — data is re-fetched from the server
+      instead of risking resources of a foreign infrastructure.
+    """
     from PySide6.QtWidgets import QMessageBox
 
     from .ui.i18n import tr
@@ -453,23 +640,69 @@ def import_config(src_path: str, merge: bool = True) -> list[dict] | None:
             QMessageBox.warning(None, tr("Error"),
                                  tr("Wrong password. Try again."))
 
-    imported = _validate_imported(imported)
+    def _rep(msg: str):
+        if report is not None:
+            report.append(msg)
+
+    imported, skipped = _validate_imported(imported)
+    for name, reason in skipped:
+        _rep(tr("Skipped {name}: {reason}").format(name=name, reason=reason))
     if not imported:
         QMessageBox.warning(None, tr("Error"),
                              tr("No valid server entries found in the bundle."))
         return None
 
     if not merge:
-        save_config(imported)
+        for cfg in imported:
+            cfg["conn_id"] = _new_conn_id()
+        mark_ambiguous(imported)
+        save_config(imported, known_ambiguous=ambiguous_name_keys(imported))
         return imported
 
     current = load_config()
-    current_map = {(c.get("host"), c.get("user")): c for c in current}
-    for imp_cfg in imported:
-        key = (imp_cfg.get("host"), imp_cfg.get("user"))
-        current_map[key] = imp_cfg
-    merged = list(current_map.values())
-    save_config(merged)
+    by_key: dict[tuple, list[dict]] = {}
+    for c in current:
+        by_key.setdefault(_import_key(c), []).append(c)
+    merged = list(current)
+    taken_names = {name_key(c.get("name", "")) for c in merged}
+    matched_keys: set[tuple] = set()
+    for imp in imported:
+        key = _import_key(imp)
+        matches = by_key.get(key, [])
+        if key in matched_keys:
+            _rep(tr("Skipped {name}: an earlier entry already matched "
+                    "this connection").format(name=imp["name"]))
+            continue
+        if len(matches) > 1:
+            _rep(tr("Skipped {name}: {count} local connections match — "
+                    "resolve manually").format(name=imp["name"],
+                                               count=len(matches)))
+            continue
+        if matches:
+            existing = matches[0]
+            if existing.get("_ambiguous"):
+                _rep(tr("Skipped {name}: the local connection has an "
+                        "unresolved name conflict").format(name=imp["name"]))
+                continue
+            # keep local identity, import attributes
+            for k, v in imp.items():
+                if k in _ALLOWED_IMPORT_FIELDS and k != "name":
+                    existing[k] = v
+            matched_keys.add(key)
+            _rep(tr("Updated {name}").format(name=existing.get("name", "?")))
+        else:
+            nk = name_key(imp["name"])
+            if nk in taken_names:
+                _rep(tr("Skipped {name}: a connection with this name "
+                        "already exists").format(name=imp["name"]))
+                continue
+            imp["conn_id"] = _new_conn_id()
+            merged.append(imp)
+            taken_names.add(nk)
+            matched_keys.add(key)
+            _rep(tr("Added {name}").format(name=imp["name"]))
+    mark_ambiguous(merged)
+    save_config(merged, known_ambiguous=ambiguous_name_keys(merged))
     return merged
 
 
@@ -508,16 +741,41 @@ def load_tasks_cache() -> list[dict]:
 
 
 def save_resources_cache(nodes, vms, storages):
+    if _conn_ids_pending:
+        # Stage 5.1.2 §2.1: the cache must never contain conn_ids that the
+        # persistent config does not confirm — e.g. ids assigned at load
+        # whose migration write failed and that would vanish on restart.
+        logger.warning(
+            "save_resources_cache skipped: conn_id migration is not "
+            "anchored in the stored config yet")
+        return
     try:
         # Error stubs of the current session (status="error") are not cached:
         # the cache holds "last successful data", and load-time stubs
         # create duplicates in the tree (the real host node arrives with
         # a short name while the stub is created with the config's FQDN).
+        # Stage 5.1.2 §2.1: rows without conn_id are not cached either —
+        # a row that cannot be attributed to a connection could never be
+        # restored and must not occupy the cache.
+        def _attributed(o):
+            if isinstance(o, dict):
+                return o.get("status") != "error" and o.get("conn_id")
+            return (getattr(o, "status_value", "") != "error"
+                    and getattr(o, "conn_id", ""))
         nodes = [
             dict(o) if not isinstance(o, dict) else o
             for o in nodes
-            if (o.get("status") if isinstance(o, dict)
-                else getattr(o, "status_value", "")) != "error"
+            if _attributed(o)
+        ]
+        vms = [
+            dict(o) if not isinstance(o, dict) else o
+            for o in vms
+            if _attributed(o)
+        ]
+        storages = [
+            dict(o) if not isinstance(o, dict) else o
+            for o in storages
+            if _attributed(o)
         ]
         data = json.dumps(
             {

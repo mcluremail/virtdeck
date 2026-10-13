@@ -65,7 +65,10 @@ def build_fleet_targets(nodes_cfg: list[dict]) -> list[FleetTarget]:
     clusters: dict[str, list[dict]] = {}
     standalone: list[dict] = []
     for cfg in nodes_cfg:
-        if cfg.get("skip") or cfg.get("type") == "pbs":
+        if cfg.get("skip") or cfg.get("type") == "pbs" \
+                or cfg.get("_ambiguous"):
+            # Stage 5.1.2: ambiguous entries (legacy name conflicts) are
+            # excluded from collection like skipped hosts.
             continue
         cl = cfg.get("cluster")
         if cl and cl not in (False, None, "Standalone"):

@@ -1291,5 +1291,22 @@
   "Migration of VM {vmid} failed: {err}": "Миграция ВМ {vmid} не удалась: {err}",
   "Purge from HA resources and backup jobs": "Удалить из HA-ресурсов и заданий резервного копирования",
   "Converting a container template back to a container is not supported": "Обратное преобразование шаблона контейнера в контейнер не поддерживается",
-  "PVE does not officially support this operation: the template flag is silently cleared and volumes remain base volumes — linked clones may break.": "PVE официально не поддерживает эту операцию: флаг шаблона молча снимается, тома остаются базовыми — связанные клоны могут сломаться."
+  "PVE does not officially support this operation: the template flag is silently cleared and volumes remain base volumes — linked clones may break.": "PVE официально не поддерживает эту операцию: флаг шаблона молча снимается, тома остаются базовыми — связанные клоны могут сломаться.",
+  "Skipped {name}: {reason}": "Пропущено {name}: {reason}",
+  "Skipped {name}: an earlier entry already matched this connection": "Пропущено {name}: более ранняя запись уже сопоставлена с этим подключением",
+  "Skipped {name}: {count} local connections match — resolve manually": "Пропущено {name}: совпадают {count} локальных подключений — разрешите вручную",
+  "Skipped {name}: the local connection has an unresolved name conflict": "Пропущено {name}: у локального подключения не разрешён конфликт имён",
+  "Updated {name}": "Обновлено {name}",
+  "Added {name}": "Добавлено {name}",
+  "A connection with this name already exists (comparison ignores case and outer spaces)": "Подключение с таким именем уже существует (сравнение без учёта регистра и внешних пробелов)",
+  "A connection named «{name}» already exists (name comparison ignores case and outer spaces)": "Подключение с именем «{name}» уже существует (сравнение имён без учёта регистра и внешних пробелов)",
+  "\n… and {count} more": "\n… и ещё {count}",
+  "Connections with equivalent names were found (name comparison ignores case and outer spaces). They stay visible but are not refreshed until the conflict is resolved:\n{list}": "Найдены подключения с эквивалентными именами (сравнение имён без учёта регистра и внешних пробелов). Они остаются видимыми, но не обновляются, пока конфликт не разрешён:\n{list}",
+  "Connection name conflict": "Конфликт имён подключений",
+  "Resolve…": "Разрешить…",
+  "Resolve name conflict": "Разрешить конфликт имён",
+  "Several connections share the same name.\nSelect the one to KEEP — the others will be removed:\n": "Несколько подключений имеют одно и то же имя.\nВыберите то, которое нужно СОХРАНИТЬ, — остальные будут удалены:\n",
+  "Resolve the name conflict for «{name}» before refreshing its token": "Разрешите конфликт имён для «{name}», прежде чем обновлять её токен",
+  "Resolve the name conflict for «{name}» before changing its certificate trust": "Разрешите конфликт имён для «{name}», прежде чем менять доверие к сертификату",
+  "Name conflict — resolve it before this server is used": "Конфликт имён — разрешите его, прежде чем использовать этот сервер"
 }

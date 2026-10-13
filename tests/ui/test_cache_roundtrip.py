@@ -89,10 +89,14 @@ class TestSaveLoadCache:
         from virtdeck.config import _init_db, load_resources_cache, save_resources_cache
         _init_db()  # initialize in temp location
 
-        nodes = [make_node(node="n1", host_name="h1"), make_node(node="n2", host_name="h2")]
-        vms = [make_vm(vmid=100, host_name="h1"), make_vm(vmid=101, host_name="h2")]
-        storages = [make_storage(storage="local", host_name="h1"),
-                     make_storage(storage="lvm", host_name="h2")]
+        nodes = [make_node(node="n1", host_name="h1", conn_id="id-h1"),
+                 make_node(node="n2", host_name="h2", conn_id="id-h2")]
+        vms = [make_vm(vmid=100, host_name="h1", conn_id="id-h1"),
+               make_vm(vmid=101, host_name="h2", conn_id="id-h2")]
+        storages = [make_storage(storage="local", host_name="h1",
+                                 conn_id="id-h1"),
+                    make_storage(storage="lvm", host_name="h2",
+                                 conn_id="id-h2")]
 
         save_resources_cache(
             [dict(n) for n in nodes],

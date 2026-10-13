@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import traceback
+import uuid
 from dataclasses import replace
 
 from PySide6.QtCore import QSize, Qt, QThreadPool, QTimer, Slot
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QMenu,
@@ -40,10 +42,13 @@ from ..backend.events import Event, EventBus
 from ..backend.fleet import build_fleet_targets
 from ..backend.refresh import RefreshCoordinator
 from ..config import (
+    ambiguous_name_keys,
     export_config,
     import_config,
     load_tasks_cache,
     load_ui_state,
+    mark_ambiguous,
+    name_key,
     save_config,
     save_tasks_cache,
     save_ui_state,
@@ -120,7 +125,9 @@ class MainWindow(QMainWindow):
         self._dup_cluster_warnings: list[str] = []
         self.nodes_cfg, dup_dropped = self._dedupe_cluster_cfgs(self.nodes_cfg)
         self._warn_dup_clusters(dup_dropped)
-        self._cfg_by_name = build_cfg_index(self.nodes_cfg)
+        # Stage 5.1.2: assign in-memory conn_ids where missing and build
+        # both indexes (name and conn_id) — see _rebuild_cfg_indexes.
+        self._rebuild_cfg_indexes()
         self.all_iso_images = {}
         self.all_ha_groups = {}
         self.all_pools = []
@@ -302,6 +309,9 @@ class MainWindow(QMainWindow):
 
         self.show()
         self.refresh_data()
+        # Stage 5.1.2 §3.2: surface legacy name conflicts once the window
+        # is up (deferred so the dialog never blocks construction/tests).
+        QTimer.singleShot(0, self._notify_ambiguous)
 
         self._toolbar = QToolBar()
         self._toolbar.setMovable(False)
@@ -416,41 +426,60 @@ class MainWindow(QMainWindow):
 
         # Offline mode: load cached resources immediately so tree is populated
         # before the first network response arrives
+        self._restore_offline_cache()
+
+    def _restore_offline_cache(self):
+        """Populate the repos from the offline resource cache.
+
+        Stage 5.1.2: only rows produced by a connection that still exists
+        are restored — filtered by conn_id, not by the display name. A
+        deleted and re-created connection (same name, new conn_id)
+        restores nothing, and legacy rows without conn_id are never
+        attached (they cannot be proven to belong to this
+        infrastructure).
+        """
         from ..config import load_resources_cache
         cached_res, cached_ts = load_resources_cache()
         if cached_res:
             try:
                 cluster_name_cache = {}
-                # Only restore hosts that are still in the configuration
-                # and not skipped (audit 4, D5): a removed host must not
-                # resurrect from the cache. Keyed by config name — for a
-                # cluster representative it is the config's name that ends
-                # up in host_name, never the PVE node name.
-                valid_hosts = {
-                    cfg.get("name", "") for cfg in self.nodes_cfg
+                valid_conn_ids = {
+                    cfg.get("conn_id") for cfg in self.nodes_cfg
                     if not cfg.get("skip", False)
+                    and not cfg.get("_ambiguous", False)
                     and cfg.get("type", "pve") != "pbs"
+                    and cfg.get("conn_id")
                 }
+                legacy_rows = 0
                 for cfg in self.nodes_cfg:
                     cn = cfg.get("cluster", "") or ""
                     cluster_name_cache[cfg.get("name", "")] = cn
                 for n_dict in cached_res.get("nodes", []):
-                    hn = n_dict.get("host_name", "")
-                    if hn not in valid_hosts:
+                    cid = n_dict.get("conn_id", "")
+                    if cid not in valid_conn_ids:
+                        legacy_rows += not cid
                         continue
+                    hn = n_dict.get("host_name", "")
                     cn = cluster_name_cache.get(hn, "")
                     ic = n_dict.get("_is_cluster", False)
                     self._node_repo.add(DomainNode.from_pve(n_dict, hn, cn, ic))
                 for v_dict in cached_res.get("vms", []):
-                    if v_dict.get("host_name", "") not in valid_hosts:
+                    if v_dict.get("conn_id", "") not in valid_conn_ids:
+                        legacy_rows += not v_dict.get("conn_id")
                         continue
                     self._vm_repo.add(DomainVm.from_pve(v_dict, v_dict.get("host_name", "")))
                 for s_dict in cached_res.get("storages", []):
-                    hn = s_dict.get("host_name", "")
-                    if hn not in valid_hosts:
+                    cid = s_dict.get("conn_id", "")
+                    if cid not in valid_conn_ids:
+                        legacy_rows += not cid
                         continue
+                    hn = s_dict.get("host_name", "")
                     cn = cluster_name_cache.get(hn, "")
                     self._storage_repo.add(DomainStorage.from_pve(s_dict, hn, cn))
+                if legacy_rows:
+                    logger.info(
+                        "offline cache: %d row(s) from a previous version "
+                        "have no conn_id and were not restored", legacy_rows)
                 self.detail_panel.set_lists(
                     self._node_repo.all(), self._vm_repo.all(), self._storage_repo.all(),
                 node_repo=self._node_repo, vm_repo=self._vm_repo
@@ -564,38 +593,59 @@ class MainWindow(QMainWindow):
             tr("Encrypted config (*.enc);;All files (*.*)"))
         if not path:
             return
-        merged = import_config(path, merge=True)
+        report: list[str] = []
+        merged = import_config(path, merge=True, report=report)
         if merged is None:
             return
         merged, dup_dropped = self._dedupe_cluster_cfgs(merged)
         self.nodes_cfg = merged
-        self._cfg_by_name = build_cfg_index(self.nodes_cfg)
+        self._rebuild_cfg_indexes()
         self.tree_panel.set_servers(merged)
         self.detail_panel.update_nodes_cfg(merged)
         self.pbs_panel.update_nodes_cfg(merged)
-        save_config(self.nodes_cfg)
+        save_config(self.nodes_cfg,
+                    known_ambiguous=self._known_ambiguous_keys())
         self.refresh_data()
         self._warn_dup_clusters(dup_dropped)
-        QMessageBox.information(self, tr("Import"),
-                                tr("Configuration imported ({count} hosts).").format(
-                                    count=len(merged)))
+        summary = tr("Configuration imported ({count} hosts).").format(
+            count=len(merged))
+        if report:
+            summary += "\n\n" + "\n".join(report[:20])
+            if len(report) > 20:
+                summary += tr("\n… and {count} more").format(
+                    count=len(report) - 20)
+        QMessageBox.information(self, tr("Import"), summary)
 
     # ------------------------------------------------------------
     # Add server
     # ------------------------------------------------------------
     def _on_add_server(self, context=""):
         from .add_server_dialog import AddServerDialog
-        dialog = AddServerDialog(self, context)
+        dialog = AddServerDialog(
+            self, context,
+            taken_name_keys={name_key(c.get("name", ""))
+                             for c in self.nodes_cfg})
         if dialog.exec() != AddServerDialog.Accepted:
             return
         cfg = dialog.get_config()
+        # Flow-level defense (stage 5.1): the dialog checks inline, this
+        # check makes the invariant independent of the dialog path.
+        if name_key(cfg.get("name", "")) in {
+                name_key(c.get("name", "")) for c in self.nodes_cfg}:
+            self._notifications.show(
+                tr("A connection named «{name}» already exists (name "
+                   "comparison ignores case and outer spaces)").format(
+                       name=cfg.get("name", "")),
+                error=True)
+            return
         cfg, dup_dropped = self._dedupe_cluster_cfgs(self.nodes_cfg + [cfg])
         self.nodes_cfg = cfg
-        self._cfg_by_name = build_cfg_index(self.nodes_cfg)
+        self._rebuild_cfg_indexes()
         self.tree_panel.set_servers(self.nodes_cfg)
         self.detail_panel.update_nodes_cfg(self.nodes_cfg)
         self.pbs_panel.update_nodes_cfg(self.nodes_cfg)
-        save_config(self.nodes_cfg)
+        save_config(self.nodes_cfg,
+                    known_ambiguous=self._known_ambiguous_keys())
         self.refresh_data()
         self._warn_dup_clusters(dup_dropped)
 
@@ -797,7 +847,8 @@ class MainWindow(QMainWindow):
         self._persist_cfg_views()
 
     def _persist_cfg_views(self):
-        save_config(self.nodes_cfg)
+        save_config(self.nodes_cfg,
+                    known_ambiguous=self._known_ambiguous_keys())
         self.tree_panel.set_servers(self.nodes_cfg)
         self.detail_panel.update_nodes_cfg(self.nodes_cfg)
         self.pbs_panel.update_nodes_cfg(self.nodes_cfg)
@@ -1052,7 +1103,8 @@ class MainWindow(QMainWindow):
                 cfg["group"] = group
             else:
                 cfg.pop("group", None)
-        save_config(self.nodes_cfg)
+        save_config(self.nodes_cfg,
+                    known_ambiguous=self._known_ambiguous_keys())
         self.tree_panel.set_servers(self.nodes_cfg)
         self.detail_panel.update_nodes_cfg(self.nodes_cfg)
         self.pbs_panel.update_nodes_cfg(self.nodes_cfg)
@@ -1061,14 +1113,16 @@ class MainWindow(QMainWindow):
         for cfg in self.nodes_cfg:
             if cfg.get("group") == old_name:
                 cfg["group"] = new_name
-        save_config(self.nodes_cfg)
+        save_config(self.nodes_cfg,
+                    known_ambiguous=self._known_ambiguous_keys())
         self.tree_panel.set_servers(self.nodes_cfg)
 
     def _on_group_delete(self, group_name):
         for cfg in self.nodes_cfg:
             if cfg.get("group") == group_name:
                 cfg.pop("group", None)
-        save_config(self.nodes_cfg)
+        save_config(self.nodes_cfg,
+                    known_ambiguous=self._known_ambiguous_keys())
         self.tree_panel.set_servers(self.nodes_cfg)
 
     def _on_console_from_tree(self, host_name, node, vmid):
@@ -1423,11 +1477,12 @@ class MainWindow(QMainWindow):
                 error=True
             )
         self.nodes_cfg = [c for c in self.nodes_cfg if c not in matched]
-        self._cfg_by_name = build_cfg_index(self.nodes_cfg)
+        self._rebuild_cfg_indexes()
         self.tree_panel.set_servers(self.nodes_cfg)
         self.detail_panel.update_nodes_cfg(self.nodes_cfg)
         self.pbs_panel.update_nodes_cfg(self.nodes_cfg)
-        save_config(self.nodes_cfg)
+        save_config(self.nodes_cfg,
+                    known_ambiguous=self._known_ambiguous_keys())
         from ..config import delete_node_tokens
         delete_node_tokens([c.get("name", "") for c in matched])
         self.refresh_data()
@@ -1435,6 +1490,14 @@ class MainWindow(QMainWindow):
     def _on_host_token_refresh(self, host_name):
         cfg = self._cfg_by_name.get(host_name)
         if not cfg:
+            return
+        if cfg.get("_ambiguous"):
+            # Stage 5.1.2 §3.1: token operations are excluded for
+            # conflicting connections — resolve the name conflict first.
+            self._notifications.show(
+                tr("Resolve the name conflict for «{name}» before "
+                   "refreshing its token").format(name=host_name),
+                error=True)
             return
         from .add_server_dialog import AddServerDialog
         dialog = AddServerDialog(self, "reconnect")
@@ -1449,25 +1512,46 @@ class MainWindow(QMainWindow):
         new_cfg = dialog.get_config()
         idx = next((i for i, c in enumerate(self.nodes_cfg) if c.get("name") == host_name), None)
         if idx is not None:
-            new_cfg["name"] = host_name
-            new_cfg["host"] = cfg["host"]
-            new_cfg["cluster"] = cfg.get("cluster", False)
+            # Stage 5.1.2 §6: the dialog output must not REBUILD the
+            # connection from a short field list — start from the current
+            # cfg and override only what the dialog actually collected.
+            # This preserves conn_id, skip, group, type, port, proxy and
+            # any other option the dialog does not carry.
+            merged = dict(self.nodes_cfg[idx])
+            for k, v in new_cfg.items():
+                if k != "conn_id":
+                    merged[k] = v
+            merged["name"] = host_name
+            merged["host"] = cfg["host"]
+            merged["cluster"] = cfg.get("cluster", False)
             if cfg.get("cluster_rep"):
-                new_cfg["cluster_rep"] = True
-            self.nodes_cfg[idx] = new_cfg
-            self._cfg_by_name[host_name] = new_cfg
+                merged["cluster_rep"] = True
+            self.nodes_cfg[idx] = merged
+            self._cfg_by_name[host_name] = merged
+            if merged.get("conn_id"):
+                self._cfg_by_conn[merged["conn_id"]] = merged
         self.tree_panel.set_servers(self.nodes_cfg)
         self.detail_panel.update_nodes_cfg(self.nodes_cfg)
         self.pbs_panel.update_nodes_cfg(self.nodes_cfg)
-        save_config(self.nodes_cfg)
+        save_config(self.nodes_cfg,
+                    known_ambiguous=self._known_ambiguous_keys())
         self.refresh_data()
 
     def _on_host_trust_ssl(self, host_name, trust_ssl):
         cfg = self._cfg_by_name.get(host_name)
         if not cfg:
             return
+        if cfg.get("_ambiguous"):
+            # Stage 5.1.2 §3.1: token/credential operations are excluded
+            # for conflicting connections — resolve the conflict first.
+            self._notifications.show(
+                tr("Resolve the name conflict for «{name}» before "
+                   "changing its certificate trust").format(name=host_name),
+                error=True)
+            return
         cfg["trust_ssl"] = bool(trust_ssl)
-        save_config(self.nodes_cfg)
+        save_config(self.nodes_cfg,
+                    known_ambiguous=self._known_ambiguous_keys())
         self.tree_panel.set_servers(self.nodes_cfg)
         self.refresh_data()
 
@@ -1500,6 +1584,9 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def refresh_data(self):
+        # Stage 5.1.2: sync the indexes with the current nodes_cfg before
+        # anything consumes them (worker filters, result gates).
+        self._rebuild_cfg_indexes()
         # Cancel all pending soft_refresh — their results are stale
         self._refresh.reset_soft()
         self._soft_refresh_active = False
@@ -1535,8 +1622,11 @@ class MainWindow(QMainWindow):
         # replaces its own host's snapshot on "ok", so a host whose worker
         # is rejected or fails keeps its last known-good data.  Only hosts
         # that left the configuration are dropped.
+        # Stage 5.1.2: ambiguous entries (legacy name conflicts) are
+        # excluded from refresh entirely.
         active_cfgs = [cfg for cfg in self.nodes_cfg
                        if not cfg.get("skip", False)
+                       and not cfg.get("_ambiguous", False)
                        and cfg.get("type", "pve") != "pbs"]
         active_names = {cfg.get("name") for cfg in active_cfgs}
         for host in [h for h in {n.host_name for n in self._node_repo.all()}
@@ -1550,6 +1640,26 @@ class MainWindow(QMainWindow):
         for host in [h for h in {p.host_name for p in self._pool_repo.all()}
                      if h and h not in active_names]:
             self._pool_repo.remove_host(host)
+
+        # Stage 5.1.2 §3.1: ambiguous entries (legacy name conflicts) must
+        # stay visible and must not look healthy — inject a warning stub.
+        # status=error rows never reach the resource cache, and no worker
+        # is started for these connections.
+        for cfg in self.nodes_cfg:
+            if not cfg.get("_ambiguous"):
+                continue
+            host = cfg.get("name", "")
+            if not host or self._node_repo.get(host, host):
+                continue
+            self._node_repo.add(DomainNode.from_pve({
+                "node": host,
+                "status": "error",
+                "error": "name conflict — resolve before use",
+                "host_name": host,
+                "conn_id": cfg.get("conn_id", ""),
+                "_display_name": host,
+                "_is_cluster": False,
+            }, host, "", False))
 
         self.tree_panel.start_loading()
 
@@ -1585,6 +1695,52 @@ class MainWindow(QMainWindow):
             )
             self._first_selection_done = True
             self._update_status_bar()
+
+    def _rebuild_cfg_indexes(self):
+        """Rebuild both config indexes: name → cfg and conn_id → cfg.
+
+        The name index drives display/routing; the conn_id index drives
+        the worker-result identity gates (stage 5.1.2). Every entry
+        missing a conn_id gets an in-memory one (entries from
+        load_config() already carry persisted ids), and ambiguity flags
+        are recomputed so a conflict group that shrank to one member
+        (e.g. after a repair) resumes refreshing.
+        """
+        mark_ambiguous(self.nodes_cfg)
+        for cfg in self.nodes_cfg:
+            if isinstance(cfg, dict) and not cfg.get("conn_id"):
+                cfg["conn_id"] = uuid.uuid4().hex
+        self._cfg_by_name = build_cfg_index(self.nodes_cfg)
+        self._cfg_by_conn = {cfg["conn_id"]: cfg for cfg in self.nodes_cfg
+                             if isinstance(cfg, dict) and cfg.get("conn_id")}
+
+    def _known_ambiguous_keys(self) -> frozenset[str]:
+        """Normalized names of unresolved legacy conflicts (stage 5.1.1
+        §3.1) — the allowance passed to save_config so grandfathered
+        conflict groups persist verbatim while the conflict can only
+        shrink."""
+        return ambiguous_name_keys(self.nodes_cfg)
+
+    def _resolve_result_cfg(self, data, worker):
+        """Resolve the CURRENT config for an incoming worker result.
+
+        Stage 5.1.2 identity gate: returns None when the result must be
+        dropped BEFORE any state mutation — unknown conn_id (connection
+        deleted or re-created under the same name), ambiguous entry, or
+        a legacy payload without conn_id whose name does not resolve.
+        The name fallback exists only for payloads produced before the
+        conn_id stamping (test doubles); production FetchWorker results
+        always carry conn_id.
+        """
+        conn_id = data.get("conn_id") or (
+            worker.node_cfg.get("conn_id") if worker else None)
+        if conn_id:
+            cfg = self._cfg_by_conn.get(conn_id)
+        else:
+            cfg = self._cfg_by_name.get(data.get("host", ""))
+        if cfg is None or cfg.get("_ambiguous"):
+            return None
+        return cfg
 
     @Slot(str, str, dict)
     def _dedupe_cluster_cfgs(self, cfgs):
@@ -1625,6 +1781,69 @@ class MainWindow(QMainWindow):
             else:
                 self._dup_cluster_warnings.append(msg)
 
+    # ------------------------------------------------------------
+    # Legacy name conflicts (stage 5.1.1 §3.2)
+    # ------------------------------------------------------------
+
+    def _conflict_groups(self) -> dict[str, list[dict]]:
+        """Current unresolved name-conflict groups (by normalized name)."""
+        groups: dict[str, list[dict]] = {}
+        for cfg in self.nodes_cfg:
+            if cfg.get("_ambiguous"):
+                groups.setdefault(name_key(cfg.get("name", "")), []).append(cfg)
+        return groups
+
+    def _notify_ambiguous(self):
+        """Surface legacy name conflicts and offer the resolution dialog.
+
+        Conflicting connections stay visible and keep their tokens; they
+        are excluded from refresh and cache until the conflict is resolved
+        by the user.
+        """
+        groups = self._conflict_groups()
+        if not groups:
+            return
+        lines = []
+        for members in groups.values():
+            listed = "  /  ".join(
+                f"«{c.get('name')}» ({c.get('host', '?')})" for c in members)
+            lines.append("• " + listed)
+        text = tr(
+            "Connections with equivalent names were found (name comparison "
+            "ignores case and outer spaces). They stay visible but are not "
+            "refreshed until the conflict is resolved:\n{list}"
+        ).format(list="\n".join(lines))
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(tr("Connection name conflict"))
+        box.setText(text)
+        resolve_btn = box.addButton(tr("Resolve…"), QMessageBox.AcceptRole)
+        box.addButton(tr("Later"), QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() is resolve_btn:
+            self._resolve_ambiguity_dialog()
+
+    def _resolve_ambiguity_dialog(self):
+        """Per conflict group: pick the connection to KEEP; the losers are
+        removed through the regular delete flow (its own confirmation,
+        token revoke, keyring cleanup). The winner is not modified."""
+        for members in self._conflict_groups().values():
+            labels = [f"«{c.get('name')}» — {c.get('host', '?')}"
+                      for c in members]
+            choice, ok = QInputDialog.getItem(
+                self,
+                tr("Resolve name conflict"),
+                tr("Several connections share the same name.\n"
+                   "Select the one to KEEP — the others will be removed:\n"
+                   + "\n".join(labels)),
+                labels, 0, False)
+            if not ok:
+                continue
+            keep_idx = labels.index(choice)
+            for i, member in enumerate(members):
+                if i != keep_idx:
+                    self._on_host_remove("host", member.get("name", ""))
+
     def _on_tree_item_selected(self, obj_type, obj_name, data):
         current_key = self.tree_panel.get_current_item_key()
         if current_key is not None:
@@ -1651,8 +1870,19 @@ class MainWindow(QMainWindow):
         # branch (cache save, offline reset) would never run.
         self._workers.discard(worker)
         self._refresh.hard_done(worker, gen)
+        # Stage 5.1.2 identity gate: a result of an unknown, deleted or
+        # re-created connection (and of an ambiguous entry) must not touch
+        # repos, epochs, UI or cache. Runs BEFORE any state mutation; the
+        # cycle bookkeeping above already counted the report so the cycle
+        # can finalize (the cache save below is identity-gated too).
+        cfg = self._resolve_result_cfg(data, worker)
+        if cfg is None:
+            return
         status = data.get("status", "error")
-        host = data.get("host", "")
+        # The CURRENT config name is the namespace owner — never trust the
+        # name inside a stale result.
+        conn_id = cfg.get("conn_id", "")
+        host = cfg.get("name", "") or data.get("host", "")
         # Audit 4.2, D1: a late answer of an already-finished attempt must
         # not overwrite a fresher snapshot of this host, nor trigger side
         # effects (notifications, first selection, cache save).
@@ -1669,13 +1899,16 @@ class MainWindow(QMainWindow):
             self._storage_repo.remove_host(host)
             for node in data.get("nodes", []):
                 node["host_name"] = host
+                node["conn_id"] = conn_id
                 node["_is_cluster"] = is_cluster
                 self._node_repo.add(DomainNode.from_pve(node, host, cluster_name, is_cluster))
             for vm in data.get("vms", []):
                 vm["host_name"] = host
+                vm["conn_id"] = conn_id
                 self._vm_repo.add(DomainVm.from_pve(vm, host))
             for st_dict in data.get("storages", []):
                 st_dict["host_name"] = host
+                st_dict["conn_id"] = conn_id
                 self._storage_repo.add(DomainStorage.from_pve(st_dict, host, cluster_name))
             # Collect pools (domain objects; identity is (host, poolid)).
             # None means the optional pool source failed — keep the
@@ -1717,6 +1950,7 @@ class MainWindow(QMainWindow):
                     "status": "error",
                     "error": err_msg,
                     "host_name": host,
+                    "conn_id": conn_id,
                     "_display_name": host,
                     "_is_cluster": is_cluster_err
                 }
@@ -1825,6 +2059,10 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------
     def soft_refresh(self):
         now = time.time()
+        # Stage 5.1.2: sync the indexes with the current nodes_cfg before
+        # the worker filters and result gates consume them (same as the
+        # hard cycle entry).
+        self._rebuild_cfg_indexes()
         # Hard-cycle watchdog (audit 4, D3): unreported hard workers would
         # block finalization forever. After the ceiling, leave the loading
         # state — late worker results still apply per-host when they
@@ -1857,8 +2095,11 @@ class MainWindow(QMainWindow):
         self._soft_errors.clear()
         self._soft_epochs.clear()
 
+        # Stage 5.1.2: ambiguous entries (legacy name conflicts) are
+        # excluded from refresh entirely.
         active_cfgs = [cfg for cfg in self.nodes_cfg
                        if not cfg.get("skip", False)
+                       and not cfg.get("_ambiguous", False)
                        and cfg.get("type", "pve") != "pbs"]
         soft_gen = self._refresh.begin_soft(len(active_cfgs), now)
         if not active_cfgs:
@@ -1909,8 +2150,15 @@ class MainWindow(QMainWindow):
     def on_soft_refresh_result(self, data, worker=None, gen=0, epoch=None):
         if not self._refresh.soft_result_current(gen):
             return
+        # Stage 5.1.2 identity gate (same rules as the hard slot): a
+        # result of an unknown/deleted/re-created connection must not
+        # mutate the soft repos, the epoch bookkeeping or the cache.
+        cfg = self._resolve_result_cfg(data, worker)
+        if cfg is None:
+            return
         status = data.get("status", "error")
-        host = data.get("host", "")
+        conn_id = cfg.get("conn_id", "")
+        host = cfg.get("name", "") or data.get("host", "")
         if status == "ok":
             if epoch is not None:
                 self._soft_epochs[host] = epoch
@@ -1918,13 +2166,16 @@ class MainWindow(QMainWindow):
             cluster_name = (worker.node_cfg.get("cluster", "") or "") if worker else ""
             for node in data.get("nodes", []):
                 node["host_name"] = host
+                node["conn_id"] = conn_id
                 node["_is_cluster"] = is_cluster
                 self._soft_node_repo.add(DomainNode.from_pve(node, host, cluster_name, is_cluster))
             for vm in data.get("vms", []):
                 vm["host_name"] = host
+                vm["conn_id"] = conn_id
                 self._soft_vm_repo.add(DomainVm.from_pve(vm, host))
             for st_dict in data.get("storages", []):
                 st_dict["host_name"] = host
+                st_dict["conn_id"] = conn_id
                 self._soft_storage_repo.add(DomainStorage.from_pve(st_dict, host, cluster_name))
         else:
             # Do NOT put an empty error stub into the soft repos (audit 4,
@@ -1979,6 +2230,8 @@ class MainWindow(QMainWindow):
                             "status": "error",
                             "error": err_msg,
                             "host_name": h,
+                            "conn_id": self._cfg_by_name.get(
+                                h, {}).get("conn_id", ""),
                             "_display_name": h,
                         }
                         self._node_repo.add(DomainNode.from_pve(err_node, h, "", False))

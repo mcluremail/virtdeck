@@ -26,6 +26,7 @@ class Storage(DictCompat):
         "total": "total_bytes",
         "avail": "avail_bytes",
         "shared": "shared",
+        "conn_id": "conn_id",
     }
 
     # -- Identity --
@@ -53,6 +54,11 @@ class Storage(DictCompat):
     avail_bytes: int
     shared: bool
     """Whether the storage is shared across nodes."""
+
+    # -- Identity of the producing connection (stage 5.1.2) --
+    conn_id: str = ""
+    """conn_id of the config entry that fetched this row; the resource
+    cache is identity-keyed on it. Empty for legacy rows."""
 
     # -- Computed properties --
     @property
@@ -140,4 +146,5 @@ class Storage(DictCompat):
             total_bytes=d.get("total", 0) or d.get("maxdisk", 0) or 0,
             avail_bytes=d.get("avail", 0) or 0,
             shared=bool(d.get("shared")),
+            conn_id=d.get("conn_id", "") or "",
         )

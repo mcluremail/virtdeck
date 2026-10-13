@@ -142,14 +142,17 @@ class TestCaches:
         assert config.load_tasks_cache() == []
 
     def test_resources_cache_roundtrip(self, cfg_dir):
+        # Stage 5.1.2: cache rows carry the producing connection's id
         config.save_resources_cache(
-            [{"node": "pve01"}], [{"vmid": 100}], [{"storage": "local"}],
+            [{"node": "pve01", "conn_id": "id-1"}],
+            [{"vmid": 100, "conn_id": "id-1"}],
+            [{"storage": "local", "conn_id": "id-1"}],
         )
         data, ts = config.load_resources_cache()
         assert data is not None
-        assert data["nodes"] == [{"node": "pve01"}]
-        assert data["vms"] == [{"vmid": 100}]
-        assert data["storages"] == [{"storage": "local"}]
+        assert data["nodes"] == [{"node": "pve01", "conn_id": "id-1"}]
+        assert data["vms"] == [{"vmid": 100, "conn_id": "id-1"}]
+        assert data["storages"] == [{"storage": "local", "conn_id": "id-1"}]
         assert ts  # timestamp string present
 
     def test_resources_cache_empty(self, cfg_dir):
@@ -293,16 +296,29 @@ class TestBundle:
             {"name": "h3", "host": "10.0.0.3", "user": ""},     # no user
             "not a dict",
         ]
-        result = config._validate_imported(imported)
-        assert len(result) == 1
-        assert result[0]["name"] == "h1"
-        assert "evil_field" not in result[0]
-        assert result[0]["trust_ssl"] is True
+        entries, skipped = config._validate_imported(imported)
+        assert len(entries) == 1
+        assert entries[0]["name"] == "h1"
+        assert "evil_field" not in entries[0]
+        assert entries[0]["trust_ssl"] is True
+        # every rejected entry carries an explicit reason (stage 5.1.1 §4)
+        assert len(skipped) == 4
+        assert all(reason for _name, reason in skipped)
 
     def test_validate_imported_rejects_newline(self):
+        # Stage 5.1.1: one bad entry no longer aborts the whole import —
+        # it is skipped WITH a reason (per-entry tolerance, audit A-8).
         imported = [{"name": "h1", "host": "a\nb", "user": "u"}]
-        with pytest.raises(ValueError):
-            config._validate_imported(imported)
+        entries, skipped = config._validate_imported(imported)
+        assert entries == []
+        assert skipped and "Invalid characters in host" == skipped[0][1]
+
+    def test_validate_imported_strips_conn_id(self):
+        # a file-borne conn_id is never accepted as identity (5.1.1 §4)
+        imported = [{"name": "h1", "host": "10.0.0.1", "user": "u",
+                     "conn_id": "foreign-id"}]
+        entries, _skipped = config._validate_imported(imported)
+        assert "conn_id" not in entries[0]
 
     def test_export_import_roundtrip(self, cfg_dir, fake_keyring, monkeypatch):
         monkeypatch.setattr(config, "_ask_password", lambda mode="enter": "password123")

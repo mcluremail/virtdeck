@@ -233,6 +233,12 @@ class PbsPanel(QWidget):
         self._server = server_name
         self._store = ""
         self._title_lbl.setText(f"{server_name} — Proxmox Backup Server")
+        if self._cfg(server_name).get("_ambiguous"):
+            # Stage 5.1.2 §3.1: conflicting connections are not refreshed.
+            self._set_status(tr(
+                "Name conflict — resolve it before this server is used"),
+                Color.STATUS_ERR)
+            return
         self._stack.setCurrentIndex(0)
         self._load_datastores()
 

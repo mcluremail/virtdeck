@@ -1291,5 +1291,22 @@
   "Migration of VM {vmid} failed: {err}": "فشل ترحيل الجهاز {vmid}: {err}",
   "Purge from HA resources and backup jobs": "إزالة من موارد HA ومهام النسخ الاحتياطي",
   "Converting a container template back to a container is not supported": "تحويل قالب الحاوية مرة أخرى إلى حاوية غير مدعوم",
-  "PVE does not officially support this operation: the template flag is silently cleared and volumes remain base volumes — linked clones may break.": "لا يدعم PVE هذه العملية رسميًا: تتم إزالة علامة القالب بصمت وتبقى الأقراص أقراصًا أساسية — قد تتعطل الاستنساخات المرتبطة."
+  "PVE does not officially support this operation: the template flag is silently cleared and volumes remain base volumes — linked clones may break.": "لا يدعم PVE هذه العملية رسميًا: تتم إزالة علامة القالب بصمت وتبقى الأقراص أقراصًا أساسية — قد تتعطل الاستنساخات المرتبطة.",
+  "Skipped {name}: {reason}": "تم تخطي {name}: {reason}",
+  "Skipped {name}: an earlier entry already matched this connection": "تم تخطي {name}: إدخال سابق طابق هذا الاتصال بالفعل",
+  "Skipped {name}: {count} local connections match — resolve manually": "تم تخطي {name}: {count} من الاتصالات المحلية تتطابق — يرجى الحل يدويًا",
+  "Skipped {name}: the local connection has an unresolved name conflict": "تم تخطي {name}: الاتصال المحلي لديه تعارض أسماء لم يتم حله",
+  "Updated {name}": "تم تحديث {name}",
+  "Added {name}": "تمت إضافة {name}",
+  "A connection with this name already exists (comparison ignores case and outer spaces)": "يوجد اتصال بهذا الاسم بالفعل (تتجاهل المقارنة حالة الأحرف والمسافات الطرفية)",
+  "A connection named «{name}» already exists (name comparison ignores case and outer spaces)": "يوجد اتصال بالاسم «{name}» بالفعل (تتجاهل مقارنة الأسماء حالة الأحرف والمسافات الطرفية)",
+  "\n… and {count} more": "\n… و{count} أخرى",
+  "Connections with equivalent names were found (name comparison ignores case and outer spaces). They stay visible but are not refreshed until the conflict is resolved:\n{list}": "تم العثور على اتصالات بأسماء مكافئة (تتجاهل مقارنة الأسماء حالة الأحرف والمسافات الطرفية). تظل مرئية لكن لا يتم تحديثها حتى يُحل التعارض:\n{list}",
+  "Connection name conflict": "تعارض أسماء الاتصالات",
+  "Resolve…": "حل…",
+  "Resolve name conflict": "حل تعارض الأسماء",
+  "Several connections share the same name.\nSelect the one to KEEP — the others will be removed:\n": "تتشارك عدة اتصالات الاسم نفسه.\nحدد الاتصال الذي تريد الإبقاء عليه — وستتم إزالة الباقي:\n",
+  "Resolve the name conflict for «{name}» before refreshing its token": "حل تعارض الأسماء لـ«{name}» قبل تحديث رمزها المميز",
+  "Resolve the name conflict for «{name}» before changing its certificate trust": "حل تعارض الأسماء لـ«{name}» قبل تغيير الثقة في الشهادة",
+  "Name conflict — resolve it before this server is used": "تعارض الأسماء — يرجى حله قبل استخدام هذا الخادم"
 }

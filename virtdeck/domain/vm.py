@@ -45,6 +45,7 @@ class Vm(DictCompat):
         "netout": "netout_bytes",
         "diskread": "diskread_bytes",
         "diskwrite": "diskwrite_bytes",
+        "conn_id": "conn_id",
     }
 
     # -- Identity --
@@ -99,6 +100,11 @@ class Vm(DictCompat):
 
     diskwrite_bytes: int
     """Cumulative disk-write bytes."""
+
+    # -- Identity of the producing connection (stage 5.1.2) --
+    conn_id: str = ""
+    """conn_id of the config entry that fetched this row; the resource
+    cache is identity-keyed on it. Empty for legacy rows."""
 
     # -- Computed properties --
     @property
@@ -245,4 +251,5 @@ class Vm(DictCompat):
             netout_bytes=d.get("netout", 0) or 0,
             diskread_bytes=d.get("diskread", 0) or 0,
             diskwrite_bytes=d.get("diskwrite", 0) or 0,
+            conn_id=d.get("conn_id", "") or "",
         )

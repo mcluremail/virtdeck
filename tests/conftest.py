@@ -54,6 +54,7 @@ def make_node():
             qemu_version=kwargs.get("qemu_version", "9.0.0"),
             lxc_version=kwargs.get("lxc_version", "6.0.0"),
             is_cluster=kwargs.get("is_cluster", False),
+            conn_id=kwargs.get("conn_id", ""),
         )
 
     return _make
@@ -105,6 +106,7 @@ def make_vm():
             netout_bytes=kwargs.get("netout_bytes", 0),
             diskread_bytes=kwargs.get("diskread_bytes", 0),
             diskwrite_bytes=kwargs.get("diskwrite_bytes", 0),
+            conn_id=kwargs.get("conn_id", ""),
         )
 
     return _make
@@ -126,6 +128,7 @@ def make_storage():
         total_bytes=100 * 1024**3,
         avail_bytes=90 * 1024**3,
         shared=False,
+        conn_id="",
     ):
         return Storage(
             storage=storage,
@@ -138,6 +141,7 @@ def make_storage():
             total_bytes=total_bytes,
             avail_bytes=avail_bytes,
             shared=shared,
+            conn_id=conn_id,
         )
 
     return _make

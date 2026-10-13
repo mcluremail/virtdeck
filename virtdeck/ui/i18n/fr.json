@@ -1291,5 +1291,22 @@
   "Migration of VM {vmid} failed: {err}": "Échec de la migration de la VM {vmid} : {err}",
   "Purge from HA resources and backup jobs": "Purger des ressources HA et des tâches de sauvegarde",
   "Converting a container template back to a container is not supported": "La reconversion d'un modèle de conteneur en conteneur n'est pas prise en charge",
-  "PVE does not officially support this operation: the template flag is silently cleared and volumes remain base volumes — linked clones may break.": "PVE ne prend pas officiellement en charge cette opération : l'indicateur de modèle est retiré silencieusement et les volumes restent des volumes de base — les clones liés peuvent être cassés."
+  "PVE does not officially support this operation: the template flag is silently cleared and volumes remain base volumes — linked clones may break.": "PVE ne prend pas officiellement en charge cette opération : l'indicateur de modèle est retiré silencieusement et les volumes restent des volumes de base — les clones liés peuvent être cassés.",
+  "Skipped {name}: {reason}": "Ignoré {name} : {reason}",
+  "Skipped {name}: an earlier entry already matched this connection": "Ignoré {name} : une entrée précédente correspond déjà à cette connexion",
+  "Skipped {name}: {count} local connections match — resolve manually": "Ignoré {name} : {count} connexions locales correspondent — résolvez manuellement",
+  "Skipped {name}: the local connection has an unresolved name conflict": "Ignoré {name} : la connexion locale a un conflit de noms non résolu",
+  "Updated {name}": "Mis à jour {name}",
+  "Added {name}": "Ajouté {name}",
+  "A connection with this name already exists (comparison ignores case and outer spaces)": "Une connexion avec ce nom existe déjà (la comparaison ignore la casse et les espaces extérieurs)",
+  "A connection named «{name}» already exists (name comparison ignores case and outer spaces)": "Une connexion nommée « {name} » existe déjà (la comparaison ignore la casse et les espaces extérieurs)",
+  "\n… and {count} more": "\n… et {count} de plus",
+  "Connections with equivalent names were found (name comparison ignores case and outer spaces). They stay visible but are not refreshed until the conflict is resolved:\n{list}": "Des connexions avec des noms équivalents ont été trouvées (la comparaison ignore la casse et les espaces extérieurs). Elles restent visibles mais ne sont pas actualisées tant que le conflit n'est pas résolu :\n{list}",
+  "Connection name conflict": "Conflit de noms de connexion",
+  "Resolve…": "Résoudre…",
+  "Resolve name conflict": "Résoudre le conflit de noms",
+  "Several connections share the same name.\nSelect the one to KEEP — the others will be removed:\n": "Plusieurs connexions partagent le même nom.\nSélectionnez celle à CONSERVER — les autres seront supprimées :\n",
+  "Resolve the name conflict for «{name}» before refreshing its token": "Résolvez le conflit de noms pour « {name} » avant de renouveler son jeton",
+  "Resolve the name conflict for «{name}» before changing its certificate trust": "Résolvez le conflit de noms pour « {name} » avant de modifier la confiance du certificat",
+  "Name conflict — resolve it before this server is used": "Conflit de noms — résolvez-le avant d'utiliser ce serveur"
 }

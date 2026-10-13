@@ -438,11 +438,15 @@ class FetchWorker(QRunnable):
             # -- Emit result --
             # pools is None when the optional pool source failed (consumer
             # keeps the previous data); [] is a confirmed absence.
+            # conn_id (stage 5.1.2): the producer identity travels with the
+            # result; the consumer drops results of unknown/deleted
+            # connections before touching any state.
             emitted_pools = None if pools_failed else pools
             if core_errors:
                 # No confirmed data at all.
                 self.signals.result_ready.emit({
                     "host": self.node_cfg["name"],
+                    "conn_id": self.node_cfg.get("conn_id", ""),
                     "status": "error",
                     "error": "; ".join(core_errors),
                 })
@@ -451,6 +455,7 @@ class FetchWorker(QRunnable):
                 # not: the consumer must keep the previous snapshot.
                 self.signals.result_ready.emit({
                     "host": self.node_cfg["name"],
+                    "conn_id": self.node_cfg.get("conn_id", ""),
                     "status": "partial",
                     "error": "incomplete snapshot — " + "; ".join(list_errors),
                     "nodes": nodes,
@@ -463,6 +468,7 @@ class FetchWorker(QRunnable):
             else:
                 self.signals.result_ready.emit({
                     "host": self.node_cfg["name"],
+                    "conn_id": self.node_cfg.get("conn_id", ""),
                     "status": "ok",
                     "nodes": nodes,
                     "vms": vms,
@@ -475,6 +481,7 @@ class FetchWorker(QRunnable):
             try:
                 self.signals.result_ready.emit({
                     "host": self.node_cfg["name"],
+                    "conn_id": self.node_cfg.get("conn_id", ""),
                     "status": "error",
                     "error": str(e)
                 })

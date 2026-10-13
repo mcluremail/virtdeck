@@ -40,6 +40,7 @@ class Node(DictCompat):
         "lxctype": "lxc_version",
         "_display_name": "display_name",
         "_is_cluster": "is_cluster",
+        "conn_id": "conn_id",
     }
 
     # -- Identity --
@@ -79,6 +80,11 @@ class Node(DictCompat):
     # -- Flags --
     is_cluster: bool
     """Whether this node was fetched via a cluster-representative config."""
+
+    # -- Identity of the producing connection (stage 5.1.2) --
+    conn_id: str = ""
+    """conn_id of the config entry that fetched this row; the resource
+    cache is identity-keyed on it. Empty for legacy rows."""
 
     # -- Computed properties --
     @property
@@ -219,6 +225,7 @@ class Node(DictCompat):
             qemu_version=d.get("qemu", ""),
             lxc_version=d.get("lxctype", ""),
             is_cluster=is_cluster,
+            conn_id=d.get("conn_id", "") or "",
         )
 
     @staticmethod

@@ -37,9 +37,12 @@ def _section_sep():
 
 class AddServerDialog(QDialog):
 
-    def __init__(self, parent=None, context=""):
+    def __init__(self, parent=None, context="", taken_name_keys=None):
         super().__init__(parent)
         self._context = context
+        # Stage 5.1: normalized name keys of the existing connections —
+        # the dialog rejects duplicates inline (case/space-insensitive).
+        self._taken_name_keys = frozenset(taken_name_keys or ())
         title_suffix = {"cluster": tr(" to cluster"), "standalone": tr(" as standalone host")}.get(context, "")
         self.setWindowTitle(tr("Add Server") + title_suffix)
         # height by content, but no higher than a soft minimum: on screens
@@ -261,7 +264,21 @@ class AddServerDialog(QDialog):
         self.add_btn.setEnabled(pbs or self._token_data is not None)
         self._set_status("")
 
+    def _name_conflicts(self) -> bool:
+        """Stage 5.1: normalized uniqueness check at the dialog level."""
+        from ..config import name_key
+        name = self.name_input.text().strip() or self.host_input.text().strip()
+        if self._taken_name_keys and name_key(name) in self._taken_name_keys:
+            self._set_status(
+                tr("A connection with this name already exists "
+                   "(comparison ignores case and outer spaces)"),
+                Color.STATUS_ERR)
+            return True
+        return False
+
     def _on_add(self):
+        if self._name_conflicts():
+            return
         if not self._is_pbs():
             self.accept()
             return

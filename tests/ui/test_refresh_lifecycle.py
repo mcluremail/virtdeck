@@ -62,8 +62,10 @@ def _err(host, msg="connection refused"):
 
 
 def _cfg(name):
+    # deterministic conn_id: seeded repo rows reference the same identity
     return {"name": name, "host": f"10.0.0.{name[-1]}", "user": "u@pam",
-            "token_name": "t", "token_value": "s"}
+            "token_name": "t", "token_value": "s",
+            "conn_id": f"id-{name}"}
 
 
 # --- fixtures / fakes ---------------------------------------------------
@@ -102,10 +104,13 @@ def _install_fake_fetch(monkeypatch):
 
 def _seed(mw, host, node="pve1", vmids=(100,)):
     """A previous known-good snapshot: one node + VMs + one storage."""
-    mw._node_repo.add(DomainNode.from_pve(_node(node), host, "", False))
+    mw._node_repo.add(DomainNode.from_pve(
+        dict(_node(node), conn_id=f"id-{host}"), host, "", False))
     for vmid in vmids:
-        mw._vm_repo.add(DomainVm.from_pve(_vm(vmid, node), host))
-    mw._storage_repo.add(DomainStorage.from_pve(_st(node), host, ""))
+        mw._vm_repo.add(DomainVm.from_pve(
+            dict(_vm(vmid, node), conn_id=f"id-{host}"), host))
+    mw._storage_repo.add(DomainStorage.from_pve(
+        dict(_st(node), conn_id=f"id-{host}"), host, ""))
 
 
 def _cached_vmids():
@@ -374,25 +379,35 @@ def test_soft_recovery_after_failures(main_window, monkeypatch):
 # --- cache vs config at startup (D5) -------------------------------------
 
 
-def _cached_node(host, node):
-    return {"node": node, "status": "online", "host_name": host,
-            "_is_cluster": False}
+def _cached_node(host, node, conn_id=""):
+    row = {"node": node, "status": "online", "host_name": host,
+           "_is_cluster": False}
+    # Stage 5.1.2: cache rows carry the producing connection's conn_id.
+    if conn_id:
+        row["conn_id"] = conn_id
+    return row
 
 
 def test_cache_does_not_restore_removed_host(qtbot, monkeypatch, tmp_path):
     """Test 9a: a host removed from the configuration must not resurrect
-    from the cache at startup."""
+    from the cache at startup (its conn_id is no longer in the config)."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    cfgs = [_cfg("h1"), _cfg("h2")]
+    cfgs[0]["conn_id"] = "id-h1"
+    cfgs[1]["conn_id"] = "id-h2"
     save_resources_cache(
-        nodes=[_cached_node("h1", "pve1"), _cached_node("h2", "pve2"),
-               _cached_node("h3", "pve3")],
+        nodes=[_cached_node("h1", "pve1", "id-h1"),
+               _cached_node("h2", "pve2", "id-h2"),
+               # the removed host's rows keep their (no longer known) id
+               _cached_node("h3", "pve3", "id-h3-removed")],
         vms=[{"vmid": 300, "name": "gone", "type": "qemu", "node": "pve3",
-              "status": "running", "host_name": "h3"}],
+              "status": "running", "host_name": "h3",
+              "conn_id": "id-h3-removed"}],
         storages=[])
     _install_fake_fetch(monkeypatch)
     from virtdeck.ui.mainwindow import MainWindow
 
-    mw = MainWindow(nodes_cfg=[_cfg("h1"), _cfg("h2")])
+    mw = MainWindow(nodes_cfg=cfgs)
     qtbot.addWidget(mw)
     try:
         assert mw._node_repo.get("h1", "pve1") is not None
@@ -407,17 +422,21 @@ def test_cache_does_not_restore_skipped_host(qtbot, monkeypatch, tmp_path):
     """Test 9b: a host excluded by skip must not be restored from the
     cache at startup."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    cfgs = [_cfg("h1"), _cfg("h2")]
+    cfgs[0]["conn_id"] = "id-h1"
+    cfgs[1]["conn_id"] = "id-h2"
     save_resources_cache(
-        nodes=[_cached_node("h1", "pve1"), _cached_node("h2", "pve2"),
-               _cached_node("h3", "pve3")],
+        nodes=[_cached_node("h1", "pve1", "id-h1"),
+               _cached_node("h2", "pve2", "id-h2"),
+               _cached_node("h3", "pve3", "id-h3")],
         vms=[{"vmid": 300, "name": "hidden", "type": "qemu", "node": "pve3",
-              "status": "running", "host_name": "h3"}],
+              "status": "running", "host_name": "h3", "conn_id": "id-h3"}],
         storages=[])
     _install_fake_fetch(monkeypatch)
     from virtdeck.ui.mainwindow import MainWindow
 
-    skipped = {**_cfg("h3"), "skip": True}
-    mw = MainWindow(nodes_cfg=[_cfg("h1"), _cfg("h2"), skipped])
+    skipped = {**_cfg("h3"), "skip": True, "conn_id": "id-h3"}
+    mw = MainWindow(nodes_cfg=[*cfgs, skipped])
     qtbot.addWidget(mw)
     try:
         assert mw._node_repo.get("h1", "pve1") is not None
@@ -433,19 +452,20 @@ def test_cache_keeps_cluster_nodes_despite_name_difference(
     """Test 9c: for a cluster representative the cache is keyed by the
     config name; PVE node names inside must not be filtered out."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    cluster_node = dict(_cached_node("cl1", "pve1"), _is_cluster=True)
-    cluster_node2 = dict(_cached_node("cl1", "pve2"), _is_cluster=True)
+    cluster_node = dict(_cached_node("cl1", "pve1", "id-cl1"), _is_cluster=True)
+    cluster_node2 = dict(_cached_node("cl1", "pve2", "id-cl1"), _is_cluster=True)
     save_resources_cache(
         nodes=[cluster_node, cluster_node2],
         vms=[{"vmid": 10, "name": "web", "type": "qemu", "node": "pve1",
-              "status": "running", "host_name": "cl1"}],
+              "status": "running", "host_name": "cl1",
+              "conn_id": "id-cl1"}],
         storages=[])
     _install_fake_fetch(monkeypatch)
     from virtdeck.ui.mainwindow import MainWindow
 
     cfg = {"name": "cl1", "host": "10.0.0.9", "user": "u@pam",
            "token_name": "t", "token_value": "s",
-           "cluster_rep": True, "cluster": "cl1"}
+           "cluster_rep": True, "cluster": "cl1", "conn_id": "id-cl1"}
     mw = MainWindow(nodes_cfg=[cfg])
     qtbot.addWidget(mw)
     try:
