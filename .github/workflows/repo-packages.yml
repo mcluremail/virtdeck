@@ -91,7 +91,7 @@ jobs:
            because PySide6 is not packaged in the Debian/Ubuntu archives.
           EOF
           dpkg-deb --build --root-owner-group /tmp/stage \
-            "/tmp/python3-pyside6_${PYSIDE}-1+${ABLABEL}_amd64.deb"
+            "/tmp/python3-pyside6_${PYSIDE}-2+${ABLABEL}_amd64.deb"
       - uses: actions/upload-artifact@v4
         with:
           name: pyside6-deb-${{ matrix.id }}
