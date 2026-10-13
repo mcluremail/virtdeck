@@ -197,7 +197,7 @@ jobs:
               *) echo "unknown rpm dist tag: $f"; exit 1 ;;
             esac
             mkdir -p "$d"
-            [ "$(dirname "$f")" != "$d" ] && mv -f "$f" "$d/"
+            if [ "$(dirname "$f")" != "$d" ]; then mv -f "$f" "$d/"; fi
           done
           find upload -mindepth 2 -type d -empty -delete 2>/dev/null || true
           ls -R upload | head -30
