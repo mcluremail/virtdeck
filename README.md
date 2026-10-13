@@ -36,7 +36,7 @@ VirtDeck speaks directly to the PVE API (port 8006) and to PBS (port 8007), and 
 
 Downloads are also listed on the [website](https://virtdeck.mclure.ru).
 
-Latest release: [v3.0.2](https://github.com/mcluremail/virtdeck/releases/tag/v3.0.2)
+Latest release: [v3.0.3](https://github.com/mcluremail/virtdeck/releases/tag/v3.0.3)
 
 ## How VirtDeck compares
 
