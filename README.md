@@ -31,12 +31,26 @@ VirtDeck speaks directly to the PVE API (port 8006) and to PBS (port 8007), and 
 |----------|--------|------|
 | Windows | .zip / .exe installer | [Releases](https://github.com/mcluremail/virtdeck/releases) |
 | Debian / Ubuntu | package repository | [Installation](#installation) — `apt install virtdeck` |
-| Fedora / RHEL | package repository | [Installation](#installation) — `dnf install virtdeck` |
+| Fedora | package repository | [Installation](#installation) — `dnf install virtdeck` |
 | Any | .tar.gz / .whl | [Releases](https://github.com/mcluremail/virtdeck/releases) |
 
 Downloads are also listed on the [website](https://virtdeck.mclure.ru).
 
 Latest release: [v3.0.2](https://github.com/mcluremail/virtdeck/releases/tag/v3.0.2)
+
+## How VirtDeck compares
+
+| | Proxmox VE web GUI | Proxmox Datacenter Manager | VirtDeck |
+|---|---|---|---|
+| Where it runs | in a browser, per cluster | web, **requires deploying and maintaining its own server/VM** | **a window on your desktop** — no server to deploy, no extra VM to keep alive |
+| Scope | one cluster per login | multi-cluster aggregation, live cross-cluster migration | multi-cluster tree, management, PBS, consoles — in one app |
+| Extra value | full API coverage | enterprise: RBAC, LDAP/OIDC, SDN | Fleet Health across independent clusters, command palette, themes, offline "data from HH:MM" plates |
+
+VirtDeck is not a replacement for the PVE web GUI (it stays the source of
+truth for administration) and not a competitor to PDM's enterprise feature
+set. Its niche is different: **launch an app and work with your whole fleet
+right now** — nothing to install server-side, nothing to babysit. Details and
+the full competitive landscape: [docs/COMPETITORS.md](docs/COMPETITORS.md).
 
 ## Changelog
 
@@ -78,7 +92,7 @@ For SPICE console, install [virt-viewer for Windows](https://virt-manager.org/do
 full PySide6 (incl. WebEngine for the built-in console) and `proxmoxer`
 on Fedora. No pip steps needed.
 
-**Debian 12 (bookworm) / 13 (trixie) / Ubuntu 24.04 (noble):**
+**Debian 12 (bookworm) / 13 (trixie) / Ubuntu 24.04 (noble) / Ubuntu 26.04 (resolute):**
 
 ```bash
 sudo install -d /etc/apt/keyrings
@@ -89,15 +103,16 @@ sudo apt update
 sudo apt install virtdeck
 ```
 
-(Ubuntu 24.04 — replace `bookworm` with `noble`; Debian 13 — with `trixie`.)
+(Ubuntu 24.04 — replace `bookworm` with `noble`; Ubuntu 26.04 — with
+`resolute`; Debian 13 — with `trixie`.)
 
-**Fedora 41:**
+**Fedora 43 / 44** (`$releasever` resolves to the running Fedora release):
 
 ```bash
 sudo tee /etc/yum.repos.d/virtdeck.repo <<'EOF'
 [virtdeck]
 name=VirtDeck
-baseurl=https://repo.mclure.ru/rpm/fedora/41
+baseurl=https://repo.mclure.ru/rpm/fedora/$releasever
 enabled=1
 gpgcheck=1
 repo_gpgcheck=1
@@ -106,16 +121,40 @@ EOF
 sudo dnf install virtdeck
 ```
 
+**Verify the repository key fingerprint after downloading it.** The key and
+the packages travel over the same domain — checking the fingerprint against
+this value (published separately in the README, on the
+[website](https://virtdeck.mclure.ru) and at
+[repo.mclure.ru](https://repo.mclure.ru)) is what protects you if the domain
+is ever compromised:
+
+```text
+117D EABD 3EA4 8810 B219  BA6B 401F 700F B97D E8B8
+```
+
+```bash
+curl -fsSL https://repo.mclure.ru/KEY.gpg | gpg --show-keys
+# expect: pub   rsa3072 ... [SC]  VirtDeck Repo <repo@mclure.ru>
+#         117D EABD 3EA4 8810 B219  BA6B 401F 700F B97D E8B8
+```
+
 Launch from the menu or via `virtdeck`.
 
 ### From source (any Linux)
 
 ```bash
-# download and unpack virtdeck-3.0.2.tar.gz (or .whl) from Releases,
-# then install the dependencies:
-pip install PySide6 proxmoxer requests urllib3 pyqtgraph cryptography keyring
+# download virtdeck-3.0.2-py3-none-any.whl (or the .tar.gz) from Releases,
+# then install the package together with its dependencies:
+pip install virtdeck-3.0.2-py3-none-any.whl PySide6 proxmoxer requests \
+  urllib3 pyqtgraph cryptography keyring
 virtdeck
 ```
+
+(On a system with PEP 668 protection use a venv or add `--break-system-packages`.)
+
+Fedora releases older than 43 are end-of-life: the frozen `fedora/41` catalog
+still serves its last published build but receives no updates — upgrade Fedora
+or use the From source route.
 
 ### Linux system packages (system Python, no venv)
 

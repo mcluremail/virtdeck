@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — packaging platforms refresh & supply-chain hardening
+
+**Internal**
+- Package platforms refreshed to current distro releases: rpm builds target Fedora 43 / 44 (one build per Fedora release — the auto-generated `python3.Xdist(proxmoxer)` dependencies must resolve against that release's Python); the apt side adds Ubuntu 26.04 "resolute" (Python 3.14) alongside Debian 12/13 and Ubuntu 24.04. The EOL fedora/41 catalog stays frozen on the repository server (append-only — existing dnf users keep working) but is no longer built for or documented
+- The python3-pyside6 deb for resolute is built from the official PySide6 6.11.2 wheel (abi3 cp310+, officially supports Python 3.14); 6.8.3 remains for bookworm/noble/trixie. 6.12.x stays avoided (known refcount bug)
+- Release artifacts are now GPG-signed (.asc, same key as the package repository): signatures are produced on repo.mclure.ru — the private key never leaves the server — and uploaded next to the release files; the v3.0.2 artifacts were signed retroactively
+- The signing key's fingerprint (117D EABD 3EA4 8810 B219 BA6B 401F 700F B97D E8B8) is published in three independent places — README, website, and the repo.mclure.ru root page — with explicit "verify the fingerprint after download" instructions; the release CI smoke test checks the fingerprint before trusting the repository
+- repo.mclure.ru now serves an index page at its root (install commands for all supported distros, the key fingerprint, links) instead of a bare autoindex
+- Release procedure: the release body must lead with "Fixed: …" from the CHANGELOG (v3.0.2's boilerplate body was fixed retroactively); a website-update step (version strings + install blocks synced with README, i18n parity checks) and a semi-annual platform/EOL review were added to docs/RELEASE_PROCESS.md
+- README: an honest comparison with Proxmox Datacenter Manager added (nothing to deploy server-side — a window on your desktop); the "From source" instructions now actually install the package (`pip install virtdeck-<ver>-py3-none-any.whl …`), not just its dependencies
+
 ## Unreleased — concurrent refresh consistency (external audit stage 4.2)
 
 **Bug fixes**

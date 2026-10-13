@@ -57,10 +57,16 @@ jobs:
           path: artifacts/*.deb
 
   build-rpm:
-    name: Build .rpm package
+    name: Build .rpm package (fedora/${{ matrix.fc }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - fc: 43
+          - fc: 44
     container:
-      image: fedora:41
+      image: fedora:${{ matrix.fc }}
     steps:
       - uses: actions/checkout@v4
       - name: Install build deps
@@ -90,12 +96,12 @@ jobs:
           rpmbuild -bb --define "_topdir /tmp/rpmbuild" /tmp/rpmbuild/SPECS/virtdeck.spec
       - name: Copy .rpm
         run: |
-          mkdir -p artifacts
-          cp /tmp/rpmbuild/RPMS/noarch/*.rpm artifacts/
+          mkdir -p artifacts/fedora/${{ matrix.fc }}
+          cp /tmp/rpmbuild/RPMS/noarch/*.rpm artifacts/fedora/${{ matrix.fc }}/
       - uses: actions/upload-artifact@v4
         with:
-          name: rpm-package
-          path: artifacts/*.rpm
+          name: rpm-package-fc${{ matrix.fc }}
+          path: artifacts/**/*.rpm
 
   build-windows:
     name: Build Windows .zip
@@ -173,6 +179,25 @@ jobs:
           pattern: '*'
           merge-multiple: true
           path: upload/
+      - name: Lay out upload tree (apt suites, rpm per fedora release)
+        run: |
+          set -e
+          mkdir -p upload/out/apt upload/out/rpm
+          # one .deb per suite directory (same binary package everywhere)
+          for s in bookworm noble trixie resolute; do
+            mkdir -p upload/out/apt/$s
+            cp upload/virtdeck_*.deb upload/out/apt/$s/
+          done
+          # rpm goes to the directory of its %{dist} tag (fc43 / fc44)
+          for rpm in upload/virtdeck-*.rpm; do
+            case "$(basename "$rpm")" in
+              *fc43*) rel=43 ;;
+              *fc44*) rel=44 ;;
+              *) echo "unknown rpm dist tag: $rpm"; exit 1 ;;
+            esac
+            mkdir -p upload/out/rpm/fedora/$rel
+            cp "$rpm" upload/out/rpm/fedora/$rel/
+          done
       - name: rsync apt/rpm into repo incoming/
         env:
           KEY: ${{ secrets.REPO_DEPLOY_KEY }}
@@ -182,37 +207,38 @@ jobs:
           printf '%s\n' "$KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           RSH="ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
-          for s in bookworm noble trixie; do
-            rsync -v -e "$RSH" upload/virtdeck_*.deb repo-upload@repo.mclure.ru:apt/$s/
-          done
-          rsync -v -e "$RSH" upload/virtdeck-*.rpm repo-upload@repo.mclure.ru:rpm/
+          rsync -rv -e "$RSH" upload/out/apt/ repo-upload@repo.mclure.ru:apt/
+          rsync -rv -e "$RSH" upload/out/rpm/ repo-upload@repo.mclure.ru:rpm/
           echo "the server regenerates and signs the indexes automatically"
       - name: Wait until the server publishes this exact build
         env:
           REF: ${{ github.ref_name }}
         run: |
           version="${REF#v}"
-          rpm_sha=$(sha256sum upload/virtdeck-*.rpm | cut -d' ' -f1)
           deb_sha=$(sha256sum upload/virtdeck_*.deb | cut -d' ' -f1)
-          echo "local artifacts: rpm ${rpm_sha:0:12}…, deb ${deb_sha:0:12}… (the server signs rpms, so rpm is matched by consistency)"
-          ok_rpm=0; ok_deb=0
+          echo "local artifacts: deb ${deb_sha:0:12}… (the server signs rpms, so rpm is matched by consistency)"
+          ok_rpm_43=0; ok_rpm_44=0; ok_deb=0
           for i in $(seq 1 20); do
             sleep 15
-            if [ "$ok_rpm" = 0 ]; then
-              if curl -fsSL https://repo.mclure.ru/rpm/fedora/41/repodata/repomd.xml -o /tmp/repomd.xml; then
+            for rel in 43 44; do
+              eval "ok=\$ok_rpm_$rel"
+              [ "$ok" = "1" ] && continue
+              if curl -fsSL "https://repo.mclure.ru/rpm/fedora/$rel/repodata/repomd.xml" -o /tmp/repomd.xml; then
                 href=$(grep -oP '(?<=href=")[^"]*-primary\.xml\.zst' /tmp/repomd.xml | head -1)
-                live=$(curl -fsSL "https://repo.mclure.ru/rpm/fedora/41/$href" | zstd -dc 2>/dev/null | awk -v want="$version" '
+                live=$(curl -fsSL "https://repo.mclure.ru/rpm/fedora/$rel/$href" | zstd -dc 2>/dev/null | awk -v want="$version" '
                   /<package type="rpm">/ {inblk=1; buf=""}
                   inblk {buf = buf "\n" $0}
                   /<\/package>/ {inblk=0; if (buf ~ /<name>virtdeck</ && match(buf, "<version [^>]*ver=\"" want "\"") && match(buf, /<checksum type="sha256"[^>]*>[a-f0-9]+/)) { s=substr(buf, RSTART, RLENGTH); sub(/.*>/, "", s); print s }}')
                 # the server signs rpms after upload, so compare against the
                 # served file itself, not the CI artifact
-                curl -fsSL "https://repo.mclure.ru/rpm/fedora/41/virtdeck-${version}-1.fc41.noarch.rpm" -o /tmp/virtdeck.rpm
+                curl -fsSL "https://repo.mclure.ru/rpm/fedora/$rel/virtdeck-${version}-1.fc${rel}.noarch.rpm" -o /tmp/virtdeck.rpm
                 served=$(sha256sum /tmp/virtdeck.rpm | cut -d' ' -f1)
-                if [ -n "$live" ] && [ "$live" = "$served" ]; then ok_rpm=1; echo "rpm: repo metadata matches the served package ✓"; fi
+                if [ -n "$live" ] && [ "$live" = "$served" ]; then
+                  eval "ok_rpm_$rel=1"; echo "rpm fc$rel: repo metadata matches the served package ✓"
+                fi
               fi
-            fi
-            if [ "$ok_deb" = 0 ]; then
+            done
+            if [ "$ok_deb" = "0" ]; then
               # the pool is append-only: several virtdeck versions stay
               # indexed, so select the stanza of THIS build, not the first
               live_deb=$(curl -fsSL https://repo.mclure.ru/apt/dists/bookworm/main/binary-amd64/Packages.gz \
@@ -222,13 +248,13 @@ jobs:
                   /^SHA256: /  {if (hit) {print $2; exit}}')
               if [ "$live_deb" = "$deb_sha" ]; then ok_deb=1; echo "deb: repo serves this build ✓"; fi
             fi
-            [ "$ok_rpm" = 1 ] && [ "$ok_deb" = 1 ] && exit 0
+            if [ "$ok_rpm_43" = 1 ] && [ "$ok_rpm_44" = 1 ] && [ "$ok_deb" = 1 ]; then exit 0; fi
           done
           echo "the server did not publish this build in 5 minutes"
           exit 1
 
   smoke-packages:
-    name: "Smoke: install .deb / .rpm"
+    name: "Smoke: install .deb / .rpm (${{ matrix.image }})"
     needs: [publish-repo]
     runs-on: ubuntu-latest
     strategy:
@@ -237,30 +263,40 @@ jobs:
         include:
           - pkg: deb
             image: ubuntu:24.04
+            suite: noble
+          - pkg: deb
+            image: ubuntu:26.04
+            suite: resolute
           - pkg: rpm
-            image: fedora:41
+            image: fedora:43
+            suite: "43"
+          - pkg: rpm
+            image: fedora:44
+            suite: "44"
     container:
       image: ${{ matrix.image }}
     steps:
-      - name: Install from repo.mclure.ru (Ubuntu 24.04)
+      - name: Install from repo.mclure.ru (apt / ${{ matrix.suite }})
         if: matrix.pkg == 'deb'
         run: |
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl gnupg
           install -dm755 /etc/apt/keyrings
           curl -fsSL https://repo.mclure.ru/KEY.gpg | gpg --dearmor -o /etc/apt/keyrings/virtdeck.gpg
-          echo "deb [signed-by=/etc/apt/keyrings/virtdeck.gpg] https://repo.mclure.ru/apt noble main" \
+          # verify the key fingerprint BEFORE trusting the repository
+          gpg --show-keys /etc/apt/keyrings/virtdeck.gpg | grep -F "117DEABD3EA48810B219BA6B401F700FB97DE8B8"
+          echo "deb [signed-by=/etc/apt/keyrings/virtdeck.gpg] https://repo.mclure.ru/apt ${{ matrix.suite }} main" \
             > /etc/apt/sources.list.d/virtdeck.list
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq virtdeck
           python3 -c "from virtdeck import main; import virtdeck; print('deb smoke OK', virtdeck.__version__)"
-      - name: Install from repo.mclure.ru (Fedora 41)
+      - name: Install from repo.mclure.ru (dnf / fedora ${{ matrix.suite }})
         if: matrix.pkg == 'rpm'
         run: |
           cat > /etc/yum.repos.d/virtdeck.repo <<EOF
           [virtdeck]
           name=VirtDeck
-          baseurl=https://repo.mclure.ru/rpm/fedora/41
+          baseurl=https://repo.mclure.ru/rpm/fedora/${{ matrix.suite }}
           enabled=1
           gpgcheck=1
           repo_gpgcheck=1
@@ -293,24 +329,32 @@ jobs:
           body: |
             ## VirtDeck ${{ github.ref_name }}
 
-            Сайт: **https://virtdeck.mclure.ru**
+            ### What changed
 
-            Скачать: `.deb` для Debian/Ubuntu, `.rpm` для Fedora/RHEL, `.zip` для Windows; `.tar.gz` / `.whl` — установка из исходников.
+            > EDIT BEFORE PUBLISHING (release procedure, step "Release body"):
+            > copy the version section from CHANGELOG.md here — a user with the
+            > bug must see "Fixed: …", not a wall of install commands.
 
-            Debian 12 / 13 и Ubuntu 24.04 — из пакета-репозитория (PySide6 приедет оттуда же, pip не нужен):
+            ### Install
+
+            Website: **https://virtdeck.mclure.ru** · Repository: **https://repo.mclure.ru**
+
+            Download: `.deb` (Debian/Ubuntu), `.rpm` (Fedora), `.zip`/`.exe` (Windows); `.tar.gz` / `.whl` — from source.
+
+            Debian 12 / 13, Ubuntu 24.04 / 26.04 — from the package repository (PySide6 comes from there too, no pip needed):
             ```
             curl -fsSL https://repo.mclure.ru/KEY.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/virtdeck.gpg
             echo "deb [signed-by=/etc/apt/keyrings/virtdeck.gpg] https://repo.mclure.ru/apt bookworm main" | sudo tee /etc/apt/sources.list.d/virtdeck.list
             sudo apt update && sudo apt install virtdeck
             ```
-            (Ubuntu 24.04 — замените `bookworm` на `noble`, Debian 13 — на `trixie`)
+            (Ubuntu 24.04 — replace `bookworm` with `noble`; Ubuntu 26.04 — `resolute`; Debian 13 — `trixie`)
 
-            Fedora 41:
+            Fedora 43 / 44:
             ```
             sudo tee /etc/yum.repos.d/virtdeck.repo <<'EOF'
             [virtdeck]
             name=VirtDeck
-            baseurl=https://repo.mclure.ru/rpm/fedora/41
+            baseurl=https://repo.mclure.ru/rpm/fedora/$releasever
             enabled=1
             gpgcheck=1
             repo_gpgcheck=1
@@ -319,5 +363,12 @@ jobs:
             sudo dnf install virtdeck
             ```
 
-            Для консоли VM установите virt-viewer (`sudo apt install virt-viewer` / `sudo dnf install virt-viewer`).
+            **Verify the repository key fingerprint after downloading it**
+            (the key and the packages share one domain; the fingerprint is also
+            published on the website and at repo.mclure.ru):
+            ```
+            117D EABD 3EA4 8810 B219  BA6B 401F 700F B97D E8B8
+            ```
+
+            For the VM console install virt-viewer (`sudo apt install virt-viewer` / `sudo dnf install virt-viewer`).
           files: artifacts/*

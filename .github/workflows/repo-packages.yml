@@ -2,12 +2,16 @@ name: Repo packages
 
 # One-shot / re-runnable builder for the packages hosted at repo.mclure.ru
 # that are NOT available in the distro archives:
-#   python3-pyside6   (deb: bookworm py3.11 / noble py3.12 / trixie py3.13)
-#   python3-proxmoxer (rpm: fedora/41)
+#   python3-pyside6   (deb: bookworm py3.11 / noble py3.12 / trixie py3.13 /
+#                      resolute py3.14 — wheel 6.11.2, abi3, cp310+)
+#   python3-proxmoxer (rpm: fedora/43 and fedora/44 — one build per Fedora
+#                      release so the generated python3.Xdist provides match)
 # Built from the official upstream wheels/sdist and uploaded to the repo's
 # incoming/ with the restricted deploy key; the server regenerates and signs
 # the indexes automatically (systemd path unit + /srv/repo/publish.sh).
 # Rebuild these only when a new distro release / python version is adopted.
+# (2026-10: fedora/41 is EOL — its catalog stays frozen on the server, no
+# new builds target it.)
 
 on:
   workflow_dispatch:
@@ -42,8 +46,15 @@ jobs:
           - id: trixie
             image: debian:trixie
             glib: libglib2.0-0t64
+          # Python 3.14: PySide6 6.8.3 has no cp314 wheel — resolute pins the
+          # abi3 (cp310+) 6.11.2 line, which supports 3.14 officially.
+          # (6.12.x is known-buggy, do not pick it up.)
+          - id: resolute
+            image: ubuntu:26.04
+            glib: libglib2.0-0t64
+            pyside: "6.11.2"
     env:
-      PYSIDE: ${{ inputs.pyside6_version }}
+      PYSIDE: ${{ matrix.pyside || inputs.pyside6_version }}
       GLIB: ${{ matrix.glib }}
     steps:
       - name: Stage PySide6 wheel tree into a deb
@@ -80,9 +91,15 @@ jobs:
           path: /tmp/python3-pyside6_*.deb
 
   proxmoxer-rpm:
-    name: Build python3-proxmoxer (fedora/41)
+    name: Build python3-proxmoxer (fedora/${{ matrix.fc }})
     runs-on: ubuntu-latest
-    container: fedora:41
+    container: fedora:${{ matrix.fc }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - fc: 43
+          - fc: 44
     env:
       PROXMOXER: ${{ inputs.proxmoxer_version }}
     steps:
@@ -125,11 +142,12 @@ jobs:
           EOF
           rpmbuild -bb --define "_topdir /tmp/rpmbuild" \
             /tmp/rpmbuild/SPECS/python3-proxmoxer.spec
-          cp /tmp/rpmbuild/RPMS/noarch/*.rpm /tmp/
+          mkdir -p /tmp/out/fedora/${{ matrix.fc }}
+          cp /tmp/rpmbuild/RPMS/noarch/*.rpm /tmp/out/fedora/${{ matrix.fc }}/
       - uses: actions/upload-artifact@v4
         with:
-          name: proxmoxer-rpm
-          path: /tmp/python3-proxmoxer-*.rpm
+          name: proxmoxer-rpm-fc${{ matrix.fc }}
+          path: /tmp/out/**/*.rpm
 
   publish:
     name: Publish to repo.mclure.ru
@@ -150,8 +168,16 @@ jobs:
           path: upload/apt/trixie/
       - uses: actions/download-artifact@v4
         with:
-          name: proxmoxer-rpm
-          path: upload/rpm/
+          name: pyside6-deb-resolute
+          path: upload/apt/resolute/
+      - uses: actions/download-artifact@v4
+        with:
+          name: proxmoxer-rpm-fc43
+          path: upload/rpm/fedora/43/
+      - uses: actions/download-artifact@v4
+        with:
+          name: proxmoxer-rpm-fc44
+          path: upload/rpm/fedora/44/
       - name: rsync into repo incoming/
         env:
           KEY: ${{ secrets.REPO_DEPLOY_KEY }}
@@ -162,5 +188,5 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           RSH="ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
           rsync -rv -e "$RSH" upload/apt/ repo-upload@repo.mclure.ru:apt/
-          rsync -v -e "$RSH" upload/rpm/*.rpm repo-upload@repo.mclure.ru:rpm/
+          rsync -rv -e "$RSH" upload/rpm/ repo-upload@repo.mclure.ru:rpm/
           echo "the server regenerates and signs the indexes automatically"
