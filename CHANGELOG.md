@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — apt dependency hygiene for the PySide6 debs
+
+**Internal**
+- python3-pyside6 debs (revision -3) declare `Provides: libpyside6-py3, libshiboken6-py3` and `Conflicts:` against the distro split-PySide6 packages: Ubuntu 26.04's python3-pyqtgraph hard-depends on `libpyside6-py3`, which previously made `apt install virtdeck` unsolvable there (file clash with our wheel). The virtual provides satisfy pyqtgraph, the conflicts remove the distro pieces gracefully instead of a dpkg error
+
 ## v3.0.3 — data integrity and concurrent refresh (external audit stages 4 and 4.2)
 
 **Bug fixes**
