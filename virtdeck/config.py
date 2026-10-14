@@ -362,22 +362,27 @@ def load_config() -> list[dict]:
     return config
 
 
-def save_config(config_list: list[dict],
-                known_ambiguous: frozenset[str] = frozenset()):
+def save_config(config_list: list[dict]):
     """Save nodes to sqlite, token_value to keyring.
 
     Stage 5.1: names are normalized (NFC + strip) and must be unique up to
-    that normalization. A conflict group is tolerated only when its
-    normalized name is in ``known_ambiguous`` — a conflict that was loaded
-    from the database and not resolved yet; any NEW conflict raises
-    ValueError. Validation happens before the database is touched, so a
-    raise leaves the stored config and the keyring untouched. conn_id is
-    assigned to entries missing one, so every saved row is anchored; a
-    successful save also clears the conn_ids_pending state.
+    that normalization. Stage 5.1.3 (owner review): enforcement is central
+    here — the only tolerated conflicts are the ones already stored in the
+    database, and a stored conflict group can only SHRINK. Saving more
+    members under a conflicting normalized name than are currently stored
+    raises ValueError, so no caller can widen the allowance (the removed
+    ``known_ambiguous`` parameter allowed exactly that: import computed its
+    allowance from the very list being saved). A conflict group loaded from
+    a legacy database can be kept as-is, shrunk or dropped, never grown.
+    Validation happens before the database is touched, so a raise leaves
+    the stored config and the keyring untouched. conn_id is assigned to
+    entries missing one, so every saved row is anchored; a successful save
+    also clears the conn_ids_pending state.
     """
     global _conn_ids_pending
     prepared = []  # (name, json, token_value)
-    seen: dict[str, str] = {}
+    new_counts: dict[str, int] = {}
+    first_name: dict[str, str] = {}
     for cfg in config_list:
         if not isinstance(cfg, dict):
             continue
@@ -387,10 +392,8 @@ def save_config(config_list: list[dict],
         cfg["name"] = name
         _sanitize_cfg(cfg)
         key = name_key(name)
-        if key in seen and key not in known_ambiguous:
-            raise ValueError(
-                f'Duplicate connection name: "{seen[key]}" / "{name}"')
-        seen.setdefault(key, name)
+        new_counts[key] = new_counts.get(key, 0) + 1
+        first_name.setdefault(key, name)
         if not cfg.get("conn_id"):
             cfg["conn_id"] = _new_conn_id()
         store = {k: v for k, v in cfg.items()
@@ -400,6 +403,19 @@ def save_config(config_list: list[dict],
 
     with _DB_LOCK:
         conn = _init_db()
+        stored_counts: dict[str, int] = {}
+        for (row_name,) in conn.execute("SELECT name FROM nodes").fetchall():
+            k = name_key(row_name)
+            stored_counts[k] = stored_counts.get(k, 0) + 1
+        # Shrink-only rule: a group that conflicts under normalization must
+        # already exist in the stored config with at least as many members.
+        for key, count in new_counts.items():
+            stored = stored_counts.get(key, 0)
+            if count > 1 and stored < count:
+                raise ValueError(
+                    f'Duplicate connection name: "{first_name[key]}" '
+                    f"({count} connections share the normalized name, "
+                    f"{stored} stored) — a conflict group may only shrink")
         conn.execute("DELETE FROM nodes")
         for name, data_json, _token in prepared:
             conn.execute("INSERT OR REPLACE INTO nodes (name, data) VALUES (?, ?)",
@@ -656,7 +672,7 @@ def import_config(src_path: str, merge: bool = True,
         for cfg in imported:
             cfg["conn_id"] = _new_conn_id()
         mark_ambiguous(imported)
-        save_config(imported, known_ambiguous=ambiguous_name_keys(imported))
+        save_config(imported)
         return imported
 
     current = load_config()
@@ -702,7 +718,7 @@ def import_config(src_path: str, merge: bool = True,
             matched_keys.add(key)
             _rep(tr("Added {name}").format(name=imp["name"]))
     mark_ambiguous(merged)
-    save_config(merged, known_ambiguous=ambiguous_name_keys(merged))
+    save_config(merged)
     return merged
 
 

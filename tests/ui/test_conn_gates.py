@@ -154,6 +154,60 @@ def test_legacy_payload_without_conn_id_resolves_by_name(mw, monkeypatch):
     assert mw._vm_repo.get("h1", 100) is not None
 
 
+def test_name_fallback_matches_current_display_name_only(mw, monkeypatch):
+    """Stage 5.1.3 audit: the legacy fallback resolves against the CURRENT
+    index by exact display name — a stale name (the connection has been
+    renamed since) resolves to nothing and the result is dropped."""
+    _install_fake_fetch(monkeypatch)
+    cfg = _cfg("h1")
+    mw.nodes_cfg = [cfg]
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+
+    mw.nodes_cfg = [_cfg("renamed", conn_id=cfg["conn_id"])]
+    mw._rebuild_cfg_indexes()
+    # worker=None: no identity anywhere → exercises the name fallback
+    mw.on_worker_finished(_ok("h1"), None, gen)
+    assert mw._vm_repo.all() == []
+
+
+def test_name_fallback_dropped_for_ambiguous(mw, monkeypatch):
+    """The legacy fallback respects the ambiguity gate like every other
+    ingestion path."""
+    _install_fake_fetch(monkeypatch)
+    a = _cfg("Web")
+    b = _cfg("web", host="10.0.0.2")
+    a["_ambiguous"] = True
+    b["_ambiguous"] = True
+    mw.nodes_cfg = [a, b]
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+
+    mw.on_worker_finished(_ok("Web"), None, gen)
+    assert mw._vm_repo.all() == []
+
+
+def test_name_fallback_attaches_to_recreated_same_name(mw, monkeypatch):
+    """Documented residual of the legacy fallback: a payload without any
+    identity cannot tell a re-created connection from the original one, so
+    it attaches to the CURRENT connection under the same name (same
+    host/user infrastructure). Containment: the rows are stamped with the
+    current cfg's conn_id, so no wrong-identity cache row can be written.
+    Production payloads carry conn_id and are dropped instead (see
+    test_result_of_recycled_connection_is_dropped)."""
+    _install_fake_fetch(monkeypatch)
+    mw.nodes_cfg = [_cfg("h1")]
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+
+    mw.nodes_cfg = [_cfg("h1", conn_id="fresh-id")]
+    mw._rebuild_cfg_indexes()
+    mw.on_worker_finished(_ok("h1"), None, gen)
+    vms = mw._vm_repo.all()
+    assert len(vms) == 1
+    assert vms[0].conn_id == "fresh-id"
+
+
 def test_dropped_result_does_not_resurrect_via_late_epoch(mw, monkeypatch):
     """A dropped (unknown identity) result must not register its epoch:
     a later answer of the same attempt must not pass either."""

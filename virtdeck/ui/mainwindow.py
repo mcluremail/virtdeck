@@ -42,7 +42,6 @@ from ..backend.events import Event, EventBus
 from ..backend.fleet import build_fleet_targets
 from ..backend.refresh import RefreshCoordinator
 from ..config import (
-    ambiguous_name_keys,
     export_config,
     import_config,
     load_tasks_cache,
@@ -603,8 +602,7 @@ class MainWindow(QMainWindow):
         self.tree_panel.set_servers(merged)
         self.detail_panel.update_nodes_cfg(merged)
         self.pbs_panel.update_nodes_cfg(merged)
-        save_config(self.nodes_cfg,
-                    known_ambiguous=self._known_ambiguous_keys())
+        save_config(self.nodes_cfg)
         self.refresh_data()
         self._warn_dup_clusters(dup_dropped)
         summary = tr("Configuration imported ({count} hosts).").format(
@@ -644,8 +642,7 @@ class MainWindow(QMainWindow):
         self.tree_panel.set_servers(self.nodes_cfg)
         self.detail_panel.update_nodes_cfg(self.nodes_cfg)
         self.pbs_panel.update_nodes_cfg(self.nodes_cfg)
-        save_config(self.nodes_cfg,
-                    known_ambiguous=self._known_ambiguous_keys())
+        save_config(self.nodes_cfg)
         self.refresh_data()
         self._warn_dup_clusters(dup_dropped)
 
@@ -847,8 +844,7 @@ class MainWindow(QMainWindow):
         self._persist_cfg_views()
 
     def _persist_cfg_views(self):
-        save_config(self.nodes_cfg,
-                    known_ambiguous=self._known_ambiguous_keys())
+        save_config(self.nodes_cfg)
         self.tree_panel.set_servers(self.nodes_cfg)
         self.detail_panel.update_nodes_cfg(self.nodes_cfg)
         self.pbs_panel.update_nodes_cfg(self.nodes_cfg)
@@ -1103,8 +1099,7 @@ class MainWindow(QMainWindow):
                 cfg["group"] = group
             else:
                 cfg.pop("group", None)
-        save_config(self.nodes_cfg,
-                    known_ambiguous=self._known_ambiguous_keys())
+        save_config(self.nodes_cfg)
         self.tree_panel.set_servers(self.nodes_cfg)
         self.detail_panel.update_nodes_cfg(self.nodes_cfg)
         self.pbs_panel.update_nodes_cfg(self.nodes_cfg)
@@ -1113,16 +1108,14 @@ class MainWindow(QMainWindow):
         for cfg in self.nodes_cfg:
             if cfg.get("group") == old_name:
                 cfg["group"] = new_name
-        save_config(self.nodes_cfg,
-                    known_ambiguous=self._known_ambiguous_keys())
+        save_config(self.nodes_cfg)
         self.tree_panel.set_servers(self.nodes_cfg)
 
     def _on_group_delete(self, group_name):
         for cfg in self.nodes_cfg:
             if cfg.get("group") == group_name:
                 cfg.pop("group", None)
-        save_config(self.nodes_cfg,
-                    known_ambiguous=self._known_ambiguous_keys())
+        save_config(self.nodes_cfg)
         self.tree_panel.set_servers(self.nodes_cfg)
 
     def _on_console_from_tree(self, host_name, node, vmid):
@@ -1481,8 +1474,7 @@ class MainWindow(QMainWindow):
         self.tree_panel.set_servers(self.nodes_cfg)
         self.detail_panel.update_nodes_cfg(self.nodes_cfg)
         self.pbs_panel.update_nodes_cfg(self.nodes_cfg)
-        save_config(self.nodes_cfg,
-                    known_ambiguous=self._known_ambiguous_keys())
+        save_config(self.nodes_cfg)
         from ..config import delete_node_tokens
         delete_node_tokens([c.get("name", "") for c in matched])
         self.refresh_data()
@@ -1533,8 +1525,7 @@ class MainWindow(QMainWindow):
         self.tree_panel.set_servers(self.nodes_cfg)
         self.detail_panel.update_nodes_cfg(self.nodes_cfg)
         self.pbs_panel.update_nodes_cfg(self.nodes_cfg)
-        save_config(self.nodes_cfg,
-                    known_ambiguous=self._known_ambiguous_keys())
+        save_config(self.nodes_cfg)
         self.refresh_data()
 
     def _on_host_trust_ssl(self, host_name, trust_ssl):
@@ -1550,8 +1541,7 @@ class MainWindow(QMainWindow):
                 error=True)
             return
         cfg["trust_ssl"] = bool(trust_ssl)
-        save_config(self.nodes_cfg,
-                    known_ambiguous=self._known_ambiguous_keys())
+        save_config(self.nodes_cfg)
         self.tree_panel.set_servers(self.nodes_cfg)
         self.refresh_data()
 
@@ -1714,13 +1704,6 @@ class MainWindow(QMainWindow):
         self._cfg_by_conn = {cfg["conn_id"]: cfg for cfg in self.nodes_cfg
                              if isinstance(cfg, dict) and cfg.get("conn_id")}
 
-    def _known_ambiguous_keys(self) -> frozenset[str]:
-        """Normalized names of unresolved legacy conflicts (stage 5.1.1
-        §3.1) — the allowance passed to save_config so grandfathered
-        conflict groups persist verbatim while the conflict can only
-        shrink."""
-        return ambiguous_name_keys(self.nodes_cfg)
-
     def _resolve_result_cfg(self, data, worker):
         """Resolve the CURRENT config for an incoming worker result.
 
@@ -1730,13 +1713,23 @@ class MainWindow(QMainWindow):
         a legacy payload without conn_id whose name does not resolve.
         The name fallback exists only for payloads produced before the
         conn_id stamping (test doubles); production FetchWorker results
-        always carry conn_id.
+        always carry conn_id — both on the payload and on the worker's
+        node_cfg (migration guarantees every cfg has one), so the fallback
+        is unreachable in production and logs a warning when hit. It
+        resolves against the CURRENT index: the owner namespace always
+        comes from the live config, never from the stale result.
         """
         conn_id = data.get("conn_id") or (
             worker.node_cfg.get("conn_id") if worker else None)
         if conn_id:
             cfg = self._cfg_by_conn.get(conn_id)
         else:
+            # No identity anywhere — pre-5.1 payload shape. Production
+            # never emits this; keep the resolution strict (current cfg
+            # only, ambiguous excluded) and make the hit observable.
+            logger.warning(
+                "refresh result without conn_id for %r — legacy payload "
+                "path; attach by current name only", data.get("host", ""))
             cfg = self._cfg_by_name.get(data.get("host", ""))
         if cfg is None or cfg.get("_ambiguous"):
             return None

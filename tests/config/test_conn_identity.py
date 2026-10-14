@@ -221,35 +221,80 @@ def test_save_raises_on_new_conflict(cfg_dir, mem_keyring):
         config.save_config([_cfg("Web", "10.0.0.1"), _cfg("web", "10.0.0.2")])
 
 
-def test_save_allows_known_ambiguous_group(cfg_dir, mem_keyring):
-    """A grandfathered conflict group persists verbatim. Without the
-    allowance any new conflict raises; growth of an existing group is
-    prevented at the entry points (dialog + flow-level uniqueness)."""
-    group = [_cfg("Web", "10.0.0.1", conn_id=uuid.uuid4().hex),
-             _cfg("web", "10.0.0.2", conn_id=uuid.uuid4().hex)]
-    known = frozenset({config.name_key("web")})
-    config.save_config(group, known_ambiguous=known)
+def test_save_allows_unchanged_legacy_group(cfg_dir, mem_keyring):
+    """A grandfathered conflict group persists verbatim: the tolerance is
+    derived from the STORED config (stage 5.1.3), so re-saving the loaded
+    list is legal while growing the group is not."""
+    for name, host in (("Web", "10.0.0.1"), ("web", "10.0.0.2")):
+        _insert_raw_row(cfg_dir, name,
+                        {"name": name, "host": host, "user": "u",
+                         "conn_id": uuid.uuid4().hex})
     loaded = config.load_config()
-    assert {c["name"] for c in loaded} == {"Web", "web"}
+    assert all(c.get("_ambiguous") for c in loaded)
+    config.save_config(loaded)
+    assert {c["name"] for c in config.load_config()} == {"Web", "web"}
 
-    # the same list without the allowance must raise
-    with pytest.raises(ValueError):
-        config.save_config(list(group))
-
-
-def test_save_config_unrelated_ops_work_during_conflict(cfg_dir, mem_keyring):
-    """While an ambiguous group exists, changing an unrelated connection
-    must keep the group verbatim (full-replace save)."""
-    group = [_cfg("Web", "10.0.0.1", conn_id=uuid.uuid4().hex),
-             _cfg("web", "10.0.0.2", conn_id=uuid.uuid4().hex)]
-    known = frozenset({config.name_key("web")})
-    config.save_config(group, known_ambiguous=known)
-
-    loaded = config.load_config()
+    # an unrelated edit in the same full-replace save keeps the group verbatim
     loaded.append(_cfg("other", "10.0.0.9", token_value=""))
-    config.save_config(loaded, known_ambiguous=known)
-    names = {c["name"] for c in config.load_config()}
-    assert names == {"Web", "web", "other"}
+    config.save_config(loaded)
+    assert {c["name"] for c in config.load_config()} == {"Web", "web", "other"}
+
+    # growth of the stored group is rejected centrally — the key is already
+    # conflicting, yet a third member may not join
+    grown = loaded + [_cfg("WEB ", "10.0.0.3", conn_id=uuid.uuid4().hex)]
+    with pytest.raises(ValueError):
+        config.save_config(grown)
+
+
+def test_save_allows_group_shrink(cfg_dir, mem_keyring):
+    """Resolving a conflict by dropping the loser is a legal shrink; the
+    flag clears and the winner keeps its identity."""
+    cid_keep, cid_drop = uuid.uuid4().hex, uuid.uuid4().hex
+    for name, host, cid in (("Web", "10.0.0.1", cid_keep),
+                            ("web", "10.0.0.2", cid_drop)):
+        _insert_raw_row(cfg_dir, name,
+                        {"name": name, "host": host, "user": "u",
+                         "conn_id": cid})
+    loaded = config.load_config()
+    keeper = [c for c in loaded if c["conn_id"] == cid_keep]
+    config.save_config(keeper)
+    stored = config.load_config()
+    assert [c["name"] for c in stored] == ["Web"]
+    assert not stored[0].get("_ambiguous")
+    assert stored[0]["conn_id"] == cid_keep
+
+
+def test_save_allows_group_drop(cfg_dir, mem_keyring):
+    """Removing a conflict group entirely (e.g. a merge=False restore) is
+    legal — only GROWTH is forbidden."""
+    for name, host in (("Web", "10.0.0.1"), ("web", "10.0.0.2")):
+        _insert_raw_row(cfg_dir, name,
+                        {"name": name, "host": host, "user": "u",
+                         "conn_id": uuid.uuid4().hex})
+    config.load_config()
+    config.save_config([_cfg("other", "10.0.0.9", token_value="")])
+    assert {c["name"] for c in config.load_config()} == {"other"}
+
+
+def test_failed_save_keeps_pending_flag(cfg_dir, mem_keyring, monkeypatch):
+    """Audit 5.1.3: a save that fails must NOT clear conn_ids_pending —
+    the flag is only ever anchored by a successful commit."""
+    config._conn_ids_pending = True
+
+    real_init = config._init_db
+
+    def _broken_init():
+        raise sqlite3.OperationalError("db is locked")
+
+    monkeypatch.setattr(config, "_init_db", _broken_init)
+    with pytest.raises(sqlite3.OperationalError):
+        config.save_config([_cfg("h1", "10.0.0.1")])
+    monkeypatch.setattr(config, "_init_db", real_init)
+    assert config.conn_ids_pending() is True
+
+    # the same save on a healthy database anchors the ids
+    config.save_config([_cfg("h1", "10.0.0.1")])
+    assert config.conn_ids_pending() is False
 
 
 def test_ambiguous_flag_not_persisted(cfg_dir, mem_keyring):
