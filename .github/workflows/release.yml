@@ -373,7 +373,7 @@ jobs:
             (the key and the packages share one domain; the fingerprint is also
             published on the website and at repo.mclure.ru):
             ```
-            117D EABD 3EA4 8810 B219  BA6B 401F 700F B97D E8B8
+            117D EABD 3EA4 8810 B219 BA6B 401F 700F B97D E8B8
             ```
 
             For the VM console install virt-viewer (`sudo apt install virt-viewer` / `sudo dnf install virt-viewer`).

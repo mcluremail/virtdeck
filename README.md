@@ -129,13 +129,34 @@ this value (published separately in the README, on the
 is ever compromised:
 
 ```text
-117D EABD 3EA4 8810 B219  BA6B 401F 700F B97D E8B8
+117D EABD 3EA4 8810 B219 BA6B 401F 700F B97D E8B8
 ```
 
 ```bash
 curl -fsSL https://repo.mclure.ru/KEY.gpg | gpg --show-keys
 # expect: pub   rsa3072 ... [SC]  VirtDeck Repo <repo@mclure.ru>
-#         117D EABD 3EA4 8810 B219  BA6B 401F 700F B97D E8B8
+#         117D EABD 3EA4 8810 B219 BA6B 401F 700F B97D E8B8
+```
+
+Machine check of the downloaded key — verifies it matches the value
+published here. Note this proves equality with the published value only:
+the published value itself is as trustworthy as the channel you received
+it through, so compare it against a second independent source (this site
+and repo.mclure.ru both carry it):
+
+```bash
+expected=117DEABD3EA48810B219BA6B401F700FB97DE8B8
+
+actual=$(curl -fsSL https://repo.mclure.ru/KEY.gpg |
+  gpg --show-keys --with-colons |
+  awk -F: '$1 == "fpr" {print toupper($10); exit}')
+
+if [ "$actual" = "$expected" ]; then
+    echo "Fingerprint OK"
+else
+    echo "Fingerprint MISMATCH"
+    exit 1
+fi
 ```
 
 Launch from the menu or via `virtdeck`.
@@ -143,14 +164,16 @@ Launch from the menu or via `virtdeck`.
 ### From source (any Linux)
 
 ```bash
-# download virtdeck-3.0.2-py3-none-any.whl (or the .tar.gz) from Releases,
+# download virtdeck-3.0.3-py3-none-any.whl (or the .tar.gz) from Releases,
 # then install the package together with its dependencies:
-pip install virtdeck-3.0.2-py3-none-any.whl PySide6 proxmoxer requests \
+pip install virtdeck-3.0.3-py3-none-any.whl PySide6 proxmoxer requests \
   urllib3 pyqtgraph cryptography keyring
 virtdeck
 ```
 
-(On a system with PEP 668 protection use a venv or add `--break-system-packages`.)
+(On a system with PEP 668 protection of the system Python, install into a
+virtual environment (venv); `--break-system-packages` bypasses that
+protection and should stay a conscious exception.)
 
 Fedora releases older than 43 are end-of-life: the frozen `fedora/41` catalog
 still serves its last published build but receives no updates — upgrade Fedora
@@ -330,7 +353,7 @@ packages (no venv required): `./run` uses plain `python -m virtdeck`.
 | `virtdeck/provider/` | Data provider seam: `ProxmoxProvider` facade, session with per-host proxy |
 | `packaging/virtdeck-win.spec` | PyInstaller spec for Windows build |
 | `packaging/virtdeck-installer.nsi` | NSIS multilingual installer script |
-| `.github/workflows/ci.yml` | CI: ruff lint on PR/push (Python 3.10/3.11/3.12) |
+| `.github/workflows/ci.yml` | CI: ruff lint + pytest on PR/push (Python 3.10–3.14); release doc consistency checks |
 | `.github/workflows/release.yml` | Release: build deb/rpm/zip/installer, create GitHub release |
 | `docs/DEV_PROCESS.md` | Development methodology (workflow, gates, coding rules) |
 | `docs/AUDIT_PROCESS.md` | Code audit methodology + audit reports |
@@ -350,7 +373,28 @@ Supported languages:
 - French (fr)
 - Spanish (es)
 
-Translations are stored in the `translations` table. To add a new language, insert rows with `(lang, msgid, msgstr)`.
+How translations work — the source of truth is the repo, not the database:
+
+- English strings are the reference: they are written in the UI code and
+  wrapped in `tr()`; with English selected `tr()` returns them unchanged.
+- Every other language ships as a JSON file in `virtdeck/ui/i18n/`
+  (`ru.json`, `ar.json`, `zh.json`, `fr.json`, `es.json`) — a flat
+  `"msgid": "msgstr"` map keyed by the English string. On `set_language()`
+  the JSON is loaded into memory and `tr()` looks translations up there,
+  falling back to English for missing keys. All JSON files must keep the
+  same key set (`scripts/check_release.py` enforces this).
+- The SQLite `translations` table is a derived copy, not a source:
+  `set_language()` seeds the active language's JSON into it
+  (`config.seed_translations()`), and a re-seed is forced whenever the
+  built-in strings change (the `i18n_version` counter in `ui_state`).
+  Runtime translation lookup never reads the table.
+- To add or change a translation, edit the JSON file and bump
+  `_I18N_VERSION` in `virtdeck/ui/i18n/__init__.py` so existing installs
+  re-seed. No manual database editing is required — rows inserted into
+  `translations` alone have no effect at runtime.
+- To add a new language: add `virtdeck/ui/i18n/<lang>.json` and register it
+  in `_SUPPORTED_LANGUAGES` and `_JSON_LANGS` in
+  `virtdeck/ui/i18n/__init__.py` (plus the README list above).
 
 ## Third-party software
 

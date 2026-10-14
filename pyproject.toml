@@ -18,11 +18,20 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: System :: Monitoring",
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "PySide6>=6.5",
+    # <6.12: shiboken 6.12.0 corrupts python refcounts while pytest-qt widget
+    # trees are destroyed (flaky fatal bool_dealloc at interpreter shutdown;
+    # bisected 2026-10-12 — see tests/ui/conftest.py). 6.11.x is clean; check
+    # the PySide changelog before lifting the cap.
+    "PySide6>=6.5,<6.12",
     "proxmoxer>=2.0",
     "requests>=2.32.0",
     "urllib3>=1.26",

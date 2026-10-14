@@ -48,8 +48,14 @@
      (`index.html` + `i18n.js`; ключи i18n обязаны быть в паритете во всех 6
      языках — проверяет `check-site.js`);
    - `./update-version.sh <old> <new> [date]` — переписывает версии, локализованные
-     даты, HEAD-проверяет все ссылки на assets релиза; после — сверить
-     apt/dnf-блоки сайта с README вручную (команды должны быть дословно те же);
+     даты (включая футер «Site updated»), HEAD-проверяет все ссылки на assets
+     релиза; после — сверить apt/dnf-блоки сайта с README вручную (команды
+     должны быть дословно те же);
+   - автоматическая сверка с README: `python3 scripts/check_release.py
+     --site-dir <checkout сайта>` — версия wheel-ссылок, дословность pip-команды,
+     наличие предупреждения PEP 668, формат отпечатка. Сайт живёт в отдельном
+     checkout вне этого репозитория — CI его проверить не может, шаг ручной
+     (ограничение зафиксировано, а не забыто);
    - проверки: `node check-site.js` (i18n-паритет, баланс тегов, устаревшие
      версии) и `node check-contrast.js`;
    - деплой: `rsync -a public/ repo.mclure.ru:/srv/virtdeck/public/`
@@ -57,7 +63,8 @@
    - live-проверка: `curl -s https://virtdeck.mclure.ru/ | grep -c "vX.Y.Z"`.
 6. **Бамп версий** (три места, см. выше) + `uv lock`.
 7. **Гейты**: `.venv/bin/ruff check virtdeck tests &&
-   .venv/bin/pytest -q` — зелёные. Smoke: `grep -rn "3\.0\.[0-9]" README.md`
+   .venv/bin/pytest -q` и `python3 scripts/check_release.py` — зелёные.
+   Smoke: `grep -rn "3\.0\.[0-9]" README.md`
    — не осталось старых упоминаний версии там, где ожидается новая.
 8. **Коммит** `release: vX.Y.Z — <заголовок>` (по явной команде, как всегда).
 9. **Тег** `vX.Y.Z` на релизный коммит.
@@ -115,7 +122,9 @@
   замороженным, в README отметить «frozen, no updates»;
 - PySide6: колесо конвертируется из официального manylinux; версии ≥ 6.10.1
   — abi3 (cp310+) и покрывают новые Python; 6.12.x держаться подальше
-  (refcount-баг, зафиксирован в `tests/ui/conftest.py`).
+  (refcount-баг, зафиксирован в `tests/ui/conftest.py`). Диапазон зафиксирован
+  в `pyproject.toml` (`>=6.5,<6.12`) — снимать кап только после сверки с
+  changelog PySide и повторного прогона полного набора.
 
 ## Публикация в пакетный репозиторий (repo.mclure.ru)
 
@@ -134,9 +143,11 @@ requirements совпадали; fedora/43 и fedora/44).
 - Индексы перегенерирует и подписывает сервер (`/srv/repo/publish.sh`,
   systemd path-unit за каталогом `incoming/`); GPG-ключ подписи не покидает
   сервер, публичник — `https://repo.mclure.ru/KEY.gpg`, отпечаток
-  `117D EABD 3EA4 8810 B219  BA6B 401F 700F B97D E8B8` опубликован отдельно
+  `117D EABD 3EA4 8810 B219 BA6B 401F 700F B97D E8B8` опубликован отдельно
   (README, сайт, корень repo.mclure.ru) — менять ключ без синхронного
-  обновления всех трёх мест нельзя.
+  обновления всех трёх мест нельзя. Способ машинной сверки скачанного ключа
+  — в README («Machine check»); единообразие отпечатка во всех актуальных
+  доках проверяет `scripts/check_release.py`.
 - Секрет `REPO_DEPLOY_KEY` — ключ, ограниченный forced-command
   (`rrsync /srv/repo/incoming`) у пользователя `repo-upload`.
 - Пересборка пакетов репозитория (новый релиз дистрибутива или питона):
@@ -156,7 +167,7 @@ requirements совпадали; fedora/43 и fedora/44).
 - [ ] **README: Latest release + Features актуальны**
 - [ ] **Сайт: версия и установочные блоки синхронизированы с README, деплой выполнен, live-проверка**
 - [ ] pyproject.toml + `__init__.py` + `uv lock` — версия согласована
-- [ ] `ruff check` + `pytest -q` зелёные
+- [ ] `ruff check` + `pytest -q` + `scripts/check_release.py` зелёные
 - [ ] аудит дельты закрыт (тег `audit/<дата>` раньше релизного коммита)
 - [ ] тег `vX.Y.Z` на релизный коммит
 - [ ] push коммитов и тегов — по явной команде пользователя

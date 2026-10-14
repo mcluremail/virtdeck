@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
     steps:
       - uses: actions/checkout@v4
 
@@ -34,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
     steps:
       - uses: actions/checkout@v4
 
@@ -53,3 +53,16 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q
+
+  release-checks:
+    # Documentation/release consistency: install-command versions, CI matrix
+    # vs declared Python support, i18n JSON parity, GPG fingerprint format.
+    # Catching these in CI keeps the release checklist honest (see
+    # docs/RELEASE_PROCESS.md); the site checkout lives outside this repo and
+    # is verified manually with `scripts/check_release.py --site-dir`.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run release consistency checks
+        run: python3 scripts/check_release.py
