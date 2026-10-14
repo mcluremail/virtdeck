@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.0.5 — backup job safety and Fleet Health honesty (external audit stages 6.1.1 and 6.2.1)
+
+**Bug fixes**
+- Backup job editing no longer destroys the guest selection: the editor now models the three PVE selection kinds (`all` / `pool` / `vmid` list) as they exist in the API, and an unchanged save sends nothing at all — a pool or all-guests job can no longer silently degrade into an explicit VMID list (the old editor carried `vmid` in every PUT, and PVE deletes `pool`/`all`/`exclude` the moment `vmid` arrives). The word "all" typed into the VMID field is rejected with an explicit message instead of producing a guaranteed 400, foreign fields of the chosen mode are disabled, clearing `exclude`/`node` goes through the PUT `delete` parameter, and a job without any selection stays intact on a no-change save
+- The retention policy is preserved verbatim: `prune-backups` is kept in full in both the property-string and the object form PVE 8 returns, every `keep-*` element survives an edit, an unparsable policy blocks the save with an explicit error instead of being replaced by an invented `keep-last=3`, and the server defaults the API omits (`remove`, `compress`) are displayed but never written back unless the user actually changed them — editing a job no longer silently switches pruning off
+- Fleet Health stops asserting what it could not verify: a failed task-history collection now shows each unevidenced guest as a yellow "Backup state unverified" row naming the failed source instead of the false red "Never backed up" (a confirmed empty history still produces the honest red), a plain caveat explains that scheduled job runs cannot be attributed to guests on PVE below 7.2 (their UPIDs carry no job id), and one corrupt task row (no parsable timestamp) can no longer crash the whole cluster report
+- Refresh safety for optional sources (audit 6.1.1): a timed-out or failed pools/HA fetch is now reported as "not fetched" instead of looking like a confirmed absence — the previous data of a host whose worker fails or is rejected is kept through refresh cycles, HA errors surface as a partial payload, and hosts that left the configuration are dropped explicitly instead of a wholesale clear
+- The backup jobs table shows the selection kind (All guests / pool / VMID list / node) instead of a VMIDs column that was empty for pool and all-guests jobs
+
+**Internal**
+- The `fake_pve` test stand implements backup-job CRUD with the real PVE `update_job` semantics (mutually exclusive selection keys, the `delete` parameter, pve-vmid-list validation, "no options specified" on an empty PUT), so round-trip tests assert the end state of a job after server-side processing; 58 new tests (1358 → 1416) covering the dialog contracts, the server semantics and the Fleet Health partial-data rules; i18n version 39 (21 new keys in all 5 locales)
+- Release engineering: `python3-pyside6` debs declare the full Qt runtime closure in `Depends` (private Qt libraries were pulled in only transitively before)
+
 ## v3.0.4 — connection identity and safe cache restore (external audit stage 5.1)
 
 **Bug fixes**
