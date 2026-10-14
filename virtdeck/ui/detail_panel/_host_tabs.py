@@ -1504,10 +1504,10 @@ class HostTabs:
         loading = loading_label()
         table = make_table(
             [tr("ID"), tr("Enabled"), tr("Schedule"), tr("Storage"),
-             tr("VMIDs"), tr("Mode"), tr("Comment")],
+             tr("Selection"), tr("Mode"), tr("Comment")],
             [(QHeaderView.Stretch, None), (QHeaderView.Interactive, 60),
              (QHeaderView.Interactive, 100), (QHeaderView.Interactive, 100),
-             (QHeaderView.Interactive, 120), (QHeaderView.Interactive, 80),
+             (QHeaderView.Interactive, 160), (QHeaderView.Interactive, 80),
              (QHeaderView.Stretch, None)],
             sortable=True,
         )
@@ -1858,8 +1858,8 @@ class HostTabs:
             table.setItem(i, 1, en_item)
             table.setItem(i, 2, QTableWidgetItem(job.get("schedule", "")))
             table.setItem(i, 3, QTableWidgetItem(job.get("storage", "")))
-            vmid = job.get("vmid", "")
-            table.setItem(i, 4, QTableWidgetItem(str(vmid) if vmid else ""))
+            from ..backup_job_dialog import selection_label
+            table.setItem(i, 4, QTableWidgetItem(selection_label(job)))
             table.setItem(i, 5, QTableWidgetItem(job.get("mode", "")))
             table.setItem(i, 6, QTableWidgetItem(job.get("comment", "") or ""))
         table.setSortingEnabled(True)
@@ -1888,6 +1888,16 @@ class HostTabs:
                     and s.host_name == host_cfg]
         return panel.all_storages
 
+    def _get_pool_ids(self):
+        """Distinct pool ids known to the UI (for the job dialog's pool
+        selector; the combo stays editable so an unknown id can be typed)."""
+        out: list[str] = []
+        for p in getattr(self.panel, "all_pools", None) or []:
+            pid = str(getattr(p, "poolid", "") or "")
+            if pid and pid not in out:
+                out.append(pid)
+        return out
+
     def _on_add_backup_job(self):
         panel = self.panel
         cfg = getattr(panel, "_backup_jobs_cfg", None)
@@ -1896,7 +1906,8 @@ class HostTabs:
         pve_major = getattr(panel, "_backup_jobs_pve_major", 7)
         storages = self._get_backup_jobs_storages()
         from ..backup_job_dialog import BackupJobDialog
-        dlg = BackupJobDialog(panel, storages=storages)
+        dlg = BackupJobDialog(panel, storages=storages,
+                              pools=self._get_pool_ids())
         if dlg.exec() != BackupJobDialog.Accepted:
             return
         params = dlg.get_params()
@@ -2278,7 +2289,8 @@ class HostTabs:
         pve_major = getattr(panel, "_backup_jobs_pve_major", 7)
         storages = self._get_backup_jobs_storages()
         from ..backup_job_dialog import BackupJobDialog
-        dlg = BackupJobDialog(panel, storages=storages, job=job)
+        dlg = BackupJobDialog(panel, storages=storages, job=job,
+                              pools=self._get_pool_ids())
         if dlg.exec() != BackupJobDialog.Accepted:
             return
         params = dlg.get_params()

@@ -315,3 +315,52 @@ class TestMergeFleetReports:
     ])
     def test_complete_only_when_all_complete(self, reports):
         assert merge_fleet_reports(reports).complete
+
+
+class TestTasksAvailability:
+    """Audit D4: [] (fetched, confirmed empty) ≠ None (not collected)."""
+
+    def test_tasks_none_marks_history_unavailable(self):
+        assert make_cluster_report(tasks=None).tasks_available is False
+
+    def test_tasks_empty_is_confirmed_absence(self):
+        assert make_cluster_report(tasks=[]).tasks_available is True
+
+    def test_tasks_present_marks_available(self):
+        assert make_cluster_report().tasks_available is True
+
+
+class TestMalformedTaskRows:
+    """Audit D7: one corrupt row must not destroy the report."""
+
+    def test_row_without_any_time_is_skipped(self):
+        tasks = [
+            # no starttime field, empty UPID time slot
+            {"upid": "UPID:pve01:00000001:00000000::vzdump:101:root@pam:",
+             "type": "vzdump", "status": "OK"},
+            {"upid": upid(102, "00000064"), "type": "vzdump",
+             "status": "OK", "starttime": 1727827200},
+        ]
+        states = build_backup_states(tasks, [guest(101), guest(102)], {})
+        assert state_of(states, 102).task_last_ok == 1727827200
+        assert state_of(states, 101).task_last_ok is None
+
+    def test_row_with_garbage_starttime_is_skipped(self):
+        tasks = [
+            {"upid": upid(101, "00000064"), "type": "vzdump",
+             "status": "OK", "starttime": "garbage"},
+            {"upid": upid(102, "000000c8"), "type": "vzdump",
+             "status": "OK", "starttime": 1727827200},
+        ]
+        states = build_backup_states(tasks, [guest(101), guest(102)], {})
+        assert state_of(states, 102).task_last_ok == 1727827200
+        assert state_of(states, 101).task_last_ok is None
+
+    def test_report_builds_with_corrupt_row(self):
+        tasks = [
+            {"upid": "UPID:pve01:00000001:00000000::vzdump:101:root@pam:",
+             "type": "vzdump", "status": "OK"},
+        ]
+        report = make_cluster_report(tasks=tasks)
+        assert report.guests
+        assert report.backup_states is not None

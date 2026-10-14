@@ -23,7 +23,11 @@ from virtdeck.backend.fleet import (
     build_fleet_targets,
 )
 from virtdeck.domain.backup_coverage import Guest
-from virtdeck.domain.fleet import GuestBackupState, build_cluster_report
+from virtdeck.domain.fleet import (
+    CollectError,
+    GuestBackupState,
+    build_cluster_report,
+)
 from virtdeck.fleet.runway import RunwayEstimate
 from virtdeck.fleet.sprawl import scan_sprawl
 from virtdeck.ui.fleet_health import KEY_ROLE, FleetHealthDialog
@@ -194,6 +198,100 @@ def test_cluster_job_run_covers_guests(qtbot, api):
     dlg._bundles = [ClusterBundle(report=report2, runway=())]
     dlg._render()
     assert find_issue(dlg._tree, "Never backed up") is None
+    assert dlg._status.text() == "No issues found"
+
+
+def test_tasks_unavailable_shows_unverified_not_never_backed_up(qtbot, api):
+    """Audit D4: the task history failed to collect — the absence of
+    task evidence must not be asserted as "Never backed up" (red lie).
+    The row is a yellow "unverified" and names what could not be
+    checked; PBS/job direct evidence keeps working."""
+    dlg = make_dialog(qtbot)
+    wait_loaded(qtbot, dlg)
+    report = dlg._bundles[0].report
+    report2 = build_cluster_report(
+        cluster=report.cluster, generated_at=NOW,
+        resources=[{"type": "qemu", "vmid": 105, "name": "fresh",
+                    "node": "pve01"}],
+        backup_jobs=[{"id": "bz-all", "enabled": 1, "all": 1}],
+        tasks=None,
+        errors=[CollectError(cluster="alpha", source="tasks",
+                             message="500 internal error")])
+    dlg._bundles = [ClusterBundle(report=report2, runway=())]
+    dlg._render()
+    assert find_issue(dlg._tree, "Never backed up") is None
+    row = find_issue(dlg._tree, "Backup state unverified")
+    assert row is not None
+    assert row.text(1) == "fresh (105)"
+    assert "500 internal error" in row.text(3)
+    assert row.foreground(2).color() == QColor(Color.WARNING)
+    assert dlg._status.text() != "No issues found"
+
+
+def test_tasks_fetched_empty_confirms_never_backed_up(qtbot, api):
+    """tasks=[] is a confirmed absence (history fetched, jobs fetched,
+    no evidence) — the red assertion is legitimate and stays."""
+    dlg = make_dialog(qtbot)
+    wait_loaded(qtbot, dlg)
+    report = dlg._bundles[0].report
+    report2 = build_cluster_report(
+        cluster=report.cluster, generated_at=NOW,
+        resources=[{"type": "qemu", "vmid": 105, "name": "fresh",
+                    "node": "pve01"}],
+        backup_jobs=[{"id": "bz-all", "enabled": 1, "all": 1}],
+        tasks=[])
+    dlg._bundles = [ClusterBundle(report=report2, runway=())]
+    dlg._render()
+    row = find_issue(dlg._tree, "Never backed up")
+    assert row is not None
+    assert row.foreground(2).color() == QColor(Color.DANGER)
+    assert find_issue(dlg._tree, "Backup state unverified") is None
+
+
+def test_pve_below_72_shows_job_attribution_caveat(qtbot, api):
+    """Audit D6: PVE < 7.2 UPIDs carry no job id — scheduled job runs
+    cannot be attributed to guests. The caveat is plain (not an issue)."""
+    dlg = make_dialog(qtbot)
+    wait_loaded(qtbot, dlg)
+    report = dlg._bundles[0].report
+    report2 = build_cluster_report(
+        cluster=report.cluster, generated_at=NOW,
+        resources=[{"type": "qemu", "vmid": 105, "name": "fresh",
+                    "node": "pve01"}],
+        backup_jobs=[{"id": "bz-all", "enabled": 1, "all": 1}],
+        tasks=[{"upid": "UPID:pve01:00000009:00000000:67100000:"
+                        "vzdump:105:root@pam:",
+                "type": "vzdump", "status": "OK",
+                "starttime": NOW - 3600}],
+        node_versions={"pve01": "pve-manager/7.1.2/abc"})
+    dlg._bundles = [ClusterBundle(report=report2, runway=())]
+    dlg._render()
+    top = dlg._tree.topLevelItem(0)
+    rows = [top.child(j) for j in range(top.childCount())]
+    assert any(r.text(2) == "Job-run attribution unavailable" for r in rows)
+    caveat = next(r for r in rows
+                  if r.text(2) == "Job-run attribution unavailable")
+    assert "pve01" in caveat.text(3)
+    assert dlg._status.text() == "No issues found"
+
+
+def test_pve_72_and_above_has_no_attribution_caveat(qtbot, api):
+    dlg = make_dialog(qtbot)
+    wait_loaded(qtbot, dlg)
+    report = dlg._bundles[0].report
+    report2 = build_cluster_report(
+        cluster=report.cluster, generated_at=NOW,
+        resources=[{"type": "qemu", "vmid": 105, "name": "fresh",
+                    "node": "pve01"}],
+        backup_jobs=[{"id": "bz-all", "enabled": 1, "all": 1}],
+        tasks=[{"upid": "UPID:pve01:00000009:00000000:67100000:"
+                        "vzdump:105:root@pam:",
+                "type": "vzdump", "status": "OK",
+                "starttime": NOW - 3600}],
+        node_versions={"pve01": "pve-manager/7.2.0/abc"})
+    dlg._bundles = [ClusterBundle(report=report2, runway=())]
+    dlg._render()
+    assert find_issue(dlg._tree, "Job-run attribution unavailable") is None
     assert dlg._status.text() == "No issues found"
 
 

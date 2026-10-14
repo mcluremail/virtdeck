@@ -122,6 +122,15 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self) -> None:
+        # KNOWN LIMITATION (audit D5, deliberate for 6.2.1): one PBS map
+        # is shared by every PVE target. A (vmid, type) snapshot time can
+        # therefore be attributed to a guest of the wrong cluster when
+        # several clusters back up the same VMIDs to the same PBS
+        # datastore+namespace. A reliable binding exists in principle
+        # (each cluster only sees the datastores/namespaces its pbs-type
+        # storages reference) but requires carrying (datastore, namespace)
+        # through the whole map contract — proposed as a separate stage,
+        # per the audit's instruction not to invent an unsafe heuristic.
         pbs_map: dict = {}
         if self._pbs_cfgs:
             try:

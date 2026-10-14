@@ -277,6 +277,18 @@ class FakePveApi:
             return 404, {"errors": f"no handler: {method} {path}"}
 
         if method in ("POST", "PUT", "DELETE"):
+            # Backup job CRUD (PVE::API2::Backup semantics).
+            if parts[:2] in (["cluster", "backup"],
+                             ["cluster", "jobs"]) and len(parts) <= 3:
+                jobs_path = parts[:2] == ["cluster", "jobs"]
+                if jobs_path and method == "POST" \
+                        and str(params.get("type", "")) != "vzdump":
+                    return 400, {"errors": "unknown job type"}
+                job_id = parts[2] if len(parts) == 3 else None
+                if method == "POST":
+                    return self._create_backup_job(params)
+                return self._modify_backup_job(method, job_id, params)
+
             if parts[:1] == ["nodes"] and len(parts) >= 3:
                 node = parts[1]
                 if node not in self.nodes:
@@ -329,3 +341,96 @@ class FakePveApi:
             return 404, {"errors": f"no handler: {method} {path}"}
 
         return 404, {"errors": f"no handler: {method} {path}"}
+
+    # -- Backup job CRUD: mirrors PVE::API2::Backup (update_job). ----------
+
+    _KEEP_KEYS = ("keep-last", "keep-hourly", "keep-daily", "keep-weekly",
+                  "keep-monthly", "keep-yearly")
+
+    def _validate_vmid_list(self, raw: object) -> str | None:
+        """pve-vmid-list schema: comma-separated positive integers.
+
+        Returns an error message or None. The word 'all' is NOT a valid
+        vmid — PVE models 'select all' as the separate boolean ``all``.
+        """
+        for part in str(raw or "").split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if not part.isdigit() or int(part) <= 0:
+                return f"invalid vmid '{part}'"
+        return None
+
+    def _validate_prune(self, raw: object) -> str | None:
+        for part in str(raw or "").split(","):
+            part = part.strip()
+            if not part:
+                continue
+            key, _sep, value = part.partition("=")
+            if key not in self._KEEP_KEYS or not value.isdigit():
+                return f"invalid prune-backups '{part}'"
+        return None
+
+    def _create_backup_job(self, params: dict) -> tuple[int, object]:
+        params = dict(params)
+        for key in ("vmid", "exclude"):
+            err = self._validate_vmid_list(params.get(key))
+            if err:
+                return 400, {"errors": err}
+        err = self._validate_prune(params.get("prune-backups"))
+        if err:
+            return 400, {"errors": err}
+        job_id = str(params.pop("id", "") or
+                     f"backup-{len(self.backup_jobs) + 1:03d}")
+        if any(j.get("id") == job_id for j in self.backup_jobs):
+            return 400, {"errors": f"Job '{job_id}' already exists"}
+        if not params.get("storage"):
+            return 400, {"errors": "storage: storage is required"}
+        job = {"id": job_id, **params}
+        self.backup_jobs.append(job)
+        return 200, None
+
+    def _modify_backup_job(self, method: str, job_id: str | None,
+                           params: dict) -> tuple[int, object]:
+        if method == "DELETE":
+            before = len(self.backup_jobs)
+            self.backup_jobs = [j for j in self.backup_jobs
+                                if j.get("id") != job_id]
+            if len(self.backup_jobs) == before:
+                return 400, {"errors": f"No such job '{job_id}'"}
+            return 200, None
+        job = next((j for j in self.backup_jobs
+                    if j.get("id") == job_id), None)
+        if job is None:
+            return 400, {"errors": f"no such vzdump job '{job_id}'"}
+        params = {k: v for k, v in dict(params).items() if k != "id"}
+        for key in ("vmid", "exclude"):
+            err = self._validate_vmid_list(params.get(key))
+            if err:
+                return 400, {"errors": err}
+        err = self._validate_prune(params.get("prune-backups"))
+        if err:
+            return 400, {"errors": err}
+        delete = {k: 1 for k in str(params.pop("delete", "") or "").split(",")
+                  if k.strip()}
+        if not params and not delete:
+            return 400, {"errors": "no options specified"}
+        # PVE update_job: the guest-selection parameters are mutually
+        # exclusive — sending vmid deletes all/exclude/pool, sending all
+        # deletes vmid/pool, and a pool present in the job deletes
+        # vmid/all/exclude.
+        if "vmid" in params:
+            job.pop("all", None)
+            job.pop("exclude", None)
+            job.pop("pool", None)
+        elif params.get("all"):
+            job.pop("vmid", None)
+            job.pop("pool", None)
+        elif job.get("pool"):
+            job.pop("vmid", None)
+            job.pop("all", None)
+            job.pop("exclude", None)
+        for key in delete:
+            job.pop(key, None)
+        job.update(params)
+        return 200, None

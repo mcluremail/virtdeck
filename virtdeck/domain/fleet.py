@@ -92,6 +92,11 @@ class ClusterFleetReport:
     tasks_truncated: bool = False
     """True — the task history hit the fetch limit: older successful
     backups may be missing, "never backed up" may be inaccurate."""
+    tasks_available: bool = False
+    """False — the task history could not be collected: the absence of
+    task evidence is NOT a confirmed absence (audit D4). PBS snapshots
+    remain usable; per-guest task aggregates and job-run evidence do
+    not."""
 
 
 @dataclass(frozen=True)
@@ -138,6 +143,12 @@ def _task_aggregates(tasks: Sequence[dict]) \
         if task_type != "vzdump":
             continue
         starttime = _row_starttime(row, upid)
+        if starttime is None:
+            # a task without any parsable time cannot be ordered against
+            # the others — skip it entirely instead of risking a
+            # TypeError on a None comparison (one corrupt row must not
+            # destroy the whole cluster report, audit D7)
+            continue
         vmid = _row_vmid(row, upid)
         if vmid is not None:
             bucket = agg.setdefault(vmid, {"vmid": vmid, "task_last_ok": None,
@@ -303,4 +314,5 @@ def build_cluster_report(
         node_versions=dict(node_versions or {}),
         storage_usage=tuple(storage_usage or ()),
         tasks_truncated=tasks_truncated,
+        tasks_available=tasks is not None,
     )

@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..backend.fleet import ClusterBundle, FleetHealthWorker
+from ..domain.compat import parse_pve_version
 from ..domain.fleet import GuestBackupState
 from ..fleet.collector import TASK_HISTORY_LIMIT
 from ..fleet.drift import detect_drift
@@ -233,6 +234,22 @@ class FleetHealthDialog(QDialog):
                     TASK_HISTORY_LIMIT),
                 _SEV_PLAIN, key=None, icon="history"))
 
+        # D6: on PVE below 7.2 a scheduled job run carries no job id in
+        # its UPID, so it cannot be attributed to the guests it covered —
+        # say so instead of letting them surface as unexplained reds.
+        old_nodes = sorted(
+            node for node, raw in report.node_versions.items()
+            if (v := parse_pve_version(raw)) is not None
+            and (v.major, v.minor) < (7, 2)
+        )
+        if old_nodes:
+            cluster_item.addChild(self._issue_row(
+                "", tr("Job-run attribution unavailable"),
+                tr("PVE below 7.2 ({nodes}) does not identify scheduled "
+                   "job runs — guests covered only by jobs may appear "
+                   "unverified").format(nodes=", ".join(old_nodes)),
+                _SEV_PLAIN, key=None, icon="history"))
+
         sections = {
             "compliance": self._compliance_rows(bundle),
             "drift": self._drift_rows(bundle),
@@ -268,6 +285,13 @@ class FleetHealthDialog(QDialog):
         report = bundle.report
         if report.coverage is None:
             return []
+        # D4: without the task history the absence of task evidence is
+        # not a confirmed absence — PBS freshness stays usable, but "never
+        # backed up" must not be asserted (a yellow "unverified" row keeps
+        # the report honest without a red lie).
+        tasks_unavailable = not report.tasks_available
+        tasks_error = next((e.message for e in report.errors
+                            if e.source == "tasks"), "")
         rows: list = []
         for guest in sorted(report.guests, key=lambda g: g.vmid):
             if guest.template:
@@ -282,8 +306,15 @@ class FleetHealthDialog(QDialog):
                     _SEV_RED, key), _SEV_RED))
                 continue
             if not state.ever_backed_up:
-                rows.append((self._issue_row(label, tr("Never backed up"),
-                    "", _SEV_RED, key), _SEV_RED))
+                if tasks_unavailable:
+                    rows.append((self._issue_row(label,
+                        tr("Backup state unverified"),
+                        tr("task history unavailable: {err}").format(
+                            err=tasks_error or tr("source error")),
+                        _SEV_WARN, key), _SEV_WARN))
+                else:
+                    rows.append((self._issue_row(label, tr("Never backed up"),
+                        "", _SEV_RED, key), _SEV_RED))
                 continue
             if state.task_last_failed is not None and (
                     state.last_successful is None

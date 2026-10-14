@@ -103,3 +103,140 @@ def test_partial_failure_maps_to_proxmox_error(provider, api):
     with pytest.raises(ProxmoxError):
         provider.nodes.get_version("pve02")
     assert provider.nodes.get_version("pve01")["version"] == "8.2.4"
+
+
+# -- Backup job CRUD (stage 6.2.1, audit D2): the fake mirrors the real
+# PVE::API2::Backup update_job semantics, so round-trips through the
+# provider assert the END STATE of the job after server-side processing.
+
+
+def _job(api, job_id):
+    return next((j for j in api.backup_jobs if j.get("id") == job_id), None)
+
+
+def test_create_pool_job_via_provider(provider, api):
+    provider.cluster.create_backup_job(
+        {"id": "t-pool", "pool": "prod", "storage": "pbs1",
+         "schedule": "02:00"}, pve_major=7)
+    job = _job(api, "t-pool")
+    assert job["pool"] == "prod"
+    assert "vmid" not in job and "all" not in job
+    jobs = provider.cluster.list_backup_jobs()
+    assert any(j["id"] == "t-pool" for j in jobs)
+
+
+def test_update_comment_only_preserves_pool_selection():
+    """THE D2 contract: a PUT without selection keys must not touch the
+    stored selection — the old client sent vmid unconditionally."""
+    api = make_pve_cluster("alpha")
+    api.backup_jobs.append({"id": "job-1", "pool": "prod",
+                            "storage": "pbs1", "schedule": "02:00"})
+    status, _data = api.handle("PUT", "/cluster/backup/job-1",
+                               {"comment": "monthly"})
+    assert status == 200
+    job = _job(api, "job-1")
+    assert job["pool"] == "prod"
+    assert job["comment"] == "monthly"
+    assert "vmid" not in job
+
+
+def test_update_with_vmid_deletes_pool_and_all():
+    """Server-side PVE semantics the dialog must steer around: sending
+    vmid deletes pool/all/exclude."""
+    api = make_pve_cluster("alpha")
+    api.backup_jobs.append({"id": "job-1", "pool": "prod", "all": 1,
+                            "exclude": "100", "storage": "pbs1",
+                            "schedule": "02:00"})
+    api.handle("PUT", "/cluster/backup/job-1", {"vmid": "100,101"})
+    job = _job(api, "job-1")
+    assert job["vmid"] == "100,101"
+    assert "pool" not in job and "all" not in job and "exclude" not in job
+
+
+def test_update_with_all_deletes_vmid():
+    api = make_pve_cluster("alpha")
+    api.backup_jobs.append({"id": "job-1", "vmid": "100",
+                            "storage": "pbs1", "schedule": "02:00"})
+    api.handle("PUT", "/cluster/backup/job-1", {"all": 1})
+    job = _job(api, "job-1")
+    assert job["all"] == 1
+    assert "vmid" not in job
+
+
+def test_update_delete_param_clears_exclude_keeps_all():
+    api = make_pve_cluster("alpha")
+    api.backup_jobs.append({"id": "job-1", "all": 1, "exclude": "100",
+                            "storage": "pbs1", "schedule": "02:00"})
+    api.handle("PUT", "/cluster/backup/job-1", {"delete": "exclude"})
+    job = _job(api, "job-1")
+    assert job["all"] == 1
+    assert "exclude" not in job
+
+
+def test_update_empty_params_rejected():
+    api = make_pve_cluster("alpha")
+    api.backup_jobs.append({"id": "job-1", "vmid": "100",
+                            "storage": "pbs1", "schedule": "02:00"})
+    status, data = api.handle("PUT", "/cluster/backup/job-1", {})
+    assert status == 400
+    assert "no options" in str(data)
+
+
+def test_vmid_word_all_rejected_everywhere():
+    api = make_pve_cluster("alpha")
+    api.backup_jobs.append({"id": "job-1", "vmid": "100",
+                            "storage": "pbs1", "schedule": "02:00"})
+    for method, path, params in (
+        ("POST", "/cluster/backup", {"vmid": "all", "storage": "pbs1",
+                                     "schedule": "02:00"}),
+        ("PUT", "/cluster/backup/job-1", {"vmid": "all"}),
+    ):
+        status, data = api.handle(method, path, params)
+        assert status == 400
+        assert "invalid vmid 'all'" in str(data)
+
+
+def test_delete_backup_job_via_provider(provider, api):
+    api.backup_jobs.append({"id": "job-1", "vmid": "100",
+                            "storage": "pbs1", "schedule": "02:00"})
+    provider.cluster.delete_backup_job("job-1", pve_major=7)
+    assert _job(api, "job-1") is None
+    with pytest.raises(ProxmoxError):
+        provider.cluster.delete_backup_job("job-1", pve_major=7)
+
+
+def test_create_duplicate_rejected(provider, api):
+    params = {"vmid": "100", "storage": "pbs1", "schedule": "02:00"}
+    provider.cluster.create_backup_job(dict(params, id="dup"), pve_major=7)
+    with pytest.raises(ProxmoxError):
+        provider.cluster.create_backup_job(dict(params, id="dup"),
+                                           pve_major=7)
+
+
+def test_pve8_jobs_path_uses_same_store(provider, api):
+    status, _ = api.handle("POST", "/cluster/jobs",
+                           {"type": "vzdump", "id": "t-jobs",
+                            "pool": "prod", "storage": "pbs1",
+                            "schedule": "02:00"})
+    assert status == 200
+    assert _job(api, "t-jobs")["pool"] == "prod"
+    status, _ = api.handle("POST", "/cluster/jobs",
+                           {"type": "scleanup", "id": "t-clean",
+                            "storage": "pbs1"})
+    assert status == 400  # only vzdump jobs are modeled
+
+
+def test_prune_backups_object_roundtrip(provider, api):
+    """PVE 8 GET returns prune-backups as an object; the fake stores what
+    the client sent — the round-trip must not collapse it."""
+    policy = "keep-daily=7,keep-weekly=4"
+    provider.cluster.create_backup_job(
+        {"id": "t-prune", "vmid": "100", "storage": "pbs1",
+         "schedule": "02:00", "prune-backups": policy}, pve_major=7)
+    job = _job(api, "t-prune")
+    assert job["prune-backups"] == policy
+    api.handle("PUT", "/cluster/backup/t-prune",
+               {"prune-backups": "keep-daily=5,keep-weekly=4,keep-monthly=6"})
+    job = _job(api, "t-prune")
+    assert job["prune-backups"] == "keep-daily=5,keep-weekly=4,keep-monthly=6"
+    assert "keep-last" not in str(job)
