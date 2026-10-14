@@ -970,6 +970,44 @@ def test_same_ha_group_on_different_hosts_survives_cycle(
     assert mw.all_ha_groups["h2"][0].comment == "old"
 
 
+def test_recreated_same_name_connection_starts_clean(main_window,
+                                                     monkeypatch):
+    """Delete + re-create under the same name (new conn_id): the old
+    identity's in-memory pools and HA groups are dropped by the delete
+    flow's refresh_data (departed hosts), so the re-created connection
+    never shows the previous infrastructure's data."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    _pool_seed(mw, "h1", "web", "old")
+    _ha_seed(mw, "h1", "g1", "old")
+
+    # _on_host_remove removes the entry and ends with refresh_data() —
+    # the departed-hosts drop clears the name-keyed data of the old
+    # identity before the user can re-create the connection.
+    mw.nodes_cfg = []
+    mw.refresh_data()
+    assert mw._pool_repo.get("h1", "web") is None
+    assert mw.all_ha_groups.get("h1") is None
+
+    # Re-created under the same name with a fresh conn_id: it starts
+    # clean — no data is attached until its own results arrive.
+    mw.nodes_cfg = [dict(_cfg("h1"), conn_id="id-h1-recreated")]
+    mw.refresh_data()
+    assert mw._pool_repo.get("h1", "web") is None
+    assert mw.all_ha_groups.get("h1") is None
+
+    gen = mw._refresh.hard_gen
+    epoch = mw._refresh.epoch
+    payload = _ok("h1", nodes=[_node("pve1")],
+                  pools=[{"poolid": "web", "comment": "new-identity"}])
+    payload["ha_groups"] = _ha_payload(["g1"])
+    payload["conn_id"] = "id-h1-recreated"
+    mw.on_worker_finished(payload, created[0], gen, epoch)
+
+    assert mw._pool_repo.get("h1", "web").comment == "new-identity"
+    assert [g.group for g in mw.all_ha_groups["h1"]] == ["g1"]
+
+
 # --- Audit 4.2 / D3: duplicate cluster representatives --------------------
 
 

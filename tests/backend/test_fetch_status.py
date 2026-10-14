@@ -222,13 +222,16 @@ def test_failed_ha_source_signals_not_fetched(qtbot, monkeypatch):
 def test_pool_thread_timeout_signals_not_fetched(qtbot, monkeypatch):
     """Audit 6.1.1, C-1: a pools thread outliving the join deadline means
     its data never arrived — ``pools: None``, never the empty default
-    that would look like a confirmed absence."""
-    started, release = threading.Event(), threading.Event()
+    that would look like a confirmed absence.  A late completion of the
+    same thread must not change the already emitted payload either."""
+    started, release, done = (threading.Event(), threading.Event(),
+                              threading.Event())
 
     def hanging_pools():
         started.set()
         release.wait(5)
-        return []
+        done.set()          # the late completion actually happened
+        return [{"poolid": "late"}]
 
     provider = FakeProvider()
     resources = [{"type": "node", "node": "pve1", "status": "online"}]
@@ -254,16 +257,27 @@ def test_pool_thread_timeout_signals_not_fetched(qtbot, monkeypatch):
     assert emitted[0]["status"] == "ok"
     assert emitted[0]["pools"] is None
 
+    # The thread completes AFTER the result was published: the late data
+    # must not reach the consumer (the worker emits exactly once, and the
+    # payload holds no reference the thread can still update).
+    assert done.wait(2)
+    assert len(emitted) == 1
+    assert emitted[0]["pools"] is None
+
 
 def test_ha_thread_timeout_signals_not_fetched(qtbot, monkeypatch):
     """Audit 6.1.1, C-2: an HA thread outliving the join deadline is
-    "not fetched" (``ha_groups: None``), not a confirmed absence."""
-    started, release = threading.Event(), threading.Event()
+    "not fetched" (``ha_groups: None``), not a confirmed absence.  A late
+    completion of the same thread must not change the already emitted
+    payload either."""
+    started, release, done = (threading.Event(), threading.Event(),
+                              threading.Event())
 
     def hanging_ha():
         started.set()
         release.wait(5)
-        return []
+        done.set()          # the late completion actually happened
+        return [{"vmid": "vm:101"}]
 
     provider = FakeProvider()
     resources = [{"type": "node", "node": "pve1", "status": "online"}]
@@ -287,6 +301,13 @@ def test_ha_thread_timeout_signals_not_fetched(qtbot, monkeypatch):
 
     assert len(emitted) == 1
     assert emitted[0]["status"] == "ok"
+    assert emitted[0]["ha_groups"] is None
+
+    # Late completion after the result was published changes nothing: the
+    # worker emits exactly once and the payload holds nothing the thread
+    # can still update.
+    assert done.wait(2)
+    assert len(emitted) == 1
     assert emitted[0]["ha_groups"] is None
 
 
