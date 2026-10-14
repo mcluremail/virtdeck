@@ -21,6 +21,9 @@ from PySide6.QtCore import QRunnable
 
 from virtdeck.config import load_resources_cache, save_resources_cache
 from virtdeck.domain import (
+    HaGroup as DomainHaGroup,
+)
+from virtdeck.domain import (
     Node as DomainNode,
 )
 from virtdeck.domain import (
@@ -725,6 +728,246 @@ def test_host_leaving_config_drops_its_pools(main_window, monkeypatch):
 
     assert mw._pool_repo.get("h1", "web") is not None
     assert mw._pool_repo.get("h2", "db") is None
+
+
+# --- Audit 6.1.1: HA sentinel (C-2) — same rules as pools -----------------
+
+
+def _ha_seed(mw, host, group="g1", comment="old"):
+    mw.all_ha_groups[host] = [DomainHaGroup.from_pve(
+        {"group": group, "nodes": "pve1", "restricted": 0,
+         "nofailback": 0, "comment": comment, "digest": ""})]
+
+
+def _ha_payload(groups, comment="new"):
+    return [{"group": g, "nodes": "pve1", "restricted": 0,
+             "nofailback": 0, "comment": comment, "digest": ""}
+            for g in groups]
+
+
+def test_ok_replaces_pools_and_ha(main_window, monkeypatch):
+    """A confirmed non-empty response replaces the host's previous pools
+    and HA groups entirely."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    _pool_seed(mw, "h1", "web", "old")
+    _ha_seed(mw, "h1", "g1", "old")
+    mw.nodes_cfg = [_cfg("h1")]
+
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+    epoch = mw._refresh.epoch
+    payload = _ok("h1", nodes=[_node("pve1")],
+                  pools=[{"poolid": "web", "comment": "new"}])
+    payload["ha_groups"] = _ha_payload(["g1"])
+    mw.on_worker_finished(payload, created[0], gen, epoch)
+
+    assert mw._pool_repo.get("h1", "web").comment == "new"
+    assert mw.all_ha_groups["h1"][0].comment == "new"
+
+
+def test_confirmed_empty_ha_clears_host_groups(main_window, monkeypatch):
+    """An empty HA list in a successful response is a CONFIRMED absence:
+    the host's previous groups are cleared, not kept."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    _ha_seed(mw, "h1", "old")
+    mw.nodes_cfg = [_cfg("h1")]
+
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+    epoch = mw._refresh.epoch
+    mw.on_worker_finished(
+        _ok("h1", nodes=[_node("pve1")]),  # _ok carries ha_groups=[]
+        created[0], gen, epoch)
+
+    assert mw.all_ha_groups.get("h1") == []
+
+
+def test_ha_not_fetched_keeps_previous_groups(main_window, monkeypatch):
+    """ha_groups=None ("not fetched") keeps the host's previous HA
+    groups; it must never be treated as a confirmed absence."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    _ha_seed(mw, "h1", "g1")
+    mw.nodes_cfg = [_cfg("h1")]
+
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+    epoch = mw._refresh.epoch
+    payload = _ok("h1", nodes=[_node("pve1")])
+    payload["ha_groups"] = None
+    mw.on_worker_finished(payload, created[0], gen, epoch)
+
+    assert [g.group for g in mw.all_ha_groups.get("h1", [])] == ["g1"]
+
+
+def test_errored_host_keeps_pools_and_ha(main_window, monkeypatch):
+    """An error cycle after a successful one keeps the host's last
+    known-good pools and HA groups (no wholesale wipe at cycle start)."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    mw.nodes_cfg = [_cfg("h1")]
+
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+    epoch = mw._refresh.epoch
+    payload = _ok("h1", nodes=[_node("pve1")],
+                  pools=[{"poolid": "web", "comment": "one"}])
+    payload["ha_groups"] = _ha_payload(["g1"])
+    mw.on_worker_finished(payload, created[0], gen, epoch)
+    assert mw.all_ha_groups.get("h1")
+
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+    epoch = mw._refresh.epoch
+    mw.on_worker_finished(_err("h1"), created[-1], gen, epoch)
+
+    assert mw._pool_repo.get("h1", "web").comment == "one"
+    assert [g.group for g in mw.all_ha_groups.get("h1", [])] == ["g1"]
+
+
+def test_partial_host_keeps_pools_and_ha(main_window, monkeypatch):
+    """A partial cycle (host confirmed, some lists missing) never wipes
+    the host's pools or HA groups just because sources were
+    unsuccessful."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    _pool_seed(mw, "h1", "web", "one")
+    _ha_seed(mw, "h1", "g1")
+    mw.nodes_cfg = [_cfg("h1")]
+
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+    epoch = mw._refresh.epoch
+    mw.on_worker_finished(
+        {"host": "h1", "status": "partial",
+         "error": "incomplete snapshot — guest/storage lists: boom",
+         "nodes": [_node("pve1")], "vms": [], "storages": [],
+         "pools": None, "iso_images": {}, "ha_groups": None},
+        created[0], gen, epoch)
+
+    assert mw._pool_repo.get("h1", "web").comment == "one"
+    assert [g.group for g in mw.all_ha_groups.get("h1", [])] == ["g1"]
+
+
+def test_host_leaving_config_drops_its_ha(main_window, monkeypatch):
+    """Hosts removed from the configuration lose their HA groups at the
+    next cycle start (the pools rule), while active hosts keep theirs."""
+    mw = main_window
+    _install_fake_fetch(monkeypatch)
+    _ha_seed(mw, "h1", "one")
+    _ha_seed(mw, "h2", "two")
+    mw.nodes_cfg = [_cfg("h1")]  # h2 left the config
+
+    mw.refresh_data()
+
+    assert [g.group for g in mw.all_ha_groups.get("h1", [])] == ["one"]
+    assert mw.all_ha_groups.get("h2") is None
+
+
+def test_one_hosts_failure_keeps_others_pools_and_ha(
+        main_window, monkeypatch):
+    """One host's failed cycle must not touch other hosts' pools or HA
+    groups."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    _pool_seed(mw, "h1", "web", "one")
+    _ha_seed(mw, "h1", "g1")
+    mw.nodes_cfg = [_cfg("h1"), _cfg("h2")]
+
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+    epoch = mw._refresh.epoch
+    mw.on_worker_finished(_err("h1"), created[0], gen, epoch)
+    payload = _ok("h2", nodes=[_node("pve2")],
+                  pools=[{"poolid": "db", "comment": "two"}])
+    payload["ha_groups"] = _ha_payload(["g2"])
+    mw.on_worker_finished(payload, created[1], gen, epoch)
+
+    # h1 keeps its last known-good data; h2's confirmed data applied
+    assert mw._pool_repo.get("h1", "web").comment == "one"
+    assert [g.group for g in mw.all_ha_groups.get("h1", [])] == ["g1"]
+    assert mw._pool_repo.get("h2", "db").comment == "two"
+    assert [g.group for g in mw.all_ha_groups.get("h2", [])] == ["g2"]
+
+
+def test_wrong_conn_id_leaves_pools_and_ha_untouched(
+        main_window, monkeypatch):
+    """The identity gate drops a result of an unknown connection before
+    it can touch pools or HA groups."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    _pool_seed(mw, "h1", "web", "one")
+    _ha_seed(mw, "h1", "g1")
+    mw.nodes_cfg = [_cfg("h1")]
+
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+    epoch = mw._refresh.epoch
+    payload = _ok("h1", nodes=[_node("pve1")],
+                  pools=[{"poolid": "web", "comment": "intruder"}])
+    payload["ha_groups"] = _ha_payload(["intruder"])
+    payload["conn_id"] = "id-deleted-or-foreign"
+    mw.on_worker_finished(payload, created[0], gen, epoch)
+
+    assert mw._pool_repo.get("h1", "web").comment == "one"
+    assert [g.group for g in mw.all_ha_groups.get("h1", [])] == ["g1"]
+
+
+def test_late_old_generation_leaves_pools_and_ha_untouched(
+        main_window, monkeypatch):
+    """A late answer of an already-invalidated generation must not
+    overwrite fresher pools or HA groups."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    mw.nodes_cfg = [_cfg("h1")]
+
+    mw.refresh_data()                       # cycle A hangs
+    gen_a = mw._refresh.hard_gen
+    epoch_a = mw._refresh.epoch
+    mw._refresh._hard_start = time.monotonic() - (mw._refresh.hard_timeout + 1)
+    mw.last_refresh_ts = time.time()
+    mw.soft_refresh()                       # watchdog finalizes A
+
+    mw.refresh_data()                       # cycle B starts
+    gen_b = mw._refresh.hard_gen
+    epoch_b = mw._refresh.epoch
+
+    payload_a = _ok("h1", nodes=[_node("pve1")],
+                    pools=[{"poolid": "stale", "comment": "stale"}])
+    payload_a["ha_groups"] = _ha_payload(["stale"], comment="stale")
+    mw.on_worker_finished(payload_a, created[0], gen_a, epoch_a)
+
+    payload_b = _ok("h1", nodes=[_node("pve1")],
+                    pools=[{"poolid": "fresh", "comment": "fresh"}])
+    payload_b["ha_groups"] = _ha_payload(["fresh"], comment="fresh")
+    mw.on_worker_finished(payload_b, created[1], gen_b, epoch_b)
+
+    assert mw._pool_repo.get("h1", "stale") is None
+    assert mw._pool_repo.get("h1", "fresh").comment == "fresh"
+    assert [g.group for g in mw.all_ha_groups.get("h1", [])] == ["fresh"]
+
+
+def test_same_ha_group_on_different_hosts_survives_cycle(
+        main_window, monkeypatch):
+    """Identical HA group names on independent hosts must coexist — the
+    refresh of one host never replaces the other's groups."""
+    mw = main_window
+    created = _install_fake_fetch(monkeypatch)
+    _ha_seed(mw, "h1", "web")
+    _ha_seed(mw, "h2", "web")
+    mw.nodes_cfg = [_cfg("h1"), _cfg("h2")]
+
+    mw.refresh_data()
+    gen = mw._refresh.hard_gen
+    epoch = mw._refresh.epoch
+    payload = _ok("h1", nodes=[_node("pve1")])
+    payload["ha_groups"] = _ha_payload(["web"], comment="h1-new")
+    mw.on_worker_finished(payload, created[0], gen, epoch)
+
+    assert mw.all_ha_groups["h1"][0].comment == "h1-new"
+    assert mw.all_ha_groups["h2"][0].comment == "old"
 
 
 # --- Audit 4.2 / D3: duplicate cluster representatives --------------------

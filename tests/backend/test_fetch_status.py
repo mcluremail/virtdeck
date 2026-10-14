@@ -200,6 +200,96 @@ def test_confirmed_empty_pools_emit_empty_list(qtbot, monkeypatch):
     assert data["pools"] == []
 
 
+def test_failed_ha_source_signals_not_fetched(qtbot, monkeypatch):
+    """Audit 6.1.1, C-2: a failed optional HA source emits ``ha_groups:
+    None`` ("not fetched") instead of a fake confirmed-empty list, so the
+    consumer keeps the previous HA data of the host."""
+    provider = FakeProvider()
+    resources = [{"type": "node", "node": "pve1", "status": "online"}]
+    provider.cluster = SimpleNamespace(
+        list_resources=lambda: resources, list_ha_groups=_raise_runtime("ha"))
+    provider.pools = FakePveApi().pools
+    provider.nodes = FakePveApi().nodes
+    provider.storage = FakePveApi().storage
+
+    data = _run_worker(monkeypatch, provider,
+                       {"name": "h1", "cluster_rep": True, "cluster": "c1"})
+
+    assert data["status"] == "ok"
+    assert data["ha_groups"] is None
+
+
+def test_pool_thread_timeout_signals_not_fetched(qtbot, monkeypatch):
+    """Audit 6.1.1, C-1: a pools thread outliving the join deadline means
+    its data never arrived — ``pools: None``, never the empty default
+    that would look like a confirmed absence."""
+    started, release = threading.Event(), threading.Event()
+
+    def hanging_pools():
+        started.set()
+        release.wait(5)
+        return []
+
+    provider = FakeProvider()
+    resources = [{"type": "node", "node": "pve1", "status": "online"}]
+    provider.cluster = SimpleNamespace(
+        list_resources=lambda: resources, list_ha_groups=lambda: [])
+    provider.pools = SimpleNamespace(list=hanging_pools, get=lambda p: {})
+    provider.nodes = FakePveApi().nodes
+    provider.storage = FakePveApi().storage
+
+    monkeypatch.setattr(backend.fetch, "create_provider",
+                        lambda c, timeout=15: provider)
+    worker = FetchWorker({"name": "h1", "cluster_rep": True, "cluster": "c1"})
+    worker.join_phase1 = 0.1  # shrink the ceiling for the test
+    emitted = []
+    worker.signals.result_ready.connect(lambda d: emitted.append(d))
+    try:
+        worker.run()
+    finally:
+        release.set()  # unblock the daemon thread
+    assert started.is_set()
+
+    assert len(emitted) == 1
+    assert emitted[0]["status"] == "ok"
+    assert emitted[0]["pools"] is None
+
+
+def test_ha_thread_timeout_signals_not_fetched(qtbot, monkeypatch):
+    """Audit 6.1.1, C-2: an HA thread outliving the join deadline is
+    "not fetched" (``ha_groups: None``), not a confirmed absence."""
+    started, release = threading.Event(), threading.Event()
+
+    def hanging_ha():
+        started.set()
+        release.wait(5)
+        return []
+
+    provider = FakeProvider()
+    resources = [{"type": "node", "node": "pve1", "status": "online"}]
+    provider.cluster = SimpleNamespace(
+        list_resources=lambda: resources, list_ha_groups=hanging_ha)
+    provider.pools = FakePveApi().pools
+    provider.nodes = FakePveApi().nodes
+    provider.storage = FakePveApi().storage
+
+    monkeypatch.setattr(backend.fetch, "create_provider",
+                        lambda c, timeout=15: provider)
+    worker = FetchWorker({"name": "h1", "cluster_rep": True, "cluster": "c1"})
+    worker.join_phase1 = 0.1
+    emitted = []
+    worker.signals.result_ready.connect(lambda d: emitted.append(d))
+    try:
+        worker.run()
+    finally:
+        release.set()
+    assert started.is_set()
+
+    assert len(emitted) == 1
+    assert emitted[0]["status"] == "ok"
+    assert emitted[0]["ha_groups"] is None
+
+
 def _raise_runtime(msg):
     def _inner(*args, **kwargs):
         raise RuntimeError(msg)

@@ -1602,7 +1602,6 @@ class MainWindow(QMainWindow):
         self.detail_panel.all_vms.clear()
         self.detail_panel.all_storages.clear()
         self.all_iso_images.clear()
-        self.all_ha_groups.clear()
         self.all_pools.clear()
         self._first_selection_done = False
         self._tasks_started = False
@@ -1624,12 +1623,16 @@ class MainWindow(QMainWindow):
             self._node_repo.remove_host(host)
             self._vm_repo.remove_host(host)
             self._storage_repo.remove_host(host)
-        # Pools are NOT cleared here (audit 4.2, D2): a host whose worker
-        # fails or is rejected keeps its pools. Only hosts that left the
-        # configuration are dropped.
+        # Pools and HA groups are NOT cleared here (audit 4.2, D2; audit
+        # 6.1.1, C-2): a host whose worker fails or is rejected keeps its
+        # last known-good data.  Only hosts that left the configuration
+        # are dropped.
         for host in [h for h in {p.host_name for p in self._pool_repo.all()}
                      if h and h not in active_names]:
             self._pool_repo.remove_host(host)
+        for host in [h for h in self.all_ha_groups
+                     if h and h not in active_names]:
+            self.all_ha_groups.pop(host, None)
 
         # Stage 5.1.2 §3.1: ambiguous entries (legacy name conflicts) must
         # stay visible and must not look healthy — inject a warning stub.
@@ -1919,9 +1922,14 @@ class MainWindow(QMainWindow):
             # stale entries survive (audit 4.1).
             for iso_host, isos in data.get("iso_images", {}).items():
                 self.all_iso_images[iso_host] = isos
-            # Collect HA groups (host_name -> [group, ...]) — same rule.
-            ha_list = [HaGroup.from_pve(g) for g in data.get("ha_groups", [])]
-            self.all_ha_groups[host] = ha_list
+            # Collect HA groups (host_name -> [group, ...]) — the pools
+            # rule (audit 6.1.1, C-2): [] is a confirmed absence and
+            # clears this host's previous groups; None ("not fetched")
+            # keeps them.
+            ha_data = data.get("ha_groups")
+            if ha_data is not None:
+                self.all_ha_groups[host] = [
+                    HaGroup.from_pve(g) for g in ha_data]
             # Audit 4.2, D1: this attempt's snapshot of the host is now
             # the freshest applied data
             if epoch is not None:

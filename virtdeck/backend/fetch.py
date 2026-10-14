@@ -36,9 +36,12 @@ class FetchWorker(QRunnable):
     Optional sources — pools, HA groups, node versions, per-node storage
     details, ISO images — never affect the status: their failure only
     means their enrichment data is missing, which cannot be mistaken for
-    resource removal.  A failed optional source omits its key (or keeps
-    it empty) so stale UI data survives instead of being replaced by a
-    fake "nothing".
+    resource removal.  A failed optional source reports ``None`` ("not
+    fetched") instead of a fake "nothing", so stale UI data survives
+    instead of being replaced (audit 6.1.1, C-1/C-2): ``pools=None`` /
+    ``ha_groups=None`` — the source raised or its thread outlived the
+    join deadline; a successful empty response is a confirmed absence
+    and arrives as ``[]``.
     """
 
     def __init__(self, node_cfg):
@@ -72,6 +75,7 @@ class FetchWorker(QRunnable):
             vmid_to_pool = {}
             pools = []
             pools_failed = False
+            ha_failed = False
             ha_groups = []
             nodes = []
             vms = []
@@ -135,7 +139,7 @@ class FetchWorker(QRunnable):
                     logger.debug("backend error: %s", e)
 
             def fetch_ha():
-                nonlocal ha_groups
+                nonlocal ha_groups, ha_failed
                 try:
                     result = []
                     for g in cluster_api.list_ha_groups():
@@ -150,8 +154,12 @@ class FetchWorker(QRunnable):
                     result.sort(key=lambda x: x["group"])
                     with ha_lock:
                         ha_groups = result
-                except Exception:
-                    pass
+                except Exception as e:
+                    # Optional source: signal "not fetched" (None) instead
+                    # of a fake "no HA groups" so the consumer keeps the
+                    # previous HA data of this host (audit 6.1.1, C-2).
+                    ha_failed = True
+                    logger.debug("backend error: %s", e)
 
             def fetch_resources():
                 nonlocal nodes, vms, storages, cluster_name
@@ -184,6 +192,20 @@ class FetchWorker(QRunnable):
                 t.join(timeout=self.join_phase1)
             if self._cancelled:
                 return
+            # Optional threads that outlive the join deadline mean their
+            # data never arrived — "not fetched", exactly like an
+            # exception.  Without this a hung pools/HA thread would leave
+            # the empty default in place and the payload would look like
+            # a confirmed absence (audit 6.1.1, C-1/C-2).
+            if phase1[0].is_alive():
+                pools_failed = True
+                logger.debug(
+                    "pools fetch did not finish in %gs", self.join_phase1)
+            if phase1[1].is_alive():
+                ha_failed = True
+                logger.debug(
+                    "ha groups fetch did not finish in %gs",
+                    self.join_phase1)
             if is_cluster_rep:
                 # A thread outliving its join deadline means its data never
                 # arrived — the core is not confirmed (audit 4.1: a timed
@@ -436,12 +458,14 @@ class FetchWorker(QRunnable):
                 return
 
             # -- Emit result --
-            # pools is None when the optional pool source failed (consumer
-            # keeps the previous data); [] is a confirmed absence.
+            # pools/ha_groups are None when the optional source failed or
+            # its thread outlived the join deadline (consumer keeps the
+            # previous data); [] is a confirmed absence.
             # conn_id (stage 5.1.2): the producer identity travels with the
             # result; the consumer drops results of unknown/deleted
             # connections before touching any state.
             emitted_pools = None if pools_failed else pools
+            emitted_ha = None if ha_failed else ha_groups
             if core_errors:
                 # No confirmed data at all.
                 self.signals.result_ready.emit({
@@ -463,7 +487,7 @@ class FetchWorker(QRunnable):
                     "storages": storages,
                     "pools": emitted_pools,
                     "iso_images": iso_images,
-                    "ha_groups": ha_groups,
+                    "ha_groups": emitted_ha,
                 })
             else:
                 self.signals.result_ready.emit({
@@ -475,7 +499,7 @@ class FetchWorker(QRunnable):
                     "storages": storages,
                     "pools": emitted_pools,
                     "iso_images": iso_images,
-                    "ha_groups": ha_groups
+                    "ha_groups": emitted_ha
                 })
         except Exception as e:
             try:
