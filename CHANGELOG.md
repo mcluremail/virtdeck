@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.0.6 — data honesty and transport error classification (external audit stages 6.2.3, 6.3 and 6.3.1)
+
+**Bug fixes**
+- Fleet backup-freshness evidence from PBS is scoped per cluster (audit 6.2.3): the last-backup map kept no cluster dimensions, so a snapshot of one cluster falsely confirmed the freshness of a same-VMID guest in another cluster sharing the datastore. Evidence now carries its source dimensions (server, port, datastore, namespace), binds to a cluster only through that cluster's own pbs-type storage configs fetched in the same update cycle, and Fleet Health shows a yellow "PBS freshness unverified" caveat instead of asserting freshness it cannot attribute; snapshots on sources shared between clusters with intersecting guest identifiers are reported as ambiguous rather than silently trusted
+- PBS datastores no longer render a failed status read as a confirmed "0% used — 0 B of 0 B" (audit 6.3.1, D1): a datastore whose status call fails (timeout, restricted token, 5xx) shows dashes with a "Usage data unavailable" hint in the table and the status tab, while a successful all-zero response keeps displaying as a genuine zero
+- Node health never claims "healthy" from partial data (audit 6.3.1, D2): services, subscription and package-update checks that fail to load (or return an unusable structure) are listed under a "Could not check: ..." warning instead of silently counting as healthy; a stopped service stays critical even when another check is unavailable, unknown is never turned into a broken service, and a contract-optional missing field stays a valid empty result
+- Snapshot and storage-disk collection stops dissolving per-VM failures into emptiness (audit 6.3.1, D3): guests whose snapshot or config read fails are reported as "N virtual machines could not be read" next to the surviving neighbours' data, with per-VM reasons in the tooltip, instead of looking like guests without snapshots or disks; a confirmed empty answer still reads as "no snapshots", and one failed guest never cancels the collection of the others
+- Transport errors are classified by exception type before any text heuristics (audit 6.3.1, D4): a DNS/connection failure whose message quotes a request URL containing a VMID like 401/403/404 no longer surfaces as an authorization or not-found error — UI messages, the provider exception classes and the API-token creation flow all classify by the real HTTP status or the exception type; real 401/403/404/504 keep their exact classification, and task polling now retries genuine network failures instead of giving up on a phantom auth error
+
+**Internal**
+- Full audit of the provider transport core and the PBS client (audit 6.3): 17 confirmed defects (3× P2, 14× P3) and 8 risks documented in `docs/AUDIT_2026-10-15_PROVIDER_API.md` with a wave plan; this release implements waves 1–2 (D1–D4), waves 3–4 (UI gates, PBS contract) are scheduled next; the earlier 6.2.2 audit report is also included
+- 100 new tests (1416 → 1516): the transport-classification matrix (DNS/timeout/SSL/chunked/unknown transport with VMIDs in quoted URLs, real HTTP statuses, anchored-regex fallbacks), the health and per-VM-collector honesty suites, the PBS status-unavailable cases, the unread-guests UI marker and the D5 scoping matrix (T1–T16); i18n version 41 (5 new keys in all 5 locales)
+
 ## v3.0.5 — backup job safety and Fleet Health honesty (external audit stages 6.1.1 and 6.2.1)
 
 **Bug fixes**

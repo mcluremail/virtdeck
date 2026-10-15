@@ -36,7 +36,7 @@ VirtDeck speaks directly to the PVE API (port 8006) and to PBS (port 8007), and 
 
 Downloads are also listed on the [website](https://virtdeck.mclure.ru).
 
-Latest release: [v3.0.5](https://github.com/mcluremail/virtdeck/releases/tag/v3.0.5)
+Latest release: [v3.0.6](https://github.com/mcluremail/virtdeck/releases/tag/v3.0.6)
 
 ## How VirtDeck compares
 
@@ -164,9 +164,9 @@ Launch from the menu or via `virtdeck`.
 ### From source (any Linux)
 
 ```bash
-# download virtdeck-3.0.5-py3-none-any.whl (or the .tar.gz) from Releases,
+# download virtdeck-3.0.6-py3-none-any.whl (or the .tar.gz) from Releases,
 # then install the package together with its dependencies:
-pip install virtdeck-3.0.5-py3-none-any.whl PySide6 proxmoxer requests \
+pip install virtdeck-3.0.6-py3-none-any.whl PySide6 proxmoxer requests \
   urllib3 pyqtgraph cryptography keyring
 virtdeck
 ```
