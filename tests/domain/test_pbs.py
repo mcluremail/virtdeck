@@ -30,6 +30,7 @@ class TestPbsDatastore:
         assert ds.usage == 0.755
         assert ds.used_bytes == 755 * 10**9
         assert ds.total_bytes == 1000 * 10**9
+        assert ds.status_ok is True
 
     def test_build_defaults(self):
         ds = PbsDatastore.build({"name": "alt"})
@@ -38,6 +39,37 @@ class TestPbsDatastore:
         assert ds.usage == 0.0
         assert ds.used_bytes == 0
         assert ds.total_bytes == 0
+        # no status response → numbers are placeholders, not data (D1)
+        assert ds.status_ok is False
+
+    def test_build_none_status_marks_unavailable(self):
+        ds = PbsDatastore.build({"name": "alt"}, None)
+        assert ds.status_ok is False
+        assert ds.usage == 0.0
+        assert ds.usage_pct() == 0  # no exception on missing data
+
+    def test_build_empty_status_marks_unavailable(self):
+        ds = PbsDatastore.build({"name": "alt"}, {})
+        assert ds.status_ok is False
+
+    def test_build_non_dict_status_marks_unavailable(self):
+        assert PbsDatastore.build({"name": "x"}, ["bad"]).status_ok is False
+
+    def test_build_partial_status_marks_unavailable(self):
+        # usage alone is not a confirmed (usage, used, total) triple
+        ds = PbsDatastore.build({"name": "x"}, {"usage": 0.5, "used": 5})
+        assert ds.status_ok is False
+
+    def test_build_zero_status_is_confirmed(self):
+        # a successful response with genuine zeros stays a zero (D1)
+        ds = PbsDatastore.build({"name": "x"}, {"usage": 0.0, "used": 0,
+                                                "total": 0})
+        assert ds.status_ok is True
+        assert ds.usage == 0.0
+        assert ds.used_bytes == 0
+
+    def test_status_ok_default_true_for_direct_construction(self):
+        assert PbsDatastore(name="x").status_ok is True
 
     def test_usage_pct_rounds(self):
         assert PbsDatastore(name="x", usage=0.754).usage_pct() == 75

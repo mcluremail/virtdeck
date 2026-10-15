@@ -42,7 +42,7 @@ class PbsProvider:
             try:
                 status = self._client.datastore_status(name)
             except PbsError:
-                status = {}
+                status = None  # unreadable — not the same as zero (D1)
             out.append(PbsDatastore.build(d, status))
         return out
 

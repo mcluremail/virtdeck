@@ -317,7 +317,10 @@ class HostDisksWorker(QRunnable):
 
 
 class SnapshotSignals(_FinishedMixin):
-    snapshots_ready = Signal(str, list)
+    # node_name, snapshots, failed: per-VM read failures as
+    # {"vmid": int, "error": str} — a failed VM is not "no snapshots"
+    # (audit D3, mirrors the fleet sprawl `failed` contract).
+    snapshots_ready = Signal(str, list, list)
     snapshots_error = Signal(str, str)
 
 
@@ -375,6 +378,7 @@ class HostSnapshotsWorker(QRunnable):
             headers = {"Authorization": auth_token}
             base = f"https://{self.host_cfg['host']}:{PVE_PORT}/api2/json"
             all_snapshots = []
+            failed_vms = []  # {"vmid": int, "error": str} — unverified, not empty
             lock = threading.Lock()
 
             def fetch_vm_snapshots(vm):
@@ -418,11 +422,16 @@ class HostSnapshotsWorker(QRunnable):
                                     total_bytes += _parse_disk_size(val)
                             snap["size"] = total_bytes
                         except Exception:
+                            # snapshot itself is confirmed; only its size
+                            # stays unknown (0 renders as "—")
                             pass
                     with lock:
                         all_snapshots.extend(vm_snaps)
-                except Exception:
-                    pass
+                except Exception as e:
+                    # per-VM failure: the guest is unverified — never
+                    # "has no snapshots" (audit D3)
+                    with lock:
+                        failed_vms.append({"vmid": vmid, "error": str(e)})
                 finally:
                     s.close()
 
@@ -431,7 +440,8 @@ class HostSnapshotsWorker(QRunnable):
 
             all_snapshots.sort(key=lambda s: (s.get("vmid", 0), s.get("snaptime", 0) or 0))
             try:
-                self.signals.snapshots_ready.emit(self.node_name, all_snapshots)
+                self.signals.snapshots_ready.emit(
+                    self.node_name, all_snapshots, failed_vms)
             except RuntimeError:
                 pass
         except Exception as e:
@@ -448,7 +458,10 @@ class HostSnapshotsWorker(QRunnable):
 
 
 class DiskSignals(_FinishedMixin):
-    disks_ready = Signal(str, list)
+    # storage_name, disks, failed: per-VM config read failures as
+    # {"vmid": int, "error": str} — a failed VM is not "no disks"
+    # (audit D3).
+    disks_ready = Signal(str, list, list)
     disks_error = Signal(str, str)
 
 class StorageDisksWorker(QRunnable):
@@ -471,6 +484,7 @@ class StorageDisksWorker(QRunnable):
             base = f"https://{self.host_cfg['host']}:{PVE_PORT}/api2/json"
             prefix = self.storage_name + ":"
             disks = []
+            failed_vms = []  # {"vmid": int, "error": str} — unverified
             lock = threading.Lock()
 
             def fetch_vm_config(vm):
@@ -518,8 +532,11 @@ class StorageDisksWorker(QRunnable):
                                         "host_name": vm.host_name,
                                         "node": vm_node,
                                     })
-                except Exception:
-                    pass
+                except Exception as e:
+                    # per-VM failure: the guest is unverified — never
+                    # "has no disks on this storage" (audit D3)
+                    with lock:
+                        failed_vms.append({"vmid": vmid, "error": str(e)})
                 finally:
                     s.close()
 
@@ -530,7 +547,8 @@ class StorageDisksWorker(QRunnable):
                 list(executor.map(fetch_vm_config, self.all_vms))
 
             try:
-                self.signals.disks_ready.emit(self.storage_name, disks)
+                self.signals.disks_ready.emit(
+                    self.storage_name, disks, failed_vms)
             except RuntimeError:
                 pass
         except Exception as e:
@@ -712,6 +730,7 @@ class HealthCheckWorker(QRunnable):
 
             issues = []
             warnings = []
+            unavailable = []  # checks we could not read (audit D2)
 
             cpu_frac = self.node_status.get("cpu", 0) or 0
             if isinstance(cpu_frac, (int, float)):
@@ -749,6 +768,8 @@ class HealthCheckWorker(QRunnable):
                                    headers=headers, timeout=10, allow_redirects=False)
                 _check_response(resp)
                 services = resp.json().get("data", [])
+                if not isinstance(services, list):
+                    raise ValueError("services response is not a list")
                 for svc in services:
                     name = svc.get("name", "")
                     state = svc.get("state", "")
@@ -756,28 +777,40 @@ class HealthCheckWorker(QRunnable):
                         issues.append(tr("Service {svc} is not running").format(svc=name))
             except Exception as e:
                 logger.debug("health services error: %s", e)
+                unavailable.append("services")
 
             try:
                 resp = session.get(f"{base}/nodes/{self.node_name}/subscription",
                                    headers=headers, timeout=10, allow_redirects=False)
                 _check_response(resp)
                 sub = resp.json().get("data", {})
+                if not isinstance(sub, dict):
+                    raise ValueError("subscription response is not an object")
                 sub_status = sub.get("status", "")
                 if sub_status in ("expired", "invalid", "suspended"):
                     issues.append(tr("Subscription {status}").format(status=sub_status))
             except Exception as e:
                 logger.debug("health subscription error: %s", e)
+                unavailable.append("subscription")
 
             try:
                 resp = session.get(f"{base}/nodes/{self.node_name}/apt/update",
                                    headers=headers, timeout=10, allow_redirects=False)
                 _check_response(resp)
                 updates = resp.json().get("data", [])
-                if updates:
+                if isinstance(updates, list) and updates:
                     warnings.append(tr("{count} package updates available").format(
                         count=len(updates)))
             except Exception as e:
                 logger.debug("health updates error: %s", e)
+                unavailable.append("updates")
+
+            # A check we could not read is not "healthy" and not a broken
+            # service: surface it as a warning so the card never reports a
+            # full success from partial data (audit D2).
+            if unavailable:
+                warnings.append(tr("Could not check: {}").format(
+                    ", ".join(sorted(unavailable))))
 
             if not issues and not warnings:
                 status = "healthy"
@@ -790,6 +823,7 @@ class HealthCheckWorker(QRunnable):
                 "status": status,
                 "issues": issues,
                 "warnings": warnings,
+                "unavailable": unavailable,
             }
             try:
                 self.signals.health_ready.emit(self.node_name, health)

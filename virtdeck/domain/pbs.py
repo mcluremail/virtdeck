@@ -23,7 +23,13 @@ def _verify_state(value) -> str:
 
 @dataclass(frozen=True)
 class PbsDatastore:
-    """A PBS datastore with usage numbers."""
+    """A PBS datastore with usage numbers.
+
+    ``status_ok`` distinguishes "zero usage confirmed by a successful
+    ``.../status`` call" from "status could not be read" (audit D1):
+    when it is False the usage numbers are placeholders, not data, and
+    the UI must show "—" instead of "0% / 0 B".
+    """
 
     name: str
     path: str = ""
@@ -31,11 +37,16 @@ class PbsDatastore:
     used_bytes: int = 0
     total_bytes: int = 0
     comment: str = ""
+    status_ok: bool = True
 
     @classmethod
     def build(cls, cfg: dict, status: dict | None = None) -> PbsDatastore:
-        """Combine ``/config/datastore`` entry with ``.../status`` response."""
-        st = status or {}
+        """Combine ``/config/datastore`` entry with ``.../status`` response.
+
+        ``status`` is None (or lacks the required usage fields) when the
+        status call failed — the numbers are then NOT confirmed data.
+        """
+        st = status if isinstance(status, dict) else {}
         return cls(
             name=cfg.get("store", cfg.get("name", "")),
             path=cfg.get("path", ""),
@@ -43,6 +54,7 @@ class PbsDatastore:
             usage=float(st.get("usage", 0.0) or 0.0),
             used_bytes=int(st.get("used", 0) or 0),
             total_bytes=int(st.get("total", 0) or 0),
+            status_ok=all(k in st for k in ("usage", "used", "total")),
         )
 
     def usage_pct(self) -> int:

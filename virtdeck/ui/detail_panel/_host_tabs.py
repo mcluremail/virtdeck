@@ -1359,29 +1359,52 @@ class HostTabs:
         from ..api.metrics import HostSnapshotsWorker
         worker = HostSnapshotsWorker(cfg, node_name, vms)
         worker.signals.snapshots_ready.connect(
-            lambda nn, data, h=host_cfg_name, w=worker: (
-                self.on_host_snapshots(nn, data, h),
+            lambda nn, data, failed, h=host_cfg_name, w=worker: (
+                self.on_host_snapshots(nn, data, failed, h),
                 panel._workers_mgr.discard_worker(w)
             )
         )
         worker.signals.snapshots_error.connect(
             lambda nn, err, h=host_cfg_name, w=worker: (
-                self.on_host_snapshots(nn, [], h),
+                self.on_host_snapshots(nn, [], [], h),
                 panel._workers_mgr.discard_worker(w)
             )
         )
         panel._workers_mgr.run_host_worker(worker)
 
-    def on_host_snapshots(self, node_name, snapshots, host_cfg_name=""):
+    def on_host_snapshots(self, node_name, snapshots, failed=(), host_cfg_name=""):
         panel = self.panel
         if panel.current_obj_type != "host" or panel.current_obj_id != HostId(host_cfg_name, node_name):
             return
         if snapshots:
             panel.host_snapshots_stack.setCurrentIndex(1)
             self.populate_host_snapshots_tree(snapshots)
+            self._add_unread_snapshots_marker(panel.host_snapshots_tree, failed)
+        elif failed:
+            # nothing could be read — not "no snapshots" (audit D3)
+            panel.host_snapshots_stack.widget(0).setText(
+                tr("{count} virtual machines could not be read").format(
+                    count=len(failed)))
+            panel.host_snapshots_stack.setCurrentIndex(0)
         else:
             panel.host_snapshots_stack.widget(0).setText(tr("No snapshots"))
             panel.host_snapshots_stack.setCurrentIndex(0)
+
+    @staticmethod
+    def _add_unread_snapshots_marker(tree, failed):
+        """Append a grey top-level marker for VMs whose snapshot read failed."""
+        if not failed:
+            return
+        from PySide6.QtGui import QBrush
+        from PySide6.QtWidgets import QTreeWidgetItem
+        details = "\n".join(
+            f"VM {f.get('vmid', '?')}: {f.get('error', '')}" for f in failed)
+        marker = QTreeWidgetItem(
+            [tr("{count} virtual machines could not be read").format(
+                count=len(failed)), "", "", "", "", ""])
+        marker.setToolTip(0, details)
+        marker.setForeground(0, QBrush(QColor(Color.TEXT_SEC)))
+        tree.addTopLevelItem(marker)
 
     def populate_host_snapshots_tree(self, snapshots):
         from PySide6.QtWidgets import QTreeWidgetItem
@@ -1666,20 +1689,20 @@ class HostTabs:
             from ..api.metrics import HostSnapshotsWorker
             worker = HostSnapshotsWorker(cfg, node_name, vms)
             worker.signals.snapshots_ready.connect(
-                lambda nn, data, w=worker, gen=panel._generation: (
-                    self._on_cluster_snapshots(nn, data, gen),
+                lambda nn, data, failed, w=worker, gen=panel._generation: (
+                    self._on_cluster_snapshots(nn, data, failed, gen),
                     panel._workers_mgr.discard_worker(w),
                 )
             )
             worker.signals.snapshots_error.connect(
                 lambda nn, err, w=worker, gen=panel._generation: (
-                    self._on_cluster_snapshots(nn, [], gen),
+                    self._on_cluster_snapshots(nn, [], [], gen),
                     panel._workers_mgr.discard_worker(w),
                 )
             )
             panel._workers_mgr.run_host_worker(worker)
 
-    def _on_cluster_snapshots(self, node_name, data, gen=0):
+    def _on_cluster_snapshots(self, node_name, data, failed=(), gen=0):
         panel = self.panel
         if panel.current_obj_type != "cluster" or gen != panel._generation:
             return
@@ -1715,6 +1738,7 @@ class HostTabs:
                     size_text = ""
                 QTreeWidgetItem(vm_item, [name, desc, created, "", size_text, parent])
         tree.resizeColumnToContents(0)
+        self._add_unread_snapshots_marker(tree, failed)
         tree.expandAll()
         panel.host_snapshots_stack.setCurrentIndex(1)
 

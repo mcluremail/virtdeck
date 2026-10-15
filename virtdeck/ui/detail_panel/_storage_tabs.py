@@ -1130,34 +1130,41 @@ class StorageTabs:
         from ..api.metrics import StorageDisksWorker
         worker = StorageDisksWorker(cfg, node_name, storage_name, node_vms)
         worker.signals.disks_ready.connect(
-            lambda sn, data, h=host_name, nd=node_name, w=worker: (
-                self.on_storage_disks(sn, data, h, nd),
+            lambda sn, data, failed, h=host_name, nd=node_name, w=worker: (
+                self.on_storage_disks(sn, data, failed, h, nd),
                 panel._workers_mgr.discard_worker(w)
             )
         )
         worker.signals.disks_error.connect(
             lambda sn, err, h=host_name, nd=node_name, w=worker: (
-                self.on_storage_disks(sn, [], h, nd),
+                self.on_storage_disks(sn, [], [], h, nd),
                 panel._workers_mgr.discard_worker(w)
             )
         )
         panel._workers_mgr.run_worker(worker)
 
-    def on_storage_disks(self, storage_name, disks, host_name="", node=""):
+    def on_storage_disks(self, storage_name, disks, failed=(), host_name="", node=""):
         panel = self.panel
         if panel.current_obj_type != "storage" or panel.current_obj_id != StorageId(host_name, node, storage_name):
             return
         if disks:
             panel.storage_disks_stack.setCurrentIndex(1)
-            self.populate_storage_disks_table(disks)
+            self.populate_storage_disks_table(disks, failed)
+        elif failed:
+            # nothing could be read — not "no data" (audit D3)
+            panel.storage_disks_stack.widget(0).setText(
+                tr("{count} virtual machines could not be read").format(
+                    count=len(failed)))
+            panel.storage_disks_stack.setCurrentIndex(0)
+            panel.storage_disks_table.setRowCount(0)
         else:
             panel.storage_disks_stack.widget(0).setText(tr("No data"))
             panel.storage_disks_stack.setCurrentIndex(0)
             panel.storage_disks_table.setRowCount(0)
 
-    def populate_storage_disks_table(self, disks):
+    def populate_storage_disks_table(self, disks, failed=()):
         table = self.panel.storage_disks_table
-        table.setRowCount(len(disks))
+        table.setRowCount(len(disks) + (1 if failed else 0))
         for i, d in enumerate(disks):
             vmid_item = QTableWidgetItem(str(d.get("vmid", "")))
             vmid_item.setIcon(get_icon("disk"))
@@ -1174,6 +1181,21 @@ class StorageTabs:
             table.setItem(i, 2, QTableWidgetItem(d.get("volid", "")))
             table.setItem(i, 3, QTableWidgetItem(d.get("bus", "")))
             table.setItem(i, 4, QTableWidgetItem(format_volsize(d.get("size", 0))))
+        if failed:
+            # grey marker row: VMs whose config read failed are unverified,
+            # not "no disks" (audit D3)
+            row = len(disks)
+            dash = QTableWidgetItem("—")
+            dash.setForeground(QBrush(QColor(Color.TEXT_SEC)))
+            table.setItem(row, 0, dash)
+            marker = QTableWidgetItem(
+                tr("{count} virtual machines could not be read").format(
+                    count=len(failed)))
+            marker.setForeground(QBrush(QColor(Color.TEXT_SEC)))
+            marker.setToolTip("\n".join(
+                f"VM {f.get('vmid', '?')}: {f.get('error', '')}"
+                for f in failed))
+            table.setItem(row, 1, marker)
         table.resizeRowsToContents()
         for r in range(table.rowCount()):
             if table.rowHeight(r) > 24:

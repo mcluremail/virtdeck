@@ -181,6 +181,145 @@ class TestAnyeventErrors:
 
         assert parse_pve_error("VM 595 config not found") == "VM 595 config not found"
 
+
+class TestTransportClassificationD4:
+    """Audit D4: requests transport errors are classified by TYPE, before
+    any text heuristics — a VMID like 401/403/404 inside a quoted request
+    URL must not turn a DNS/connection failure into auth/not-found."""
+
+    @staticmethod
+    def _dns_error(vmid):
+        import requests.exceptions as rex
+        return rex.ConnectionError(
+            "HTTPSConnectionPool(host='pve1', port=8006): Max retries exceeded "
+            f"with url: /api2/json/nodes/pve1/qemu/{vmid}/status/current "
+            "(Caused by NameResolutionError(\"Failed to resolve 'pve1'\"))")
+
+    @pytest.mark.parametrize("vmid", [401, 403, 404])
+    def test_dns_failure_with_vmid_in_url_is_network(self, vmid):
+        result = from_exception(self._dns_error(vmid))
+        assert isinstance(result, ProxmoxNetworkError)
+        assert not isinstance(result, (ProxmoxAuthError, ProxmoxNotFoundError))
+
+    def test_timeout_with_vmid_url_is_timeout(self):
+        import requests.exceptions as rex
+        exc = rex.ConnectTimeout(
+            "Connection to pve1 timed out "
+            "(url: /api2/json/nodes/pve1/qemu/401/status/current)")
+        result = from_exception(exc)
+        assert isinstance(result, ProxmoxTimeoutError)
+
+    def test_ssl_error_with_vmid_url_is_network(self):
+        import requests.exceptions as rex
+        exc = rex.SSLError(
+            "certificate verify failed (url: /api2/json/nodes/pve1/qemu/404/...)")
+        result = from_exception(exc)
+        assert isinstance(result, ProxmoxNetworkError)
+
+    def test_connection_reset_with_vmid_url_is_network(self):
+        import requests.exceptions as rex
+        exc = rex.ConnectionError(
+            "Connection aborted (url: /api2/json/nodes/pve1/qemu/403/config)")
+        result = from_exception(exc)
+        assert isinstance(result, ProxmoxNetworkError)
+
+    def test_chunked_encoding_error_is_network(self):
+        import requests.exceptions as rex
+        exc = rex.ChunkedEncodingError(
+            "Connection broken (url: /api2/json/nodes/pve1/qemu/401/...)")
+        result = from_exception(exc)
+        assert isinstance(result, ProxmoxNetworkError)
+
+    def test_unknown_transport_error_is_not_auth(self):
+        import requests.exceptions as rex
+        for unknown in (
+            rex.TooManyRedirects(
+                "exceeded 30 redirects (url: /api2/json/nodes/pve1/qemu/401/...)"),
+            rex.RequestException(
+                "generic transport failure (/qemu/404/...)"),
+        ):
+            result = from_exception(unknown)
+            assert not isinstance(result, (ProxmoxAuthError,
+                                           ProxmoxNotFoundError))
+
+    @staticmethod
+    def _http_error(status, text):
+        import requests.exceptions as rex
+        resp = type("R", (), {"status_code": status})()
+        return rex.HTTPError(f"{status} Client Error: {text}", response=resp)
+
+    @pytest.mark.parametrize("status,cls", [
+        (401, ProxmoxAuthError),
+        (404, ProxmoxNotFoundError),
+        (504, ProxmoxTimeoutError),
+        (500, ProxmoxApiError),
+    ])
+    def test_real_http_responses_keep_classes(self, status, cls):
+        err = from_exception(self._http_error(status, "Unauthorized for url"))
+        assert isinstance(err, cls)
+        assert err.status_code == status
+
+    def test_real_http_403_without_permission_text_is_auth(self):
+        err = from_exception(self._http_error(403, "Forbidden"))
+        assert isinstance(err, ProxmoxAuthError)
+        assert err.status_code == 403
+
+    def test_real_http_403_permission_text_is_permission(self):
+        import requests.exceptions as rex
+        resp = type("R", (), {"status_code": 403})()
+        exc = rex.HTTPError(
+            "403 Client Error: permission check failed (/vms/401)",
+            response=resp)
+        err = from_exception(exc)
+        assert isinstance(err, ProxmoxPermissionError)
+
+    def test_anchored_regex_rejects_bare_numbers(self):
+        # non-requests exceptions: numbers without an HTTP anchor are not
+        # statuses (a VMID in an arbitrary error text)
+        assert not isinstance(from_exception(Exception("VM 401 status current")),
+                              ProxmoxAuthError)
+        assert isinstance(from_exception(Exception("VM 401 status current")),
+                          ProxmoxApiError)
+
+    def test_anchored_regex_still_recognizes_http_forms(self):
+        assert isinstance(from_exception(Exception("HTTP 401 Unauthorized")),
+                          ProxmoxAuthError)
+        assert isinstance(from_exception(Exception("HTTP 404 Not Found")),
+                          ProxmoxNotFoundError)
+        assert isinstance(from_exception(Exception("404 Client Error: not found")),
+                          ProxmoxNotFoundError)
+        assert isinstance(from_exception(Exception("HTTP 403 Forbidden")),
+                          ProxmoxAuthError)
+
+    # -- parse_pve_error mirrors the anchoring (audit D4) --
+
+    def test_parse_pve_error_dns_with_vmid_url_is_dns(self):
+        from virtdeck.ui.utils import parse_pve_error
+
+        msg = parse_pve_error(self._dns_error(401).__str__())
+        assert msg == "Cannot resolve DNS name"
+
+    def test_parse_pve_error_vmid_in_url_is_not_auth(self):
+        from virtdeck.ui.utils import parse_pve_error
+
+        err = ("Max retries exceeded with url: "
+               "/api2/json/nodes/pve1/qemu/401/status/current")
+        assert parse_pve_error(err) != "API token authorization error (401)"
+        assert parse_pve_error(err) == err  # unchanged passthrough
+
+    def test_parse_pve_error_real_401_still_auth(self):
+        from virtdeck.ui.utils import parse_pve_error
+
+        assert parse_pve_error("401 Client Error: Unauthorized for url: ...") == \
+            "API token authorization error (401)"
+        assert parse_pve_error("HTTP 401 Unauthorized") == \
+            "API token authorization error (401)"
+
+    def test_parse_pve_error_real_403_still_permission(self):
+        from virtdeck.ui.utils import parse_pve_error
+
+        assert parse_pve_error("HTTP 403 Forbidden") == "PVE permission denied (403)"
+
 # -- _session tests --
 
 

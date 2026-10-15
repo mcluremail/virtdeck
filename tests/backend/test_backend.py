@@ -281,12 +281,16 @@ class TestParseDiskSize:
 
 
 def _resp(status=200, payload=None):
+    def raise_for_status():
+        if status >= 400:
+            # real requests.HTTPError always carries its response
+            raise requests.HTTPError(
+                f"{status} Error", response=SimpleNamespace(status_code=status))
+        return None
     return SimpleNamespace(
         status_code=status,
         json=lambda: payload if payload is not None else {"data": {}},
-        raise_for_status=lambda: (_ for _ in ()).throw(
-            requests.HTTPError(f"{status} Error"))
-        if status >= 400 else None,
+        raise_for_status=raise_for_status,
     )
 
 
@@ -416,6 +420,39 @@ class TestCreateAdminToken:
         monkeypatch.setattr(requests, "post", boom)
         result = backend.create_admin_token("pve.local", "root@pam", "pass")
         assert "error" in result
+
+    # -- audit D4: transport errors must not be classified by numbers
+    #    inside the message text --
+
+    def test_dns_error_with_vmid_url_is_not_auth(self, monkeypatch):
+        def boom(url, **kw):
+            raise requests.ConnectionError(
+                "Max retries exceeded with url: "
+                "/api2/json/nodes/pve1/qemu/401/status/current "
+                "(Caused by NameResolutionError(\"Failed to resolve 'pve1'\"))")
+
+        monkeypatch.setattr(requests, "post", boom)
+        result = backend.create_admin_token("pve.local", "root@pam", "pass")
+        assert result == {"error": backend.tr("Cannot connect to {}").format("pve.local")}
+
+    def test_timeout_is_not_auth(self, monkeypatch):
+        def boom(url, **kw):
+            raise requests.Timeout("timed out (url: /api2/json/nodes/x/401/...)")
+
+        monkeypatch.setattr(requests, "post", boom)
+        result = backend.create_admin_token("pve.local", "root@pam", "pass")
+        assert result == {"error": backend.tr("Cannot connect to {}").format("pve.local")}
+
+    def test_http_403_is_not_invalid_login(self, monkeypatch):
+        """403 from raise_for_status: forbidden ≠ wrong password (kept as a
+        generic failure, as before the fix)."""
+        monkeypatch.setattr(
+            requests, "post",
+            lambda url, **kw: _resp(403),
+        )
+        result = backend.create_admin_token("pve.local", "root@pam", "pass")
+        assert result == {"error": backend.tr(
+            "Token creation failed. Check host, user, and password.")}
 
 
 # --- delete_host_token ---

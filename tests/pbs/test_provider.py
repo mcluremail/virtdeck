@@ -66,10 +66,30 @@ class TestDatastores:
         assert [s.name for s in stores] == ["main", "alt"]
         assert stores[0].usage == 0.5
         assert stores[0].path == "/d1"
-        # second store's status call raised → swallowed, empty status
+        assert stores[0].status_ok is True
+        # second store's status call raised → status unreadable, NOT zero (D1)
         assert stores[1].usage == 0.0
+        assert stores[1].status_ok is False
         assert "status:broken" not in p._client.calls
         assert "status:alt" in p._client.calls
+
+    def test_datastores_empty_status_response_is_unconfirmed(self):
+        p = make_provider()
+        p._client.datastore_status = lambda store: {}  # e.g. data: null
+        stores = p.datastores()
+        assert stores[0].status_ok is False
+
+    def test_datastores_timeout_status_is_unconfirmed(self):
+        # network/timeout failures raise PbsError too — same honesty rule
+        p = make_provider()
+
+        def timeout_status(store):
+            raise PbsError("PBS timeout: read timed out")
+
+        p._client.datastore_status = timeout_status
+        stores = p.datastores()
+        assert stores[0].usage == 0.0  # placeholder, not a confirmed zero
+        assert stores[0].status_ok is False
 
     def test_namespaces_dedup_and_skip_empty(self):
         p = make_provider()

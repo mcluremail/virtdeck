@@ -31,9 +31,10 @@ def panel(qtbot, monkeypatch):
     return p
 
 
-def _ds(name="main", usage=0.5):
+def _ds(name="main", usage=0.5, status_ok=True):
     return PbsDatastore(name=name, path=f"/mnt/{name}", usage=usage,
-                        used_bytes=500 * 10**9, total_bytes=1000 * 10**9)
+                        used_bytes=500 * 10**9, total_bytes=1000 * 10**9,
+                        status_ok=status_ok)
 
 
 def _snap(**kw):
@@ -76,6 +77,38 @@ class TestServerView:
         panel.show_datastore("pbs1", "main")
         panel._fill_status(_ds(usage=0.842))
         assert "84%" in panel._usage_lbl.text()
+
+    # -- audit D1: unreadable status must not render as fake zeros --
+
+    def test_fill_ds_table_unavailable_status_shows_dashes(self, panel):
+        panel.show_server("pbs1")
+        panel._fill_ds_table([_ds("broken", status_ok=False)])
+        assert panel._ds_table.item(0, 1).text() == "—"  # usage
+        assert panel._ds_table.item(0, 2).text() == "—"  # used
+        assert panel._ds_table.item(0, 3).text() == "—"  # total
+
+    def test_fill_ds_table_confirmed_zero_stays_zero(self, panel):
+        panel.show_server("pbs1")
+        zero = PbsDatastore(name="empty", usage=0.0, used_bytes=0,
+                            total_bytes=0, status_ok=True)
+        panel._fill_ds_table([zero])
+        assert panel._ds_table.item(0, 1).text() == "0%"
+        assert "0 B" in panel._ds_table.item(0, 2).text()
+        assert "0 B" in panel._ds_table.item(0, 3).text()
+
+    def test_fill_status_unavailable_shows_message(self, panel):
+        panel.show_datastore("pbs1", "main")
+        panel._fill_status(_ds("broken", status_ok=False))
+        assert panel._usage_lbl.text() == "Usage data unavailable"
+        assert panel._usage_bar.value() == 0
+
+    def test_fill_status_confirmed_zero_shows_zero(self, panel):
+        panel.show_datastore("pbs1", "main")
+        panel._fill_status(PbsDatastore(name="empty", usage=0.0,
+                                        used_bytes=0, total_bytes=0,
+                                        status_ok=True))
+        assert "0%" in panel._usage_lbl.text()
+        assert panel._usage_bar.value() == 0
 
 
 class TestDatastoreView:

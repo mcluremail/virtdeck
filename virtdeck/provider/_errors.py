@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import re
 
+import requests.exceptions
+
 
 class ProxmoxError(Exception):
     """Base for all Proxmox API errors."""
@@ -58,9 +60,14 @@ class ProxmoxApiError(ProxmoxError):
         self.status_code = status_code
 
 
-_RE_401 = re.compile(r"\b401\b")
-_RE_403 = re.compile(r"\b403\b")
-_RE_404 = re.compile(r"\b404\b")
+# Numeric statuses are matched ONLY with an HTTP anchor ("HTTP 401",
+# "401 Client Error: ..." from raise_for_status).  A bare \b401\b also
+# matches VMIDs inside request URLs quoted by requests errors
+# (e.g. ".../qemu/401/status/current" from a DNS failure), which used to
+# misclassify network failures as auth/not-found (audit D4).
+_RE_401 = re.compile(r"\bHTTP\s*401\b|\b401\s+Client\s+Error\b")
+_RE_403 = re.compile(r"\bHTTP\s*403\b|\b403\s+Client\s+Error\b")
+_RE_404 = re.compile(r"\bHTTP\s*404\b|\b404\s+Client\s+Error\b")
 _RE_PERMISSION = re.compile(r"permission\s+check\s+failed", re.IGNORECASE)
 _RE_TIMEOUT = re.compile(r"tim\s?e?o?u?t", re.IGNORECASE)
 _RE_CONN = re.compile(
@@ -106,13 +113,34 @@ def _with_status(err: ProxmoxError, status: int | None) -> ProxmoxError:
     return err
 
 
+def _classify_http_status(msg: str, status: int) -> ProxmoxError:
+    """Classify a real HTTP response status (never text heuristics)."""
+    if status == 401:
+        return _with_status(ProxmoxAuthError(msg), status)
+    if status == 403:
+        cls = (ProxmoxPermissionError if _RE_PERMISSION.search(msg)
+               else ProxmoxAuthError)
+        return _with_status(cls(msg), status)
+    if status == 404:
+        return _with_status(ProxmoxNotFoundError(msg), status)
+    if status == 504:
+        return _with_status(ProxmoxTimeoutError(msg), status)
+    return _with_status(ProxmoxApiError(msg), status)
+
+
 def from_exception(exc: Exception) -> ProxmoxError:
     """Classify a raw exception from requests/proxmoxer into a ProxmoxError subclass.
 
-    An exact ``status_code`` attribute (proxmoxer ResourceException) wins
-    over message-text matching: it cannot false-positive on VMIDs or task
-    texts that merely contain "401"/"404".  The regexes remain as the
-    fallback for exceptions without a status (requests/urllib3 errors).
+    Classification order (audit D4 — type before text):
+    1. already a ProxmoxError — pass through;
+    2. AnyEvent pseudo-status (595-599) via status attr or message prefix;
+    3. exact ``status_code`` attribute (proxmoxer ResourceException);
+    4. requests exception TYPES: ``HTTPError`` via its real response
+       status, transport errors (``Timeout``, ``ConnectionError``) by
+       class — a DNS/connection failure whose message quotes a URL with
+       a VMID like 401/403/404 must not become an auth/not-found error;
+    5. message-text fallback for non-requests exceptions, with numeric
+       regexes anchored to HTTP forms only.
     """
     if isinstance(exc, ProxmoxError):
         return exc
@@ -125,17 +153,22 @@ def from_exception(exc: Exception) -> ProxmoxError:
 
     status = getattr(exc, "status_code", None)
     if isinstance(status, int):
-        if status == 401:
-            return _with_status(ProxmoxAuthError(msg), status)
-        if status == 403:
-            cls = (ProxmoxPermissionError if _RE_PERMISSION.search(msg)
-                   else ProxmoxAuthError)
-            return _with_status(cls(msg), status)
-        if status == 404:
-            return _with_status(ProxmoxNotFoundError(msg), status)
-        if status == 504:
-            return _with_status(ProxmoxTimeoutError(msg), status)
-        return _with_status(ProxmoxApiError(msg), status)
+        return _classify_http_status(msg, status)
+
+    # requests exceptions: classify by TYPE before any text heuristics.
+    if isinstance(exc, requests.exceptions.HTTPError):
+        resp_status = getattr(getattr(exc, "response", None), "status_code",
+                              None)
+        if isinstance(resp_status, int):
+            # real HTTP response — same contract as the status branch
+            return _classify_http_status(msg, resp_status)
+        # HTTPError without a usable response: fall through to the
+        # anchored-text fallback (e.g. "404 Client Error: ...").
+    if isinstance(exc, requests.exceptions.Timeout):
+        return ProxmoxTimeoutError(msg)
+    if isinstance(exc, (requests.exceptions.ConnectionError,
+                        requests.exceptions.ChunkedEncodingError)):
+        return ProxmoxNetworkError(msg)
 
     if exc_name == "TimeoutError" or "Timeout" in exc_name or _RE_TIMEOUT.search(msg):
         return ProxmoxTimeoutError(msg)

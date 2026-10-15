@@ -360,13 +360,20 @@ class PbsPanel(QWidget):
             name = QTableWidgetItem(ds.name)
             name.setIcon(get_icon("backup"))
             self._ds_table.setItem(row, 0, name)
-            usage_item = QTableWidgetItem(f"{ds.usage_pct()}%")
-            usage_item.setForeground(QBrush(QColor(_usage_color(ds.usage))))
+            if ds.status_ok:
+                usage_item = QTableWidgetItem(f"{ds.usage_pct()}%")
+                usage_item.setForeground(QBrush(QColor(_usage_color(ds.usage))))
+                used_txt = _fmt_size(ds.used_bytes)
+                total_txt = _fmt_size(ds.total_bytes)
+            else:
+                # status call failed — dashes, not fake zeros (audit D1)
+                usage_item = QTableWidgetItem("—")
+                usage_item.setForeground(QBrush(QColor(Color.TEXT_SEC)))
+                usage_item.setToolTip(tr("Usage data unavailable"))
+                used_txt = total_txt = "—"
             self._ds_table.setItem(row, 1, usage_item)
-            self._ds_table.setItem(row, 2, QTableWidgetItem(
-                _fmt_size(ds.used_bytes)))
-            self._ds_table.setItem(row, 3, QTableWidgetItem(
-                _fmt_size(ds.total_bytes)))
+            self._ds_table.setItem(row, 2, QTableWidgetItem(used_txt))
+            self._ds_table.setItem(row, 3, QTableWidgetItem(total_txt))
             self._ds_table.setItem(row, 4, QTableWidgetItem(ds.path))
         self._ds_table.resizeColumnsToContents()
 
@@ -379,13 +386,20 @@ class PbsPanel(QWidget):
     # ── datastore view ───────────────────────────────────────────
 
     def _fill_status(self, ds):
-        self._usage_bar.setValue(ds.usage_pct())
-        self._usage_bar.setStyleSheet(
-            f"QProgressBar::chunk {{ background: {_usage_color(ds.usage)}; }}")
-        self._usage_lbl.setText(
-            tr("{}% used — {} of {}").format(
-                ds.usage_pct(), _fmt_size(ds.used_bytes),
-                _fmt_size(ds.total_bytes)))
+        if ds.status_ok:
+            self._usage_bar.setValue(ds.usage_pct())
+            self._usage_bar.setStyleSheet(
+                f"QProgressBar::chunk {{ background: {_usage_color(ds.usage)}; }}")
+            self._usage_lbl.setText(
+                tr("{}% used — {} of {}").format(
+                    ds.usage_pct(), _fmt_size(ds.used_bytes),
+                    _fmt_size(ds.total_bytes)))
+        else:
+            # status call failed — do not show fake zeros (audit D1)
+            self._usage_bar.setValue(0)
+            self._usage_bar.setStyleSheet(
+                f"QProgressBar::chunk {{ background: {Color.TEXT_SEC}; }}")
+            self._usage_lbl.setText(tr("Usage data unavailable"))
         self._path_lbl.setText(ds.path or "—")
 
     def _fill_snapshots(self, snaps):

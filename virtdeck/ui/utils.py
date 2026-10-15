@@ -48,9 +48,13 @@ def parse_pve_error(err):
         if m:
             return tr("PVE permission denied: {path}").format(path=m.group(1))
         return tr("PVE permission denied")
-    if "403" in err_lower:
+    # Numeric statuses only with an HTTP anchor: a network error message
+    # quoting a request URL can contain a VMID like 401/403/404 — that
+    # must not read as an auth/permission failure (audit D4).
+    if re.search(r"\bHTTP\s*403\b|\b403\s+Client\s+Error\b", err):
         return tr("PVE permission denied (403)")
-    if "unauthorized" in err_lower or "401" in err_lower:
+    if "unauthorized" in err_lower or re.search(
+            r"\bHTTP\s*401\b|\b401\s+Client\s+Error\b", err):
         return tr("API token authorization error (401)")
     if "resolve" in err_lower or "dns" in err_lower or "name or service not known" in err_lower:
         return tr("Cannot resolve DNS name")

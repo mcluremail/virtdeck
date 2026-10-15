@@ -136,12 +136,19 @@ def create_admin_token(host, user, password, trust_ssl=False, proxy=None):
         return {"token_name": token_id, "token_value": token_value,
                 "user": user, "cluster": cluster_info}
 
-    except Exception as e:
-        msg = str(e)
-        if "authorization" in msg.lower() or "permission" in msg.lower() or "401" in msg:
+    except rq.exceptions.HTTPError as e:
+        # Classify by the real HTTP response, not by numbers in the
+        # message text (audit D4): a URL fragment must not read as auth.
+        code = getattr(getattr(e, "response", None), "status_code", None)
+        msg = str(e).lower()
+        if code == 401 or "authorization" in msg or "permission" in msg:
             return {"error": tr("Invalid login or password")}
-        if "connection" in msg.lower() or "timeout" in msg.lower() or "resolve" in msg.lower():
-            return {"error": tr("Cannot connect to {}").format(host)}
+        return {"error": tr("Token creation failed. Check host, user, and password.")}
+    except rq.exceptions.Timeout:
+        return {"error": tr("Cannot connect to {}").format(host)}
+    except rq.exceptions.ConnectionError:
+        return {"error": tr("Cannot connect to {}").format(host)}
+    except Exception:
         return {"error": tr("Token creation failed. Check host, user, and password.")}
     finally:
         if sess is not None:
