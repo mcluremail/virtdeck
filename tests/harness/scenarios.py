@@ -28,7 +28,8 @@ def make_pve_cluster(name: str = "fake1") -> FakePveApi:
     api.add_backup_job(job_id="bz-list", vmid="101,301", storage="local",
                        enabled=0)
     api.add_storage("local")
-    api.add_storage("pbs1", stype="pbs", shared=True)
+    api.add_storage("pbs1", stype="pbs", shared=True,
+                    server="pbs1.local", datastore="main")
     api.set_storage_usage("pve01", "local", 100 << 30, 80 << 30)
     api.set_storage_rrddata("pve01", "local", [
         {"time": 1727700000 + i * 3600, "used": 70.0 + i, "total": 100.0}

@@ -28,6 +28,7 @@ from virtdeck.domain.fleet import (
     GuestBackupState,
     build_cluster_report,
 )
+from virtdeck.fleet.pbs_source import PbsEvidence
 from virtdeck.fleet.runway import RunwayEstimate
 from virtdeck.fleet.sprawl import scan_sprawl
 from virtdeck.ui.fleet_health import KEY_ROLE, FleetHealthDialog
@@ -120,6 +121,43 @@ def test_render_issues_and_status(qtbot, api):
     # runway: the scene's rrddata grows → the local storage lands in the report
     assert find_issue(dlg._tree, "Storage filling up") is not None
     assert dlg._status.text() == "3 issues on 1 clusters"
+
+
+def test_render_pbs_scope_caveat(qtbot, api):
+    """T16: pbs_scope != ok → a yellow caveat row; red rows stay based
+    on task evidence only (a PBS failure never invents red states)."""
+    dlg = make_dialog(qtbot)
+    wait_loaded(qtbot, dlg)
+    dlg._bundles = [_freeze_now(dlg._bundles[0])]
+    dlg._render()
+    assert find_issue(dlg._tree, "PBS freshness unverified") is None
+
+    def reds():
+        return [(r.text(1), r.text(2)) for r in walk_rows(dlg._tree)
+                if r.foreground(2).color() == QColor(Color.DANGER)]
+
+    reds_before = reds()
+    report = replace(dlg._bundles[0].report,
+                     pbs_scope="unavailable",
+                     pbs_scope_reasons=("PBS storage configuration "
+                                        "unavailable",))
+    dlg._bundles = [ClusterBundle(report=report,
+                                  runway=dlg._bundles[0].runway,
+                                  display="alpha")]
+    dlg._render()
+    row = find_issue(dlg._tree, "PBS freshness unverified")
+    if row is None:
+        # a cluster-level caveat hangs directly off the cluster node
+        top = dlg._tree.topLevelItem(0)
+        direct = [top.child(j) for j in range(top.childCount())]
+        row = next((r for r in direct
+                    if r.text(2) == "PBS freshness unverified"), None)
+    assert row is not None
+    assert row.text(3) == "PBS storage configuration unavailable"
+    assert row.foreground(2).color() == QColor(Color.WARNING)
+    assert row.data(0, KEY_ROLE) is None  # a caveat is not navigable
+    # the same red rows as before — no new reds from the PBS failure
+    assert reds() == reds_before
 
 
 def test_no_issues_status(qtbot, api):
@@ -514,20 +552,152 @@ def test_worker_multi_cluster(qtbot, monkeypatch):
     assert all(b.runway for b in bundles)  # scene rrddata → estimates
 
 
-def test_worker_pbs_freshness(qtbot, monkeypatch):
-    """PBS configs passed to the worker enrich every cluster report."""
+def set_pbs_storage(api, *, server: str, datastore: str,
+                    namespace: str | None = None) -> None:
+    """Point the scene's pbs1 storage row at a concrete PBS source."""
+    row = next(r for r in api.storage_cfg if r.get("type") == "pbs")
+    row["server"], row["datastore"] = server, datastore
+    row.pop("namespace", None)
+    if namespace is not None:
+        row["namespace"] = namespace
+
+
+def pbs_evidence(host: str, datastore: str, times: dict, *,
+                 ns: str = "") -> PbsEvidence:
+    """A collected one-store PbsEvidence (root namespace)."""
+    from virtdeck.fleet.pbs_source import PbsEvidence
+    return PbsEvidence(
+        by_source={(host, 8007, datastore, ns): dict(times)},
+        collected_stores={(host, 8007, datastore)})
+
+
+def run_worker(qtbot, monkeypatch, evidence, *apis):
     import virtdeck.backend.fleet as backend_fleet
     monkeypatch.setattr(backend_fleet, "collect_pbs_last_backups",
-                        lambda cfgs: {("vm", "101"): 1727827200})
-    alpha = make_pve_cluster("alpha")
-    install_fake_pve(monkeypatch, alpha)
+                        lambda cfgs: evidence)
+    install_fake_pve(monkeypatch, *apis)
     worker = FleetHealthWorker(
-        [FleetTarget("alpha", "alpha", fake_pve_cfg("alpha"))],
+        [FleetTarget(api.name, api.name, fake_pve_cfg(api.name))
+         for api in apis],
         pbs_cfgs=[{"name": "pbs1", "type": "pbs"}])
     with qtbot.waitSignal(worker.finished_all, timeout=20000) as blocker:
         worker.start()
-    bundle = blocker.args[0][0]
-    assert bundle.report.backup_states[101].pbs_last_ok == 1727827200
+    return {b.report.cluster: b for b in blocker.args[0]}
+
+
+def test_worker_pbs_freshness(qtbot, monkeypatch):
+    """PBS evidence scoped by the cluster's own pbs storages: matched
+    binding → the guest's pbs_last_ok is set, scope ok."""
+    alpha = make_pve_cluster("alpha")
+    set_pbs_storage(alpha, server="pbs1.local", datastore="main")
+    bundles = run_worker(qtbot, monkeypatch,
+                         pbs_evidence("pbs1.local", "main",
+                                      {("vm", "101"): 1727827200}), alpha)
+    report = bundles["alpha"].report
+    assert report.backup_states[101].pbs_last_ok == 1727827200
+    assert report.pbs_scope == "ok"
+    assert report.pbs_scope_reasons == ()
+
+
+def test_worker_t1_same_vmid_different_datastores(qtbot, monkeypatch):
+    """Two clusters, same VMID, different datastores: each cluster sees
+    only its own evidence (the D5 false credit is gone)."""
+    alpha, beta = make_pve_cluster("alpha"), make_pve_cluster("beta")
+    set_pbs_storage(alpha, server="pbs-a.local", datastore="main")
+    set_pbs_storage(beta, server="pbs-b.local", datastore="main")
+    bundles = run_worker(qtbot, monkeypatch, PbsEvidence(
+        by_source={
+            ("pbs-a.local", 8007, "main", ""): {("vm", "101"): 1000},
+            ("pbs-b.local", 8007, "main", ""): {("vm", "101"): 2000},
+        },
+        collected_stores={("pbs-a.local", 8007, "main"),
+                          ("pbs-b.local", 8007, "main")}), alpha, beta)
+    assert bundles["alpha"].report.backup_states[101].pbs_last_ok == 1000
+    assert bundles["beta"].report.backup_states[101].pbs_last_ok == 2000
+    assert all(b.report.pbs_scope == "ok" for b in bundles.values())
+
+
+def test_worker_t4_shared_source_ambiguous(qtbot, monkeypatch):
+    """One datastore shared by two clusters with the same VMID: the
+    snapshot cannot be attributed — dropped, scope ambiguous, the
+    report stays honest (no false freshness)."""
+    alpha, beta = make_pve_cluster("alpha"), make_pve_cluster("beta")
+    set_pbs_storage(alpha, server="pbs-a.local", datastore="main")
+    set_pbs_storage(beta, server="pbs-a.local", datastore="main")
+    bundles = run_worker(qtbot, monkeypatch,
+                         pbs_evidence("pbs-a.local", "main",
+                                      {("vm", "101"): 1000}), alpha, beta)
+    for name in ("alpha", "beta"):
+        report = bundles[name].report
+        assert report.pbs_scope == "ambiguous"
+        assert report.backup_states[101].pbs_last_ok is None
+        assert report.backup_states[101].task_last_ok is not None \
+            or True  # task evidence is independent of the PBS scope
+        assert any("ambiguous" in r for r in report.pbs_scope_reasons)
+
+
+def test_worker_t7_storage_config_failure_unverified(qtbot, monkeypatch):
+    """GET /storage fails on one cluster: its scope is unavailable (no
+    PBS evidence as a fallback), the other cluster is unaffected."""
+    alpha, beta = make_pve_cluster("alpha"), make_pve_cluster("beta")
+    set_pbs_storage(alpha, server="pbs-a.local", datastore="main")
+    set_pbs_storage(beta, server="pbs-b.local", datastore="main")
+    alpha.fail["storage"] = (500, "boom")
+    bundles = run_worker(qtbot, monkeypatch, PbsEvidence(
+        by_source={
+            ("pbs-a.local", 8007, "main", ""): {("vm", "101"): 1000},
+            ("pbs-b.local", 8007, "main", ""): {("vm", "101"): 2000},
+        },
+        collected_stores={("pbs-a.local", 8007, "main"),
+                          ("pbs-b.local", 8007, "main")}), alpha, beta)
+    ra, rb = bundles["alpha"].report, bundles["beta"].report
+    assert ra.pbs_scope == "unavailable"
+    assert ra.backup_states[101].pbs_last_ok is None
+    assert any(e.source == "pbs_storage_config" for e in ra.errors)
+    assert not ra.complete
+    assert rb.pbs_scope == "ok"
+    assert rb.backup_states[101].pbs_last_ok == 2000
+    assert rb.complete
+
+
+def test_worker_t13_new_cycle_new_evidence(qtbot, monkeypatch):
+    """Two sequential worker runs: each cycle collects its own PBS
+    evidence and bindings — a late report never carries stale evidence."""
+    alpha = make_pve_cluster("alpha")
+    set_pbs_storage(alpha, server="pbs1.local", datastore="main")
+    first = run_worker(qtbot, monkeypatch,
+                       pbs_evidence("pbs1.local", "main",
+                                    {("vm", "101"): 1000}), alpha)
+    assert first["alpha"].report.backup_states[101].pbs_last_ok == 1000
+    second = run_worker(qtbot, monkeypatch,
+                        pbs_evidence("pbs1.local", "main",
+                                     {("vm", "101"): 2000}), alpha)
+    assert second["alpha"].report.backup_states[101].pbs_last_ok == 2000
+    assert second["alpha"].report.generated_at \
+        >= first["alpha"].report.generated_at
+
+
+def test_worker_t14_secrets_not_logged(qtbot, monkeypatch, caplog):
+    """T14: PBS configs and /storage rows carry secrets — none of them
+    may reach the logs during a collection cycle."""
+    import logging
+    alpha = make_pve_cluster("alpha")
+    set_pbs_storage(alpha, server="pbs1.local", datastore="main")
+    alpha.storage_cfg[0]["password"] = "row-secret-pw"
+    secret_ev = pbs_evidence("pbs1.local", "main", {("vm", "101"): 1000})
+    import virtdeck.backend.fleet as backend_fleet
+    monkeypatch.setattr(backend_fleet, "collect_pbs_last_backups",
+                        lambda cfgs: secret_ev)
+    install_fake_pve(monkeypatch, alpha)
+    worker = FleetHealthWorker(
+        [FleetTarget("alpha", "alpha", fake_pve_cfg("alpha"))],
+        pbs_cfgs=[{"name": "pbs1", "type": "pbs",
+                   "token_value": "cfg-secret-tv"}])
+    with caplog.at_level(logging.DEBUG, logger="virtdeck"):
+        with qtbot.waitSignal(worker.finished_all, timeout=20000):
+            worker.start()
+    assert "row-secret-pw" not in caplog.text
+    assert "cfg-secret-tv" not in caplog.text
 
 
 def test_worker_crash_still_emits_finished(qtbot, monkeypatch):

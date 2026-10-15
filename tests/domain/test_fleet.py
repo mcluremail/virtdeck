@@ -6,12 +6,15 @@ Partial failure: a failed source (None) must not fake coverage.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from virtdeck.domain.backup_coverage import BackupJob, Guest
 from virtdeck.domain.fleet import (
     ClusterFleetReport,
     CollectError,
+    apply_pbs_times,
     build_backup_states,
     build_cluster_report,
     last_pbs_backup_times,
@@ -364,3 +367,56 @@ class TestMalformedTaskRows:
         report = make_cluster_report(tasks=tasks)
         assert report.guests
         assert report.backup_states is not None
+
+
+class TestApplyPbsTimes:
+    """Scoped PBS evidence applied to a built report (audit D5 fix)."""
+
+    def test_applies_only_pbs_component(self):
+        report = make_cluster_report()
+        assert report.backup_states[101].task_last_ok == 1727827200
+        out = apply_pbs_times(report, {("vm", "101"): 1727830000,
+                                       ("vm", "102"): 1727830001},
+                              scope="ok")
+        assert out.backup_states[101].pbs_last_ok == 1727830000
+        assert out.backup_states[102].pbs_last_ok == 1727830001
+        # task evidence untouched
+        assert out.backup_states[101].task_last_ok == 1727827200
+        assert out.backup_states[101].last_successful == 1727830000
+        assert out is not report
+
+    def test_guest_type_mapping_and_task_only_states(self):
+        report = make_cluster_report()
+        states = dict(report.backup_states)
+        states[999] = replace(states[101])  # task-only vmid, no guest row
+        report = replace(report, backup_states=states)
+        out = apply_pbs_times(report, {("vm", "999"): 1727830000})
+        # 999 has no guest row → no PBS credit (same as build_backup_states)
+        assert out.backup_states[999].pbs_last_ok is None
+        # lxc guest → ("lxc", vmid) key
+        out2 = apply_pbs_times(
+            make_cluster_report(resources=[res(301, gtype="lxc")]),
+            {("lxc", "301"): 1727830000})
+        assert out2.backup_states[301].pbs_last_ok == 1727830000
+
+    def test_scope_fields_set(self):
+        report = make_cluster_report()
+        out = apply_pbs_times(report, {},
+                              scope="unavailable",
+                              reasons=["PBS storage configuration "
+                                       "unavailable"])
+        assert out.pbs_scope == "unavailable"
+        assert out.pbs_scope_reasons == \
+            ("PBS storage configuration unavailable",)
+        # default scope of a built report is ok
+        assert report.pbs_scope == "ok"
+        assert report.pbs_scope_reasons == ()
+
+    def test_build_cluster_report_passes_scope(self):
+        report = build_cluster_report(
+            cluster="alpha", generated_at=1727827200, resources=[res(101)],
+            backup_jobs=[], tasks=[], pbs_scope="ambiguous",
+            pbs_scope_reasons=["shared PBS source, ambiguous guests: vm/1"])
+        assert report.pbs_scope == "ambiguous"
+        assert report.pbs_scope_reasons == \
+            ("shared PBS source, ambiguous guests: vm/1",)

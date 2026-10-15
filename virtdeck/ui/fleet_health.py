@@ -250,6 +250,16 @@ class FleetHealthDialog(QDialog):
                    "unverified").format(nodes=", ".join(old_nodes)),
                 _SEV_PLAIN, key=None, icon="history"))
 
+        if report.pbs_scope != "ok":
+            # audit D5: the PBS freshness of this cluster could not be
+            # determined (or is ambiguous) — the absence of PBS evidence
+            # is not a confirmed absence; task evidence stays decisive
+            details = "; ".join(report.pbs_scope_reasons) \
+                or tr("PBS snapshot sources could not be verified")
+            cluster_item.addChild(self._issue_row(
+                "", tr("PBS freshness unverified"), details,
+                _SEV_WARN, key=None, icon="history"))
+
         sections = {
             "compliance": self._compliance_rows(bundle),
             "drift": self._drift_rows(bundle),

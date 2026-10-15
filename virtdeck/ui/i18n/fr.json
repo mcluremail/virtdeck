@@ -1329,5 +1329,7 @@
   "~{}–{} days left": "~{}–{} jours restants",
   "~{}–∞ days left": "~{}–∞ jours avant remplissage",
   "— none —": "— aucun —",
-  "❌ {} is unavailable": "❌ {} est indisponible"
+  "❌ {} is unavailable": "❌ {} est indisponible",
+  "PBS freshness unverified": "Fraîcheur PBS non vérifiée",
+  "PBS snapshot sources could not be verified": "Impossible de vérifier les sources de snapshots PBS"
 }

@@ -25,7 +25,8 @@ from dataclasses import dataclass, replace
 from .backup_coverage import BackupJob, Coverage, Guest, compute_coverage
 
 # PBS backup-type for PVE guest types.
-_PBS_TYPE = {"qemu": "vm", "lxc": "lxc"}
+PBS_GUEST_TYPES = {"qemu": "vm", "lxc": "lxc"}
+_PBS_TYPE = PBS_GUEST_TYPES
 
 _UPID_TYPE_SLOT = 5
 _UPID_VMID_SLOT = 6
@@ -97,6 +98,16 @@ class ClusterFleetReport:
     task evidence is NOT a confirmed absence (audit D4). PBS snapshots
     remain usable; per-guest task aggregates and job-run evidence do
     not."""
+    pbs_scope: str = "ok"
+    """How trustworthy the PBS evidence of this report is (audit D5):
+    'ok' — the scope was determined (possibly empty: no pbs storages or
+    confirmed absence); 'unavailable' — the scope could not be
+    determined (storage config / PBS source failed): missing PBS
+    evidence is NOT a confirmed absence; 'ambiguous' — a PBS source is
+    shared with another cluster and guest identifiers intersect:
+    unattributable snapshots were excluded."""
+    pbs_scope_reasons: tuple[str, ...] = ()
+    """Human-readable technical details for pbs_scope != 'ok'."""
 
 
 @dataclass(frozen=True)
@@ -286,6 +297,8 @@ def build_cluster_report(
     pbs_last_backups: Mapping[tuple[str, str], int] | None = None,
     tasks_truncated: bool = False,
     errors: Sequence[CollectError] = (),
+    pbs_scope: str = "ok",
+    pbs_scope_reasons: Sequence[str] = (),
 ) -> ClusterFleetReport:
     """Assemble a cluster report from collected data (pure function).
 
@@ -315,4 +328,30 @@ def build_cluster_report(
         storage_usage=tuple(storage_usage or ()),
         tasks_truncated=tasks_truncated,
         tasks_available=tasks is not None,
+        pbs_scope=pbs_scope,
+        pbs_scope_reasons=tuple(pbs_scope_reasons),
     )
+
+
+def apply_pbs_times(report: ClusterFleetReport,
+                    pbs_times: Mapping[tuple[str, str], int],
+                    *, scope: str = "ok",
+                    reasons: Sequence[str] = ()) -> ClusterFleetReport:
+    """Apply scoped PBS evidence to an already built report (pure, D5).
+
+    Only the ``pbs_last_ok`` component and the scope fields change —
+    task and job evidence collected for the report stays untouched. The
+    map must be pre-scoped by ``fleet.pbs_scope`` for THIS cluster: an
+    empty map with ``scope='ok'`` is a confirmed absence, with
+    ``'unavailable'``/``'ambiguous'`` it is not.
+    """
+    pbs_type = {g.vmid: _PBS_TYPE.get(g.vm_type, g.vm_type)
+                for g in report.guests}
+    states = {
+        vmid: (replace(st, pbs_last_ok=pbs_times.get(
+            (pbs_type[vmid], str(vmid))))
+            if vmid in pbs_type else st)
+        for vmid, st in report.backup_states.items()
+    }
+    return replace(report, backup_states=states, pbs_scope=scope,
+                   pbs_scope_reasons=tuple(reasons))

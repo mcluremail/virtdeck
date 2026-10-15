@@ -104,18 +104,28 @@ class FakePveApi:
 
     def add_storage(self, store: str, stype: str = "dir",
                     content: str = "images,rootdir", nodes: str = "",
-                    shared: bool = False) -> FakePveApi:
-        self.storage_cfg.append({"storage": store, "type": stype,
-                                 "content": content, "nodes": nodes,
-                                 "shared": 1 if shared else 0, "enable": 1})
+                    shared: bool = False, **extra) -> FakePveApi:
+        """/storage definition row; ``extra`` carries plugin options
+        (pbs: server, port, datastore, namespace, ...)."""
+        row = {"storage": store, "type": stype, "content": content,
+               "nodes": nodes, "shared": 1 if shared else 0, "enable": 1}
+        row.update(extra)
+        self.storage_cfg.append(row)
         return self
 
     def set_storage_usage(self, node: str, store: str, total: int,
                           used: int) -> FakePveApi:
+        # type/content/shared mirror the /storage definition when one
+        # exists (a pbs storage must not look like a dir in usage rows)
+        cfg = next((s for s in self.storage_cfg
+                    if s.get("storage") == store), None)
         self.storage_usage[(node, store)] = {
-            "storage": store, "node": node, "type": "dir", "content":
-            "images,rootdir", "total": total, "used": used, "avail":
-            max(0, total - used), "active": 1, "enabled": 1, "shared": 0}
+            "storage": store, "node": node,
+            "type": str(cfg["type"]) if cfg else "dir",
+            "content": str(cfg["content"]) if cfg else "images,rootdir",
+            "total": total, "used": used, "avail":
+            max(0, total - used), "active": 1, "enabled": 1,
+            "shared": int(cfg["shared"]) if cfg else 0}
         return self
 
     def set_node_rrddata(self, node: str, series: list[dict]) -> FakePveApi:
@@ -207,6 +217,15 @@ class FakePveApi:
                 return 200, list(self.backup_jobs)
             if parts[:2] == ["cluster", "storage"]:
                 return 200, list(self.storage_cfg)
+            if parts[:1] == ["storage"] and len(parts) == 1:
+                # top-level /storage — storage config (GET /storage)
+                return 200, list(self.storage_cfg)
+            if parts[:1] == ["storage"] and len(parts) == 2:
+                row = next((s for s in self.storage_cfg
+                            if s.get("storage") == parts[1]), None)
+                if row is None:
+                    return 500, {"errors": f"no such storage: {parts[1]}"}
+                return 200, dict(row)
             if parts[:2] == ["cluster", "tasks"]:
                 return 200, list(self.tasks)
             if parts[:2] == ["cluster", "nextid"]:

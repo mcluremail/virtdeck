@@ -13,6 +13,7 @@ from tests.harness import fake_pve_cfg, install_fake_pve
 from tests.harness.scenarios import make_pve_cluster
 from virtdeck.domain.fleet import merge_fleet_reports
 from virtdeck.fleet.collector import collect_cluster, collect_fleet
+from virtdeck.fleet.pbs_scope import PbsBinding
 from virtdeck.provider import ProxmoxProvider
 
 NOW = 1727830000
@@ -31,7 +32,8 @@ def collect_alpha(monkeypatch=None, **kw):
 
 
 def test_happy_path_fanout(alpha):
-    report = collect_alpha()
+    coll = collect_alpha()
+    report = coll.report
     assert report.complete and report.errors == ()
     assert report.generated_at == NOW
     # coverage via the real engine
@@ -59,7 +61,8 @@ def test_partial_failure_version_node(alpha):
     # pveversion from status with /version fallback — both must fail
     alpha.fail["nodes/pve02/status"] = (500, "disk full")
     alpha.fail["nodes/pve02/version"] = (500, "disk full")
-    report = collect_alpha()
+    coll = collect_alpha()
+    report = coll.report
     assert not report.complete
     assert [(e.source, e.cluster) for e in report.errors] \
         == [("version:pve02", "alpha")]
@@ -71,7 +74,8 @@ def test_partial_failure_version_node(alpha):
 
 def test_partial_failure_storage_node(alpha):
     alpha.fail["nodes/pve01/storage"] = (500, "boom")
-    report = collect_alpha()
+    coll = collect_alpha()
+    report = coll.report
     assert not report.complete
     assert report.errors[0].source == "storage:pve01"
     assert report.node_versions  # versions collected
@@ -79,7 +83,8 @@ def test_partial_failure_storage_node(alpha):
 
 def test_failed_resources_no_coverage_but_tasks_alive(alpha):
     alpha.fail["cluster/resources"] = (500, "boom")
-    report = collect_alpha()
+    coll = collect_alpha()
+    report = coll.report
     assert not report.complete
     assert report.coverage is None
     assert report.guests == ()
@@ -94,7 +99,8 @@ def test_whole_cluster_down(monkeypatch):
     alpha = make_pve_cluster("alpha")
     install_fake_pve(monkeypatch, alpha)
     with ProxmoxProvider(fake_pve_cfg("gamma")) as provider:
-        report = collect_cluster(provider, name="gamma", now=NOW)
+        coll = collect_cluster(provider, name="gamma", now=NOW)
+        report = coll.report
     assert not report.complete
     sources = {e.source for e in report.errors}
     assert {"resources", "backup_jobs", "tasks"} <= sources
@@ -102,7 +108,8 @@ def test_whole_cluster_down(monkeypatch):
 
 
 def test_pbs_enrichment(alpha):
-    report = collect_alpha(pbs_last_backups={("vm", "101"): 1727827200})
+    coll = collect_alpha(pbs_last_backups={("vm", "101"): 1727827200})
+    report = coll.report
     s101 = report.backup_states[101]
     assert s101.pbs_last_ok == 1727827200
     s301 = report.backup_states[301]
@@ -116,7 +123,8 @@ def test_task_history_truncation_flag(alpha):
     for i in range(TASK_HISTORY_LIMIT):
         alpha.add_task("pve01", f"UPID:pve01:1:2:67000000:apt:update{i}:root@pam:",
                        task_type="aptupdate", starttime=NOW - i)
-    report = collect_alpha()
+    coll = collect_alpha()
+    report = coll.report
     assert report.tasks_truncated
     assert len(report.backup_states) >= 0  # no crash on non-vzdump rows
 
@@ -141,3 +149,57 @@ def test_collect_fleet_merge(monkeypatch):
     for cluster in fleet.clusters:
         assert {g.vmid for g in cluster.guests} == {101, 102, 201, 301}
         assert cluster.backup_states[301].task_last_failed == 1727827400
+
+
+class TestPbsBindings:
+    """GET /storage → pbs bindings (audit D5): same cycle, one request."""
+
+    def test_bindings_from_storage_config(self, alpha):
+        coll = collect_alpha()
+        report = coll.report
+        assert report.complete  # /storage is now part of the fan-out
+        assert coll.pbs_bindings == (
+            PbsBinding(server=("pbs1.local", 8007), datastore="main",
+                       namespace="", storage_id="pbs1"),)
+        assert coll.pbs_binding_problems == ()
+
+    def test_storage_requested_exactly_once(self, alpha):
+        collect_alpha()
+        assert sum(1 for c in alpha.calls if c[1] == "/storage") == 1
+
+    def test_bindings_needed_false_skips_request(self, alpha):
+        collect_alpha(pbs_bindings_needed=False)
+        assert sum(1 for c in alpha.calls if c[1] == "/storage") == 0
+
+    def test_fetch_failure_isolated(self, alpha):
+        alpha.fail["storage"] = (500, "boom")
+        coll = collect_alpha()
+        report = coll.report
+        assert not report.complete
+        assert [(e.source, e.cluster) for e in report.errors] \
+            == [("pbs_storage_config", "alpha")]
+        assert coll.pbs_bindings is None
+
+    def test_invalid_pbs_row_reported_as_problem(self, alpha):
+        alpha.storage_cfg.append({"storage": "pbs-broken", "type": "pbs",
+                                  "server": "pbs1.local"})
+        coll = collect_alpha()
+        report = coll.report
+        # a rejected binding is a scoping problem, not a collection error
+        assert report.complete
+        assert coll.pbs_binding_problems == \
+            ("storage 'pbs-broken': datastore missing",)
+        assert coll.pbs_bindings == (
+            PbsBinding(server=("pbs1.local", 8007), datastore="main",
+                       storage_id="pbs1"),)
+
+    def test_rows_with_secrets_not_logged(self, alpha, caplog):
+        alpha.storage_cfg.append({"storage": "pbs-sec", "type": "pbs",
+                                  "server": "s.local",
+                                  "password": "top-secret-pw"})
+        import logging
+        with caplog.at_level(logging.DEBUG, logger="virtdeck.fleet"):
+            coll = collect_alpha()
+        assert "top-secret-pw" not in caplog.text
+        assert coll.pbs_binding_problems == \
+            ("storage 'pbs-sec': datastore missing",)

@@ -1329,5 +1329,7 @@
   "~{}–{} days left": "يتبقى ~{}–{} يومًا",
   "~{}–∞ days left": "~{}–∞ يوم قبل الامتلاء",
   "— none —": "— لا شيء —",
-  "❌ {} is unavailable": "❌ {} غير متاح"
+  "❌ {} is unavailable": "❌ {} غير متاح",
+  "PBS freshness unverified": "لم يتم التحقق من حداثة نسخ PBS",
+  "PBS snapshot sources could not be verified": "تعذر التحقق من مصادر لقطات PBS"
 }

@@ -18,9 +18,14 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QObject, Signal
 
-from ..domain.fleet import ClusterFleetReport
-from ..fleet.collector import collect_cluster
-from ..fleet.pbs_source import collect_pbs_last_backups
+from ..domain.fleet import (
+    PBS_GUEST_TYPES,
+    ClusterFleetReport,
+    apply_pbs_times,
+)
+from ..fleet.collector import ClusterCollection, collect_cluster
+from ..fleet.pbs_scope import SCOPE_OK, PbsScope, select_pbs_evidence
+from ..fleet.pbs_source import PbsEvidence, collect_pbs_last_backups
 from ..fleet.runway import RunwayEstimate, estimate_runway
 from ..plugins import create_provider
 
@@ -105,9 +110,10 @@ class FleetHealthSignals(QObject):
 class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
     """Collects Fleet Health across all targets in parallel.
 
-    ``pbs_cfgs`` — optional PBS host configs: last-backup freshness is
-    fetched once (per-server isolation, see ``fleet.pbs_source``) and
-    shared by every cluster's report.
+    ``pbs_cfgs`` — optional PBS host configs: last-backup evidence is
+    fetched once per cycle (per-server isolation, see
+    ``fleet.pbs_source``) and scoped per cluster by that cluster's own
+    pbs-type storage configs (``fleet.pbs_scope``, audit D5 fix).
     """
 
     def __init__(self, targets: list[FleetTarget], pbs_cfgs=None):
@@ -122,35 +128,34 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self) -> None:
-        # KNOWN LIMITATION (audit D5, deliberate for 6.2.1): one PBS map
-        # is shared by every PVE target. A (vmid, type) snapshot time can
-        # therefore be attributed to a guest of the wrong cluster when
-        # several clusters back up the same VMIDs to the same PBS
-        # datastore+namespace. A reliable binding exists in principle
-        # (each cluster only sees the datastores/namespaces its pbs-type
-        # storages reference) but requires carrying (datastore, namespace)
-        # through the whole map contract — proposed as a separate stage,
-        # per the audit's instruction not to invent an unsafe heuristic.
-        pbs_map: dict = {}
+        # audit D5 fix: the PBS evidence keeps its source dimensions
+        # and is scoped per cluster by that cluster's own pbs-type
+        # storage configs (GET /storage), collected in the SAME update
+        # cycle. A cluster whose storage config is unavailable gets NO
+        # PBS evidence (scope "unavailable") — never the fleet-wide map
+        # as a fallback; a source shared with another cluster whose
+        # guest identifiers intersect is excluded as unattributable
+        # ("ambiguous").
+        evidence: PbsEvidence | None = None
         if self._pbs_cfgs:
             try:
-                pbs_map = collect_pbs_last_backups(self._pbs_cfgs)
+                evidence = collect_pbs_last_backups(self._pbs_cfgs)
             except Exception as e:  # PBS is an enrichment source only
                 logger.warning("Fleet Health: PBS sources failed: %s", e)
+                evidence = PbsEvidence()  # nothing collected → unverified
 
-        bundles: list[ClusterBundle] = []
+        results: list[tuple[FleetTarget, ClusterCollection, tuple]] = []
         lock = threading.Lock()
 
         def job(target: FleetTarget) -> None:
             try:
-                bundle = self._collect_one(target, pbs_map)
+                coll, runway = self._collect_one(target)
             except Exception as e:  # never leave the dialog without a signal
                 logger.warning("Fleet Health: %s crashed: %s",
                                target.name, e)
                 return
             with lock:
-                bundles.append(bundle)
-            self._signals.cluster_done.emit(bundle)
+                results.append((target, coll, runway))
 
         workers = min(MAX_COLLECT_THREADS, max(1, len(self._targets)))
         executor = ThreadPoolExecutor(max_workers=workers,
@@ -164,16 +169,49 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
             # the dialog resets on this signal no matter what happened —
             # buttons must never stay disabled forever
             executor.shutdown(wait=False, cancel_futures=True)
+            bundles = self._apply_pbs_scope(results, evidence)
+            for bundle in bundles:
+                self._signals.cluster_done.emit(bundle)
             self._signals.finished_all.emit(bundles)
 
-    def _collect_one(self, target: FleetTarget,
-                     pbs_map: dict | None = None) -> ClusterBundle:
+    def _apply_pbs_scope(
+            self, results: list[tuple[FleetTarget, ClusterCollection,
+                                      tuple]],
+            evidence: PbsEvidence | None) -> list[ClusterBundle]:
+        """Scope the PBS evidence per cluster and finish the bundles.
+
+        Runs once per cycle after ALL clusters are collected: the
+        selector needs every cluster's bindings and guest identifiers
+        (sources shared across clusters are detected fleet-wide). Pure
+        post-processing — no network access here.
+        """
+        scopes = select_pbs_evidence(
+            evidence,
+            {t.name: coll.pbs_bindings for t, coll, _rw in results},
+            {t.name: _guest_pairs(coll.report) for t, coll, _rw in results},
+            {t.name: coll.pbs_binding_problems
+             for t, coll, _rw in results},
+        )
+        bundles: list[ClusterBundle] = []
+        for target, coll, runway in results:
+            scope = scopes.get(target.name) \
+                or PbsScope(flat={}, status=SCOPE_OK, reasons=())
+            report = apply_pbs_times(coll.report, scope.flat,
+                                     scope=scope.status,
+                                     reasons=scope.reasons)
+            bundles.append(ClusterBundle(report=report, runway=runway,
+                                         display=target.display))
+        return bundles
+
+    def _collect_one(self, target: FleetTarget) \
+            -> tuple[ClusterCollection, tuple]:
         name = target.name
         try:
             with create_provider(target.cfg) as provider:
-                report = collect_cluster(provider, name=name,
-                                         pbs_last_backups=pbs_map or None)
-                runway = self._runway(provider, report)
+                coll = collect_cluster(
+                    provider, name=name,
+                    pbs_bindings_needed=bool(self._pbs_cfgs))
+                runway = self._runway(provider, coll.report)
         except Exception as e:  # provider creation is a source too
             logger.warning("Fleet Health: %s failed: %s", name, e)
             from ..domain.fleet import CollectError, build_cluster_report
@@ -181,9 +219,9 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
                 cluster=name, generated_at=0, resources=None,
                 backup_jobs=None,
                 errors=(CollectError(name, "cluster", str(e)),))
+            coll = ClusterCollection(report=report, pbs_bindings=None)
             runway = ()
-        return ClusterBundle(report=report, runway=runway,
-                             display=target.display)
+        return coll, runway
 
     def _runway(self, provider, report: ClusterFleetReport) \
             -> tuple[RunwayEstimate, ...]:
@@ -207,6 +245,12 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
                 logger.debug("Fleet Health runway %s/%s: %s",
                              node, storage, e)
         return tuple(estimates)
+
+
+def _guest_pairs(report: ClusterFleetReport) -> set[tuple[str, str]]:
+    """PBS identities of the report's guests: {(backup-type, vmid)}."""
+    return {(PBS_GUEST_TYPES.get(g.vm_type, g.vm_type), str(g.vmid))
+            for g in report.guests}
 
 
 def _dedup_storage_rows(rows: list[dict]) -> list[dict]:

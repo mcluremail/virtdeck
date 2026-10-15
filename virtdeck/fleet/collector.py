@@ -4,18 +4,25 @@ Fan-out over read-only sources; each source is isolated: one failure
 does not break the others — a partial collection lands in errors and
 the report stays useful. Node versions and storage usage are collected
 per-node (one node's failure does not sink the cluster).
+
+Since the audit D5 fix the collector also fetches the cluster's storage
+configuration (``GET /storage``): its pbs-type rows are the bindings
+that scope the fleet-wide PBS evidence per cluster (``fleet.pbs_scope``)
+— collected in the same update cycle, one extra request per cluster.
 """
 
 from __future__ import annotations
 
 import time
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 from ..domain.fleet import (
     ClusterFleetReport,
     CollectError,
     build_cluster_report,
 )
+from .pbs_scope import PbsBinding, bindings_from_storage_configs
 
 # /cluster/tasks fetch limit: PVE keeps thousands of rows; pulling them
 # all is wasteful, but the cap must be surfaced (tasks_truncated) —
@@ -41,18 +48,55 @@ def _node_version(provider, node: str) -> str:
     return str(ver.get("pveversion") or ver.get("version") or "")
 
 
+@dataclass(frozen=True)
+class ClusterCollection:
+    """Result of ``collect_cluster``: the report + PBS storage bindings.
+
+    ``pbs_bindings is None`` — the storage configuration could not be
+    collected (the scope is undetermined); an empty tuple means the
+    cluster simply has no pbs-type storages (a determined, empty scope).
+    """
+
+    report: ClusterFleetReport
+    pbs_bindings: tuple[PbsBinding, ...] | None = None
+    pbs_binding_problems: tuple[str, ...] = ()
+
+
+def collect_pbs_bindings(provider, *, name: str) \
+        -> tuple[tuple[PbsBinding, ...] | None, tuple[str, ...],
+                 CollectError | None]:
+    """``GET /storage`` → pbs-type storage bindings (isolated source).
+
+    Never raises. Full /storage rows may contain secrets (password) —
+    nothing is logged here; problem messages carry only storage ids.
+    """
+    try:
+        configs = provider.cluster.list_storage_configs() or []
+    except Exception as exc:
+        return None, (), CollectError(cluster=name,
+                                      source="pbs_storage_config",
+                                      message=str(exc))
+    bindings, problems = bindings_from_storage_configs(configs)
+    return tuple(bindings), tuple(problems), None
+
+
 def collect_cluster(
     provider,
     *,
     name: str,
     pbs_last_backups: Mapping[tuple[str, str], int] | None = None,
     now: int | None = None,
-) -> ClusterFleetReport:
+    pbs_bindings_needed: bool = True,
+) -> ClusterCollection:
     """Collect a ClusterFleetReport for one provider (cluster).
 
-    ``pbs_last_backups`` is a ready ``{(backup-type, backup-id): ts}``
-    mapping (from the PBS client via ``last_pbs_backup_times``); iterating
-    over PBS configs is the caller's job.
+    ``pbs_last_backups`` is a ready, pre-scoped ``{(backup-type,
+    backup-id): ts}`` mapping (from the PBS client via
+    ``last_pbs_backup_times``); iterating over PBS configs and scoping
+    the fleet-wide evidence is the caller's job (``fleet.pbs_scope``).
+    ``pbs_bindings_needed=False`` skips the ``GET /storage`` request —
+    the fleet worker passes False when no PBS servers are configured at
+    all (no wasted request; the scope stays "ok").
     """
     generated_at = int(time.time()) if now is None else now
     errors: list[CollectError] = []
@@ -78,6 +122,14 @@ def collect_cluster(
     tasks_truncated = tasks is not None \
         and len(tasks) >= TASK_HISTORY_LIMIT
 
+    if pbs_bindings_needed:
+        pbs_bindings, binding_problems, err = collect_pbs_bindings(
+            provider, name=name)
+        if err:
+            errors.append(err)
+    else:
+        pbs_bindings, binding_problems = None, ()
+
     node_versions: dict[str, str] = {}
     storage_rows: list[dict] = []
     nodes: list[str] = []
@@ -102,7 +154,7 @@ def collect_cluster(
         elif rows is not None:
             storage_rows.extend({"node": node, **row} for row in rows)
 
-    return build_cluster_report(
+    report = build_cluster_report(
         cluster=name,
         generated_at=generated_at,
         resources=resources,
@@ -114,6 +166,8 @@ def collect_cluster(
         tasks_truncated=tasks_truncated,
         errors=errors,
     )
+    return ClusterCollection(report=report, pbs_bindings=pbs_bindings,
+                             pbs_binding_problems=binding_problems)
 
 
 def collect_fleet(providers: Mapping[str, object],
@@ -123,6 +177,6 @@ def collect_fleet(providers: Mapping[str, object],
     """Collect reports for all clusters (sequentially; M4.5 parallelizes)."""
     return [
         collect_cluster(provider, name=name, pbs_last_backups=pbs_last_backups,
-                        now=now)
+                        now=now).report
         for name, provider in providers.items()
     ]
