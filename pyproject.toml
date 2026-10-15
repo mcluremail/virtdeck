@@ -51,7 +51,7 @@ dependencies = [
 # Built-in noVNC console (WS bridge). Without it the app runs fine,
 # the console shows a clear "module not installed" hint.
 novnc = ["websockets>=14.0"]
-dev = ["pytest>=8.0", "pytest-qt>=4.4"]
+dev = ["pytest>=8.0", "pytest-qt>=4.4", "pytest-xdist>=3.6"]
 
 [project.urls]
 "Homepage" = "https://github.com/mcluremail/virtdeck"
