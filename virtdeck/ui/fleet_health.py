@@ -365,6 +365,16 @@ class FleetHealthDialog(QDialog):
     def _runway_rows(self, bundle: ClusterBundle) -> list:
         rows: list = []
         for est in bundle.runway:
+            if est.note:
+                # audit A2: a placeholder estimate (rrddata unreadable) —
+                # an explicit yellow row; "no row" must not read as
+                # "the forecast is fine"
+                rows.append((self._issue_row(
+                    f"{est.storage} ({est.node})",
+                    tr("Runway data unavailable"), est.note, _SEV_WARN,
+                    ("host", est.node, bundle.report.cluster),
+                    icon="storage"), _SEV_WARN))
+                continue
             fill = None
             if est.used_bytes is not None and est.total_bytes:
                 fill = est.used_bytes / est.total_bytes

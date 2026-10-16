@@ -633,6 +633,9 @@ class VmSnapshotDeleteWorker(QRunnable):
                 provider, self.node_name,
                 vm_api.delete_snapshot(self.node_name, self.vmid, self.vm_type, self.snap_name),
                 timeout=120,
+                # DELETE snapshot completes synchronously in PVE — a
+                # null answer IS the success (audit A1)
+                expect_upid=False,
             )
             if ok:
                 try:

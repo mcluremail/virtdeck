@@ -35,6 +35,9 @@ class StorageContentDeleteWorker(QRunnable):
                 provider, self.node_name,
                 storage_api.delete_content(self.node_name, self.storage, self.volid),
                 timeout=self.timeout,
+                # DELETE content completes synchronously in PVE — a null
+                # answer IS the success (audit A1)
+                expect_upid=False,
             )
             if ok:
                 try:
@@ -342,6 +345,8 @@ class StorageConfigSaveWorker(QRunnable):
                     provider, None,
                     provider.cluster.update_storage(self.storage, **self.params),
                     timeout=self.timeout,
+                    # /storage CRUD is synchronous in PVE (audit A1)
+                    expect_upid=False,
                 )
                 verb = tr("Storage updated: {name}")
             else:
@@ -349,6 +354,7 @@ class StorageConfigSaveWorker(QRunnable):
                     provider, None,
                     provider.cluster.create_storage(**self.params),
                     timeout=self.timeout,
+                    expect_upid=False,
                 )
                 verb = tr("Storage created: {name}")
             name = self.params.get("storage", self.storage)
@@ -386,6 +392,8 @@ class StorageConfigDeleteWorker(QRunnable):
                 provider, None,
                 provider.cluster.delete_storage(self.storage),
                 timeout=self.timeout,
+                # /storage CRUD is synchronous in PVE (audit A1)
+                expect_upid=False,
             )
             if ok:
                 _safe_emit(self.signals.result,

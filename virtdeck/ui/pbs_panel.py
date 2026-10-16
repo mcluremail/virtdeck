@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import threading
 
-from PySide6.QtCore import Qt, QThreadPool, Signal
+from PySide6.QtCore import QCoreApplication, Qt, QThreadPool, Signal
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QComboBox,
@@ -102,6 +102,13 @@ class PbsPanel(QWidget):
         self._ops: list[dict] = []
         self._build_ui()
         self.destroyed.connect(lambda *_: self._stop_all_trackers())
+        # audit D1: on application quit the panel may be destroyed too
+        # late — Qt waits for the global thread pool's threads (a
+        # tracker sleeps up to one poll interval between ticks). Stop
+        # the watches proactively.
+        app = QCoreApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._stop_all_trackers)
 
     # ── UI ───────────────────────────────────────────────────────
 

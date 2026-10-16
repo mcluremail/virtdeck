@@ -431,7 +431,6 @@
   "HA Manager": "Менеджер HA",
   "HA Resources": "HA ресурсы",
   "HA error: {err}": "Ошибка HA: {err}",
-  "Job error: {err}": "Ошибка задания: {err}",
   "HA error: {}": "Ошибка HA: {}",
   "HA group": "HA группа",
   "HA group:": "Группа HA:",
@@ -500,6 +499,7 @@
   "Japanese": "Японская",
   "Job create failed: {err}": "Ошибка создания задания: {err}",
   "Job delete failed: {err}": "Ошибка удаления задания: {err}",
+  "Job error: {err}": "Ошибка задания: {err}",
   "Job start could not be confirmed — no task id in the response": "Запуск не подтверждён — в ответе нет идентификатора задачи",
   "Job started": "Задача запущена",
   "Job update failed: {err}": "Ошибка обновления задания: {err}",
@@ -701,6 +701,8 @@
   "Outdated patch level": "Отстаёт по patch-версии",
   "Overwrite if VMID already exists": "Перезаписать, если VMID уже существует",
   "Owner": "Владелец",
+  "PBS freshness unverified": "Свежесть PBS не проверена",
+  "PBS snapshot sources could not be verified": "Источники PBS-снимков не удалось проверить",
   "PCI": "PCI",
   "PVE": "PVE",
   "PVE API unavailable (connection refused)": "PVE API недоступен (соединение отклонено)",
@@ -878,6 +880,7 @@
   "Run job {kind}/{id}": "Запуск задания {kind}/{id}",
   "Run now": "Запустить",
   "Running": "Работает",
+  "Runway data unavailable": "Прогноз заполнения недоступен",
   "Russian": "Русская",
   "SATA": "SATA",
   "SCSI": "SCSI",
@@ -1349,7 +1352,5 @@
   "~{}–{} days left": "~{}–{} дней до заполнения",
   "~{}–∞ days left": "~{}–∞ дней до заполнения",
   "— none —": "— нет —",
-  "❌ {} is unavailable": "❌ {} недоступен",
-  "PBS freshness unverified": "Свежесть PBS не проверена",
-  "PBS snapshot sources could not be verified": "Источники PBS-снимков не удалось проверить"
+  "❌ {} is unavailable": "❌ {} недоступен"
 }

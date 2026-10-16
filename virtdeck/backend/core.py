@@ -65,7 +65,7 @@ def _sanitize_error(exc):
 # ----------------------------------------------------------------------
 # Create API token for VirtDeck
 # ----------------------------------------------------------------------
-def _await_task(provider, node_name, result, timeout=120):
+def _await_task(provider, node_name, result, timeout=120, expect_upid=True):
     """Wait for a PVE async task started by an API call.
 
     PVE returns a UPID for async operations and a data payload for
@@ -77,9 +77,24 @@ def _await_task(provider, node_name, result, timeout=120):
     PVE) from an UNREADABLE one (poll_failed — the outcome is unknown,
     the task may still be running) from a client-side deadline (timeout).
     All error texts are sanitized before they reach the UI.
+
+    Audit A1: for an async operation (``expect_upid=True``, the default)
+    a 200 answer without a UPID is NOT a success — the request may have
+    started a task nobody is tracking, so the outcome is reported as
+    unknown. Synchronous endpoints (DELETE content, /storage CRUD,
+    config updates, snapshot delete) pass ``expect_upid=False``: a null
+    answer IS the success, a UPID is still awaited if one arrives.
+
+    Audit B1: non-failure texts lead with "outcome unknown" — the op
+    keys wrap them as "X failed: {err}", so the composite must not
+    claim a failure for a task that is merely unfinished/unreadable.
     """
     upid = result.get("data", result) if isinstance(result, dict) else result
     if not (isinstance(upid, str) and upid.startswith("UPID:")):
+        if expect_upid:
+            return False, ("outcome unknown — the server did not return "
+                           "a task id (UPID); check the task list on "
+                           "the node")
         return True, ""
     status, detail = provider.tasks.poll(
         node_name, upid, timeout=timeout, interval=1.0
@@ -92,7 +107,8 @@ def _await_task(provider, node_name, result, timeout=120):
         return False, _sanitize_error(
             f"task outcome unknown — status poll failed: {detail}")
     if status == "timeout":
-        return False, f"still running after {int(timeout)} s"
+        return False, (f"outcome unknown — the task is still running "
+                       f"after {int(timeout)} s")
     # defensive: unknown poll status — treat like unreadable state
     return False, _sanitize_error(detail) if detail else f"unknown task status: {status}"
 

@@ -26,8 +26,9 @@ from ..domain.fleet import (
 from ..fleet.collector import ClusterCollection, collect_cluster
 from ..fleet.pbs_scope import SCOPE_OK, PbsScope, select_pbs_evidence
 from ..fleet.pbs_source import PbsEvidence, collect_pbs_last_backups
-from ..fleet.runway import RunwayEstimate, estimate_runway
+from ..fleet.runway import UNAVAILABLE, RunwayEstimate, estimate_runway
 from ..plugins import create_provider
+from .core import _sanitize_error
 
 logger = logging.getLogger(__name__)
 
@@ -151,9 +152,13 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
             try:
                 coll, runway = self._collect_one(target)
             except Exception as e:  # never leave the dialog without a signal
+                # audit A3: a crash INSIDE _collect_one's own error path
+                # used to drop the cluster from the dialog without a
+                # trace; build the same stub here — the cluster always
+                # appears with its error row
                 logger.warning("Fleet Health: %s crashed: %s",
                                target.name, e)
-                return
+                coll, runway = self._error_collection(target.name, e)
             with lock:
                 results.append((target, coll, runway))
 
@@ -214,14 +219,20 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
                 runway = self._runway(provider, coll.report)
         except Exception as e:  # provider creation is a source too
             logger.warning("Fleet Health: %s failed: %s", name, e)
-            from ..domain.fleet import CollectError, build_cluster_report
-            report = build_cluster_report(
-                cluster=name, generated_at=0, resources=None,
-                backup_jobs=None,
-                errors=(CollectError(name, "cluster", str(e)),))
-            coll = ClusterCollection(report=report, pbs_bindings=None)
-            runway = ()
+            coll, runway = self._error_collection(name, e)
         return coll, runway
+
+    def _error_collection(self, name: str, exc: Exception) \
+            -> tuple[ClusterCollection, tuple]:
+        """A cluster whose collection crashed still gets a report with
+        the error row (audit A3): a cluster missing from the dialog
+        would read as "no problems" — the partial-result-as-full lie."""
+        from ..domain.fleet import CollectError, build_cluster_report
+        report = build_cluster_report(
+            cluster=name, generated_at=0, resources=None,
+            backup_jobs=None,
+            errors=(CollectError(name, "cluster", str(exc)),))
+        return ClusterCollection(report=report, pbs_bindings=None), ()
 
     def _runway(self, provider, report: ClusterFleetReport) \
             -> tuple[RunwayEstimate, ...]:
@@ -233,8 +244,19 @@ class FleetHealthWorker:  # not QRunnable — runs via threading.Thread
                 series = provider.rrd.get_storage_rrddata(
                     node, storage, timeframe=RUNWAY_TIMEFRAME)
             except Exception as e:
+                # audit A2: a storage whose series cannot be read must
+                # not be silently indistinguishable from a healthy one —
+                # emit a placeholder; the dialog renders an explicit
+                # "unavailable" row (the D4 "unverified" pattern)
                 logger.debug("Fleet Health runway %s/%s: %s",
                              node, storage, e)
+                estimates.append(RunwayEstimate(
+                    node=node, storage=storage, used_bytes=None,
+                    total_bytes=None, slope_bytes_per_day=None,
+                    days_left=None, days_left_low=None,
+                    days_left_high=None, points_used=0,
+                    quality=UNAVAILABLE,
+                    note=_sanitize_error(e)[:120]))
                 continue
             # the forecast itself is a source too: one degenerate series
             # must not sink the already-collected cluster report

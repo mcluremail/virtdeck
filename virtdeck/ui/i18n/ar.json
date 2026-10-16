@@ -431,7 +431,6 @@
   "HA Manager": "مدير HA",
   "HA Resources": "موارد HA",
   "HA error: {err}": "خطأ HA: {err}",
-  "Job error: {err}": "خطأ في المهمة: {err}",
   "HA error: {}": "خطأ HA: {}",
   "HA group": "مجموعة HA",
   "HA group:": "مجموعة HA:",
@@ -500,6 +499,7 @@
   "Japanese": "اليابانية",
   "Job create failed: {err}": "فشل إنشاء المهمة: {err}",
   "Job delete failed: {err}": "فشل حذف المهمة: {err}",
+  "Job error: {err}": "خطأ في المهمة: {err}",
   "Job start could not be confirmed — no task id in the response": "لم يتم تأكيد بدء المهمة — لا يوجد معرّف مهمة في الاستجابة",
   "Job started": "بدأت المهمة",
   "Job update failed: {err}": "فشل تحديث المهمة: {err}",
@@ -701,6 +701,8 @@
   "Outdated patch level": "متأخر بمستوى التصحيحات",
   "Overwrite if VMID already exists": "استبدال إذا كان المعرف موجوداً",
   "Owner": "المالك",
+  "PBS freshness unverified": "لم يتم التحقق من حداثة نسخ PBS",
+  "PBS snapshot sources could not be verified": "تعذر التحقق من مصادر لقطات PBS",
   "PCI": "PCI",
   "PVE": "PVE",
   "PVE API unavailable (connection refused)": "PVE API غير متاح (تم رفض الاتصال)",
@@ -878,6 +880,7 @@
   "Run job {kind}/{id}": "تشغيل المهمة {kind}/{id}",
   "Run now": "تشغيل الآن",
   "Running": "قيد التشغيل",
+  "Runway data unavailable": "توقّع الامتلاء غير متاح",
   "Russian": "الروسية",
   "SATA": "SATA",
   "SCSI": "SCSI",
@@ -1349,7 +1352,5 @@
   "~{}–{} days left": "يتبقى ~{}–{} يومًا",
   "~{}–∞ days left": "~{}–∞ يوم قبل الامتلاء",
   "— none —": "— لا شيء —",
-  "❌ {} is unavailable": "❌ {} غير متاح",
-  "PBS freshness unverified": "لم يتم التحقق من حداثة نسخ PBS",
-  "PBS snapshot sources could not be verified": "تعذر التحقق من مصادر لقطات PBS"
+  "❌ {} is unavailable": "❌ {} غير متاح"
 }

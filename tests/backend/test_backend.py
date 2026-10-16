@@ -176,8 +176,23 @@ class TestAwaitTask:
         p.tasks.poll = MagicMock(return_value=poll_return)
         return p
 
-    def test_non_upid_result_is_synchronous(self):
+    def test_non_upid_async_is_unknown_outcome(self):
+        """A1: an async operation answered without a UPID must NOT read
+        as success — the request may have started a task nobody tracks."""
         ok, err = backend._await_task(FakeProvider(), "n1", {"data": None})
+        assert ok is False
+        assert "outcome unknown" in err and "UPID" in err
+
+    def test_non_upid_sync_op_is_success(self):
+        """Sync endpoints (expect_upid=False): a null answer IS the
+        success; a UPID (if the server sends one anyway) is awaited."""
+        ok, err = backend._await_task(FakeProvider(), "n1",
+                                      {"data": None}, expect_upid=False)
+        assert ok is True and err == ""
+
+    def test_sync_none_result_is_success(self):
+        ok, err = backend._await_task(FakeProvider(), "n1", None,
+                                      expect_upid=False)
         assert ok is True and err == ""
 
     def test_stopped_ok(self):
@@ -209,7 +224,11 @@ class TestAwaitTask:
         p = self._provider(("timeout", ""))
         ok, err = backend._await_task(p, "n1", "UPID:x", timeout=120)
         assert ok is False
-        assert err == "still running after 120 s"
+        # B1: the text must lead with the honest state — op-level keys
+        # wrap it as "X failed: {err}", so "failed: outcome unknown…"
+        # must not contradict itself the way "failed: still running" did
+        assert err == ("outcome unknown — the task is still running "
+                       "after 120 s")
 
     def test_unknown_status_defensive(self):
         p = self._provider(("weird", ""))
@@ -493,12 +512,17 @@ class TestBulkVmActionWorker:
             calls.append((node, vmid, vm_type, action))
             if failures and vmid in failures:
                 raise failures[vmid]
+            # real PVE answers an async action with a UPID; the fake
+            # provider's poll reports it finished OK (audit A1: a null
+            # answer would now honestly read as "outcome unknown")
+            return f"UPID:n1:{vmid}:{action}"
 
         class ActionProvider(FakeProvider):
             def __init__(self, cfg, timeout=10):
                 super().__init__(cfg, timeout)
                 providers.append(self)
                 self.vms = SimpleNamespace(perform_action=fake_perform)
+                self.tasks.poll = MagicMock(return_value=("stopped", "OK"))
 
         monkeypatch.setattr(backend.vm, "create_provider", ActionProvider)
 

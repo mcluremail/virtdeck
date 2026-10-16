@@ -431,7 +431,6 @@
   "HA Manager": "Gestor de HA",
   "HA Resources": "Recursos HA",
   "HA error: {err}": "Error de HA: {err}",
-  "Job error: {err}": "Error de tarea: {err}",
   "HA error: {}": "Error de HA: {}",
   "HA group": "Grupo HA",
   "HA group:": "Grupo de HA:",
@@ -500,6 +499,7 @@
   "Japanese": "Japonés",
   "Job create failed: {err}": "Error al crear tarea: {err}",
   "Job delete failed: {err}": "Error al eliminar tarea: {err}",
+  "Job error: {err}": "Error de tarea: {err}",
   "Job start could not be confirmed — no task id in the response": "No se pudo confirmar el inicio de la tarea: no hay ID de tarea en la respuesta",
   "Job started": "Tarea iniciada",
   "Job update failed: {err}": "Error al actualizar tarea: {err}",
@@ -701,6 +701,8 @@
   "Outdated patch level": "Nivel de parches obsoleto",
   "Overwrite if VMID already exists": "Sobrescribir si el VMID ya existe",
   "Owner": "Propietario",
+  "PBS freshness unverified": "Frescura de PBS sin verificar",
+  "PBS snapshot sources could not be verified": "No se pudieron verificar las fuentes de snapshots de PBS",
   "PCI": "PCI",
   "PVE": "PVE",
   "PVE API unavailable (connection refused)": "API de PVE no disponible (conexión rechazada)",
@@ -878,6 +880,7 @@
   "Run job {kind}/{id}": "Ejecutando tarea {kind}/{id}",
   "Run now": "Ejecutar",
   "Running": "En ejecución",
+  "Runway data unavailable": "Pronóstico de llenado no disponible",
   "Russian": "Ruso",
   "SATA": "SATA",
   "SCSI": "SCSI",
@@ -1349,7 +1352,5 @@
   "~{}–{} days left": "quedan ~{}–{} días",
   "~{}–∞ days left": "~{}–∞ días para llenarse",
   "— none —": "— ninguno —",
-  "❌ {} is unavailable": "❌ {} no está disponible",
-  "PBS freshness unverified": "Frescura de PBS sin verificar",
-  "PBS snapshot sources could not be verified": "No se pudieron verificar las fuentes de snapshots de PBS"
+  "❌ {} is unavailable": "❌ {} no está disponible"
 }

@@ -1,6 +1,7 @@
 """Tests for PbsPanel — PBS datastore/snapshot/job views (B17 stage 2)."""
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -593,6 +594,14 @@ class TestTaskTracking:
         panel._on_tracker_finished(key, stub_tracker[0])
         panel._render_ops()
         panel._stop_all_trackers()
+
+    def test_about_to_quit_stops_trackers(self, panel):
+        """D1: on application quit the watches must end even if the
+        panel is not destroyed yet — pool threads must not delay exit."""
+        ev = threading.Event()
+        panel._trackers[("srv", "UPID:quit")] = (None, ev)
+        QCoreApplication.instance().aboutToQuit.emit()
+        assert ev.is_set()
 
 
 def test_task_tracking_i18n_keys_translated():

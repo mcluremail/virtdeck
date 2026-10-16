@@ -431,7 +431,6 @@
   "HA Manager": "HA管理器",
   "HA Resources": "HA资源",
   "HA error: {err}": "HA错误：{err}",
-  "Job error: {err}": "任务错误：{err}",
   "HA error: {}": "HA错误：{}",
   "HA group": "HA 组",
   "HA group:": "HA组：",
@@ -500,6 +499,7 @@
   "Japanese": "日语",
   "Job create failed: {err}": "创建作业失败：{err}",
   "Job delete failed: {err}": "删除作业失败：{err}",
+  "Job error: {err}": "任务错误：{err}",
   "Job start could not be confirmed — no task id in the response": "任务启动未能确认——响应中没有任务 ID",
   "Job started": "任务已启动",
   "Job update failed: {err}": "更新作业失败：{err}",
@@ -701,6 +701,8 @@
   "Outdated patch level": "补丁级别落后",
   "Overwrite if VMID already exists": "如果虚拟机ID已存在则覆盖",
   "Owner": "所有者",
+  "PBS freshness unverified": "PBS 备份新鲜度未验证",
+  "PBS snapshot sources could not be verified": "无法核验 PBS 快照来源",
   "PCI": "PCI",
   "PVE": "PVE",
   "PVE API unavailable (connection refused)": "PVE API不可用(连接被拒绝)",
@@ -878,6 +880,7 @@
   "Run job {kind}/{id}": "运行作业 {kind}/{id}",
   "Run now": "立即运行",
   "Running": "运行中",
+  "Runway data unavailable": "容量预测不可用",
   "Russian": "俄语",
   "SATA": "SATA",
   "SCSI": "SCSI",
@@ -1349,7 +1352,5 @@
   "~{}–{} days left": "约 {}–{} 天后写满",
   "~{}–∞ days left": "~{}–∞ 天后写满",
   "— none —": "— 无 —",
-  "❌ {} is unavailable": "❌ {} 不可用",
-  "PBS freshness unverified": "PBS 备份新鲜度未验证",
-  "PBS snapshot sources could not be verified": "无法核验 PBS 快照来源"
+  "❌ {} is unavailable": "❌ {} 不可用"
 }

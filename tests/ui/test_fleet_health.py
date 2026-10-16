@@ -29,7 +29,7 @@ from virtdeck.domain.fleet import (
     build_cluster_report,
 )
 from virtdeck.fleet.pbs_source import PbsEvidence
-from virtdeck.fleet.runway import RunwayEstimate
+from virtdeck.fleet.runway import UNAVAILABLE, RunwayEstimate
 from virtdeck.fleet.sprawl import scan_sprawl
 from virtdeck.ui.fleet_health import KEY_ROLE, FleetHealthDialog
 from virtdeck.ui.theme import Color
@@ -521,6 +521,64 @@ def test_runway_open_ended_ci_and_stale_data(qtbot, api):
     assert "data 5 days old" in row.text(3)
 
 
+def test_runway_read_failure_becomes_unavailable_note():
+    """A2: a storage whose rrddata cannot be read gets an explicit
+    placeholder estimate — silence must not read as healthy."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    worker = FleetHealthWorker([])
+    report = SimpleNamespace(storage_usage=[
+        {"node": "pve01", "storage": "local", "active": 1, "shared": 0},
+        {"node": "pve01", "storage": "big", "active": 1, "shared": 0},
+    ])
+
+    def rrd(node, storage, timeframe):
+        if storage == "local":
+            raise RuntimeError("rrd read failed")
+        return [{"time": 1000.0, "used": 10.0, "total": 100.0},
+                {"time": 2000.0, "used": 20.0, "total": 100.0}]
+
+    prov = MagicMock()
+    prov.rrd.get_storage_rrddata.side_effect = rrd
+    ests = worker._runway(prov, report)
+    by_store = {e.storage: e for e in ests}
+    assert by_store["local"].note
+    assert by_store["local"].days_left is None
+    assert by_store["local"].quality == UNAVAILABLE
+    assert not by_store["big"].note  # healthy path untouched
+
+
+def test_runway_unavailable_row_rendered(qtbot, api):
+    """A2 UI: the placeholder renders as an explicit yellow row —
+    "no row" must not be indistinguishable from "forecast is fine"."""
+    dlg = make_dialog(qtbot)
+    wait_loaded(qtbot, dlg)
+    report = dlg._bundles[0].report
+    est = RunwayEstimate(node="pve01", storage="local", used_bytes=None,
+                         total_bytes=None, slope_bytes_per_day=None,
+                         days_left=None, days_left_low=None,
+                         days_left_high=None, points_used=0,
+                         quality=UNAVAILABLE, note="connection failed")
+    dlg._bundles = [ClusterBundle(report=report, runway=(est,))]
+    dlg._render()
+    row = find_issue(dlg._tree, "Runway data unavailable")
+    assert row is not None
+    assert row.foreground(2).color() == QColor(Color.WARNING)
+    assert "local" in row.text(1) and "connection failed" in row.text(3)
+
+
+def test_runway_unavailable_i18n_key():
+    """Audit A2: the unavailable-row key must exist in all locales."""
+    import json
+    from pathlib import Path
+    i18n_dir = Path(__file__).parents[1].parent / "virtdeck" / "ui" / "i18n"
+    for lang in ("ru", "ar", "zh", "fr", "es"):
+        data = json.loads((i18n_dir / f"{lang}.json").read_text(
+            encoding="utf-8"))
+        assert "Runway data unavailable" in data, lang
+
+
 class TestDedupStorageRows:
     def test_shared_forecast_once_per_cluster(self):
         from virtdeck.backend.fleet import _dedup_storage_rows
@@ -702,7 +760,12 @@ def test_worker_t14_secrets_not_logged(qtbot, monkeypatch, caplog):
 
 def test_worker_crash_still_emits_finished(qtbot, monkeypatch):
     """A crash inside a job must not leave the dialog without the
-    finished_all signal (buttons would stay disabled forever)."""
+    finished_all signal (buttons would stay disabled forever).
+
+    Audit A3: the cluster must also not silently disappear — a crash
+    inside _collect_one's own error path lands as a stub report with
+    the CollectError row, so a missing cluster can never read as
+    "no problems"."""
     alpha = make_pve_cluster("alpha")
     install_fake_pve(monkeypatch, alpha)
     worker = FleetHealthWorker(
@@ -714,7 +777,11 @@ def test_worker_crash_still_emits_finished(qtbot, monkeypatch):
     monkeypatch.setattr(FleetHealthWorker, "_collect_one", boom)
     with qtbot.waitSignal(worker.finished_all, timeout=10000) as blocker:
         worker.start()
-    assert blocker.args[0] == []
+    bundles = blocker.args[0]
+    assert {b.report.cluster for b in bundles} == {"alpha"}
+    errors = bundles[0].report.errors
+    assert any(e.source == "cluster" and "boom" in e.message
+               for e in errors)
 
 
 def test_cluster_display_label(qtbot, monkeypatch):

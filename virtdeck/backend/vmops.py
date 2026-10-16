@@ -401,6 +401,8 @@ class ConvertToVmWorker(QRunnable):
                 provider, self.node_name,
                 vm_api.post_config(self.node_name, self.vmid, "qemu", template=0),
                 timeout=120,
+                # PUT config completes synchronously in PVE (audit A1)
+                expect_upid=False,
             )
             if not ok:
                 try:

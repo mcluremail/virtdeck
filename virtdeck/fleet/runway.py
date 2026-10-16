@@ -9,7 +9,8 @@ approximation, only with a sufficiently dense series).
 
 Forecast quality: ``ok`` (n >= 8, CI present) / ``sparse`` (few points —
 point estimate without CI) / ``no-trend`` (slope <= 0 — never fills) /
-``no-capacity`` (unknown total) / ``no-data`` (fewer than 2 points).
+``no-capacity`` (unknown total) / ``no-data`` (fewer than 2 points) /
+``unavailable`` (placeholder — the series could not be read at all).
 """
 
 from __future__ import annotations
@@ -28,6 +29,9 @@ SPARSE = "sparse"
 NO_TREND = "no-trend"
 NO_CAPACITY = "no-capacity"
 NO_DATA = "no-data"
+UNAVAILABLE = "unavailable"
+"""Placeholder estimate (backend-built): the series could not be read
+at all — no forecast exists; ``note`` carries the sanitized reason."""
 
 
 @dataclass(frozen=True)
@@ -50,6 +54,10 @@ class RunwayEstimate:
     """Age of the freshest series point against the caller's ``now`` —
     None when unknown; a stale series means the node was unreachable and
     the forecast silently builds on old data unless surfaced."""
+    note: str = ""
+    """Audit A2: non-empty — this estimate is a placeholder (the rrddata
+    series could not be read); the UI shows an explicit "unavailable"
+    row instead of silently treating the storage as healthy."""
 
 
 def _valid_points(series: Sequence[dict]) -> list[tuple[float, float]]:
