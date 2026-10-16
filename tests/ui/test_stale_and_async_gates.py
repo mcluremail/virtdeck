@@ -56,6 +56,11 @@ class _OptimisticRecorder:
     def confirm(self, *a):
         self.calls.append(("confirm", *a))
 
+    def pending_action(self, host_name, vmid):
+        # Real API: returns the in-flight action or None. The recorder
+        # never leaves anything pending.
+        return None
+
 
 def _patch_action_worker(monkeypatch, workers):
     def _make(*a, **kw):

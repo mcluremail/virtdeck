@@ -221,6 +221,9 @@ class MainWindow(QMainWindow):
         # host_name -> error text of hosts whose soft worker failed: their
         # previous known-good data is kept, nodes are only flagged ERROR
         self._soft_errors: dict[str, str] = {}
+        # U20: auto-refresh pauses when every host fails authorization
+        # (expired/revoked token); a manual Refresh un-pauses it.
+        self._auto_refresh_paused = False
         if QSystemTrayIcon.isSystemTrayAvailable():
             self._init_tray()
 
@@ -257,6 +260,13 @@ class MainWindow(QMainWindow):
         self.status_bar = self.statusBar()
         self.status_label = QLabel("")
         self.status_bar.addPermanentWidget(self.status_label)
+        # U8/GAP-4: an explicit "when did the data last arrive" stamp.
+        # The status line itself no longer shows a live clock that used
+        # to be mistaken for the data update time.
+        self._updated_label = QLabel("")
+        self._updated_label.setStyleSheet(
+            f"color: {Color.TEXT_SEC}; padding-right: 8px;")
+        self.status_bar.addPermanentWidget(self._updated_label)
 
         self._refresh_spinner = QLabel("")
         self._refresh_spinner.setStyleSheet(f"color: {Color.TEXT_SEC}; padding-right: 8px;")
@@ -1025,6 +1035,14 @@ class MainWindow(QMainWindow):
         if vm and vm.template:
             self._notifications.show(tr("Lifecycle actions are not available for templates"), error=True)
             return
+        # GAP-6: a second click while the first task is still in flight
+        # would send a duplicate worker that PVE rejects with a confusing
+        # "already running" error. Block for the duration of the flight.
+        if self._optimistic.pending_action(host_name, vmid) is not None:
+            self._notifications.show(
+                tr("An action for VM {vmid} is already in progress").format(
+                    vmid=vmid))
+            return
         vm_type = (vm.vm_type.value if vm else "qemu")
         if not confirm_vm_action(action, vmid, parent=self):
             return
@@ -1547,7 +1565,7 @@ class MainWindow(QMainWindow):
         dialog.host_input.setText(cfg.get("host", ""))
         dialog.host_input.setEnabled(False)
         dialog.user_input.setText(cfg.get("user", "root@pam"))
-        dialog.trust_ssl_cb.setChecked(bool(cfg.get("trust_ssl", True)))
+        dialog.trust_ssl_cb.setChecked(bool(cfg.get("trust_ssl", False)))
         dialog.proxy_input.setText(str(cfg.get("proxy") or ""))
         if dialog.exec() != AddServerDialog.Accepted:
             return
@@ -1624,6 +1642,12 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def refresh_data(self):
+        # U20: a manual (or programmatic) refresh is an explicit retry —
+        # re-enable the auto-refresh timer paused by an auth failure.
+        if self._auto_refresh_paused:
+            self._auto_refresh_paused = False
+            self.refresh_timer.start()
+            self._update_status_bar()
         # Stage 5.1.2: sync the indexes with the current nodes_cfg before
         # anything consumes them (worker filters, result gates).
         self._rebuild_cfg_indexes()
@@ -2057,6 +2081,7 @@ class MainWindow(QMainWindow):
                 node_repo=self._node_repo, vm_repo=self._vm_repo,
             )
             self.last_refresh_ts = time.time()
+            self._mark_data_updated()
             self._update_status_bar()
             from ..config import save_resources_cache
             save_resources_cache(
@@ -2108,8 +2133,38 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------
     # Background (soft) refresh
     # ------------------------------------------------------------
+    def _maybe_pause_auto_refresh(self):
+        """U20: every host of the cycle failed with an auth error — stop
+        the 20 s hammering, notify once, let a manual Refresh retry."""
+        if not self._soft_errors or self._auto_refresh_paused:
+            return
+        import re
+        auth_pat = re.compile(
+            r"\bhttp\s*401\b|unauthorized|no ticket|"
+            r"ticket expired|invalid ticket", re.I)
+        auth_hosts = {h for h, err in self._soft_errors.items()
+                      if auth_pat.search(err or "")}
+        if not auth_hosts:
+            return
+        active = {c.get("name") for c in self.nodes_cfg
+                  if not c.get("skip") and c.get("type") != "pbs"}
+        if not active or auth_hosts != active:
+            return
+        self._auto_refresh_paused = True
+        self.refresh_timer.stop()
+        self._notifications.show(
+            tr("Auto-refresh paused: authorization failed on all hosts. "
+               "Press Refresh to retry."),
+            error=True,
+        )
+        self._update_status_bar()
+
     def soft_refresh(self):
         now = time.time()
+        # U20: auto-refresh stays paused after an auth failure until the
+        # user explicitly retries with Refresh.
+        if self._auto_refresh_paused:
+            return
         # Stage 5.1.2: sync the indexes with the current nodes_cfg before
         # the worker filters and result gates consume them (same as the
         # hard cycle entry).
@@ -2286,6 +2341,10 @@ class MainWindow(QMainWindow):
                             "_display_name": h,
                         }
                         self._node_repo.add(DomainNode.from_pve(err_node, h, "", False))
+                # U20: an expired/revoked token makes every 20 s cycle
+                # re-fail and spam notifications — pause auto-refresh
+                # until the user presses Refresh.
+                self._maybe_pause_auto_refresh()
                 new_sig = _repo_signature(
                     self._node_repo, self._vm_repo, self._storage_repo)
                 if old_sig != new_sig:
@@ -2311,6 +2370,10 @@ class MainWindow(QMainWindow):
                 self.detail_panel.all_ha_groups = self.all_ha_groups
                 self._detect_status_changes()
                 self._update_status_bar()
+                # U8/GAP-4: at least one host answered this cycle — the
+                # polled data is confirmed fresh, move the stamp.
+                if self._soft_node_repo.all():
+                    self._mark_data_updated()
                 from ..config import save_resources_cache
                 save_resources_cache(
                     [dict(n) for n in self._node_repo.all()],
@@ -2496,9 +2559,14 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------
     # Status bar
     # ------------------------------------------------------------
-    def _update_status_bar(self):
+    def _mark_data_updated(self):
+        """U8/GAP-4: call when a final data snapshot has been applied."""
         from datetime import datetime
-        now_str = datetime.now().strftime("%H:%M:%S")
+        self._updated_label.setText(
+            tr("Updated {time}").format(
+                time=datetime.now().strftime("%H:%M:%S")))
+
+    def _update_status_bar(self):
         nodes = self._node_repo.all()
         vms = self._vm_repo.all()
         hosts_ok = sum(1 for n in nodes if n.status is NodeStatus.ONLINE)
@@ -2528,7 +2596,8 @@ class MainWindow(QMainWindow):
             parts.append(tr("Errors: {n}").format(n=hosts_err))
         if self._offline_mode:
             parts.append(tr("Offline (cached)"))
-        parts.append(now_str)
+        if self._auto_refresh_paused:
+            parts.append(tr("Auto-refresh paused"))
         self.status_label.setText("  ".join(p for p in parts if p))
 
     def _do_first_selection(self):

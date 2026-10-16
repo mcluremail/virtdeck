@@ -2,7 +2,7 @@ import weakref
 from enum import IntEnum
 from importlib.util import find_spec
 
-from ..theme import Color
+from ..theme import Color, usage_color
 
 _HEADER_STYLE = (f"QHeaderView::section {{ padding: 6px 8px; border: none;"
                  f" border-bottom: 1px solid {Color.BORDER_LIGHT}; }}")
@@ -120,12 +120,9 @@ def _progress_style(value, max_val=100):
         pct = 0
     elif pct > 100:
         pct = 100
-    if pct < 50:
-        color = Color.STATUS_OK
-    elif pct < 80:
-        color = Color.STATUS_WARN
-    else:
-        color = Color.STATUS_ERR
+    # A8: shared usage contract (75/90, green/amber/red) — this helper
+    # used to run its own 50/80 dictionary.
+    color = usage_color(pct)
     return (
         f"QProgressBar::chunk {{ background: {color}; border-radius: 3px; }}"
         f"QProgressBar {{ border: none; border-radius: 3px;"

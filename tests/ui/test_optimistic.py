@@ -216,6 +216,38 @@ def test_mainwindow_optimistic_flow(main_window, offline, make_vm):
     assert mw.tree_panel._pending_vm_keys == set()
 
 
+def test_second_click_while_in_flight_is_blocked(main_window, offline,
+                                                 make_vm):
+    """GAP-6: a repeated action while the first task is in flight must
+    not spawn a duplicate worker — PVE would reject it with a confusing
+    "already running" error. One informational notice instead."""
+    violations, pool = offline
+    mw = main_window
+    mw._cfg_by_name["h1"] = {"name": "h1", "type": "pve"}
+    mw._vm_repo.add(
+        make_vm(vmid=100, name="alpha", host_name="h1", node="pve01",
+                status=VmStatus.RUNNING)
+    )
+
+    mw._on_vm_action_from_tree("h1", "pve01", 100, "start")
+    assert len(pool.started) == 1
+    assert mw._optimistic.pending_keys() == {("h1", 100)}
+
+    # Second click while in flight: no new worker, notice shown.
+    mw._on_vm_action_from_tree("h1", "pve01", 100, "start")
+    assert len(pool.started) == 1
+    assert mw._optimistic.pending_keys() == {("h1", 100)}
+
+    # After the first task reports, the action is available again.
+    worker = pool.started[-1]
+    worker.signals.action_error.emit("boom")
+    assert mw._optimistic.pending_keys() == set()
+    mw._on_vm_action_from_tree("h1", "pve01", 100, "start")
+    assert len(pool.started) == 2
+    pool.started[-1].signals.action_result.emit("ok")
+    assert mw._optimistic.pending_keys() == set()
+
+
 def test_mainwindow_actions_still_offline(main_window, offline):
     """The M0.2 contract survives optimistic integration: running actions
     on MainWindow makes no network calls."""

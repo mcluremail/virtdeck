@@ -844,7 +844,7 @@ class HostTabs:
             panel.card_uptime.set_title(tr("Address"))
             address = host_cfg.get("host", "") if host_cfg else ""
             panel.card_uptime.set_value(address)
-            ssl_state = tr("trusted") if (host_cfg and host_cfg.get("trust_ssl", True)) else tr("untrusted")
+            ssl_state = tr("trusted") if (host_cfg and host_cfg.get("trust_ssl", False)) else tr("untrusted")
             panel.card_uptime.set_subtitle(f"SSL {ssl_state}")
 
             panel.info_stack.setCurrentIndex(1)
@@ -1014,7 +1014,7 @@ class HostTabs:
 
             address = host_cfg.get("host", "") if host_cfg else ""
             panel.card_uptime.set_value(address)
-            ssl_state = tr("trusted") if (host_cfg and host_cfg.get("trust_ssl", True)) else tr("untrusted")
+            ssl_state = tr("trusted") if (host_cfg and host_cfg.get("trust_ssl", False)) else tr("untrusted")
             panel.card_uptime.set_subtitle(f"SSL {ssl_state}")
 
             panel.info_stack.setCurrentIndex(1)

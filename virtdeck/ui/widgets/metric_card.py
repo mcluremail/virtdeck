@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QSizePolicy, QVBoxLayout
 
-from ..theme import TOKENS, Color
+from ..theme import TOKENS, Color, usage_color
 from .spinner import SpinnerWidget
 
 # Live cards: inline styles are baked in at creation time, so they must be
@@ -120,14 +120,9 @@ class MetricCard(QFrame):
         if self._bar is None:
             return
         pct = self._progress
-        if self._bar_color:
-            bar_color = self._bar_color
-        elif pct >= 80:
-            bar_color = Color.STATUS_ERR
-        elif pct >= 50:
-            bar_color = Color.STATUS_WARN
-        else:
-            bar_color = Color.ACCENT
+        # A8: shared usage contract (75/90, green/amber/red) instead of
+        # a private 50/80 dictionary with an accent-colored normal bar.
+        bar_color = self._bar_color if self._bar_color else usage_color(pct)
         self._bar.setStyleSheet(
             f"QProgressBar {{ background: {Color.TRACK}; border: none; border-radius: 3px; }}"
             f"QProgressBar::chunk {{ background: {bar_color}; border-radius: 3px; }}"

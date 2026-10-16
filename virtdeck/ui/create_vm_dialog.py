@@ -150,33 +150,35 @@ class CreateVmDialog(QDialog):
             data = json.loads(raw)
         except (TypeError, ValueError):
             return
-        if data.get("cores"):
+        # U22: combo indexes are 0-based, so a saved first entry (0) must
+        # not be treated as "unset" — restore on presence, not truthiness.
+        if data.get("cores") is not None:
             self.cores_spin.setValue(data["cores"])
-        if data.get("sockets"):
+        if data.get("sockets") is not None:
             self.sockets_spin.setValue(data["sockets"])
-        if data.get("memory"):
+        if data.get("memory") is not None:
             self.memory_spin.setValue(data["memory"])
-        if data.get("ostype"):
+        if data.get("ostype") is not None:
             self.ostype_combo.setCurrentIndex(data["ostype"])
-        if data.get("cpu"):
+        if data.get("cpu") is not None:
             self.cpu_combo.setCurrentIndex(data["cpu"])
-        if data.get("vga"):
+        if data.get("vga") is not None:
             self.vga_combo.setCurrentIndex(data["vga"])
-        if data.get("chipset"):
+        if data.get("chipset") is not None:
             self.chipset_combo.setCurrentIndex(data["chipset"])
-        if data.get("bios"):
+        if data.get("bios") is not None:
             self.bios_combo.setCurrentIndex(data["bios"])
-        if data.get("scsi"):
+        if data.get("scsi") is not None:
             self.scsi_combo.setCurrentIndex(data["scsi"])
-        if data.get("bus"):
+        if data.get("bus") is not None:
             self.bus_combo.setCurrentIndex(data["bus"])
-        if data.get("cache"):
+        if data.get("cache") is not None:
             self.cache_combo.setCurrentIndex(data["cache"])
-        if data.get("disk_size"):
+        if data.get("disk_size") is not None:
             self.disk_size_spin.setValue(data["disk_size"])
-        if data.get("model"):
+        if data.get("model") is not None:
             self.model_combo.setCurrentIndex(data["model"])
-        if data.get("queues"):
+        if data.get("queues") is not None:
             self.queues_spin.setValue(data["queues"])
         if data.get("start") is not None:
             self.start_check.setChecked(bool(data["start"]))
@@ -441,10 +443,14 @@ class CreateVmDialog(QDialog):
         self.cancel_btn.clicked.connect(self.reject)
         footer.addWidget(self.cancel_btn)
 
-        form.addLayout(footer)
+        # U19: the action row stays fixed under the scroll area — on a
+        # short window the footer used to scroll out of view together
+        # with the long form, leaving the dialog without visible actions.
+        footer.setContentsMargins(20, 10, 20, 14)
 
         scroll.setWidget(content)
         layout.addWidget(scroll)
+        layout.addLayout(footer)
 
         self._on_node_changed(0)
 

@@ -618,7 +618,7 @@ class TreePanel(QWidget):
                         and host_cfg.get("type") != "pbs"):
                     self._add_action_specs(menu, sel, ("host.create_cluster",))
                 menu.addSeparator()
-                trust_ssl_current = bool(host_cfg.get("trust_ssl", True)) if host_cfg else True
+                trust_ssl_current = bool(host_cfg.get("trust_ssl", False)) if host_cfg else False
                 if trust_ssl_current:
                     trust_action = QAction(tr("Trust SSL certificate") + " — " + tr("trusted"), self.tree)
                     trust_action.setIcon(get_icon("lock"))

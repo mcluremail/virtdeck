@@ -155,6 +155,21 @@ _MONO_CANDIDATES = (
 )
 
 
+def usage_color(pct):
+    """A8: the single usage-level contract for every surface.
+
+    One threshold pair (75 % warn / 90 % err) and one color family
+    (SUCCESS / WARNING / DANGER) for metric cards, PBS datastores,
+    pool tables — "color = meaning, identical on every surface".
+    *pct* is 0..100.
+    """
+    if pct >= 90:
+        return Color.DANGER
+    if pct >= 75:
+        return Color.WARNING
+    return Color.SUCCESS
+
+
 def enable_column_reorder(header):
     """Allow dragging columns by their header.
 

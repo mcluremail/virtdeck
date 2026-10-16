@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 from ..pbs.workers import TRACKER_TERMINAL, PbsApiWorker, PbsTaskTracker
 from .i18n import tr
 from .icons import get_icon
-from .theme import Color, enable_column_reorder
+from .theme import Color, enable_column_reorder, usage_color
 
 VERIFY_COLORS = {
     "ok": Color.STATUS_OK,
@@ -75,11 +75,8 @@ def _fmt_size(num) -> str:
 
 
 def _usage_color(usage: float) -> str:
-    if usage >= 0.9:
-        return Color.DANGER
-    if usage >= 0.75:
-        return Color.WARNING
-    return Color.SUCCESS
+    """A8: shared usage contract (usage is 0..1 here)."""
+    return usage_color(usage * 100.0)
 
 
 class PbsPanel(QWidget):
