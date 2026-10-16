@@ -44,6 +44,7 @@ class PbsClient:
         self._base = f"https://{self._host}:{self._port}/api2/json"
         self._ticket: str = ""
         self._csrf: str = ""
+        self._node: str = ""  # cached node name for task tracking (D16)
         # http — DI seam of the test harness (M4.0): transport substitution.
         self._http = http if http is not None else requests.Session()
         if cfg.get("trust_ssl", False):
@@ -81,7 +82,18 @@ class PbsClient:
         if resp.status_code != 200:
             raise PbsError(
                 f"PBS auth failed (HTTP {resp.status_code})", resp.status_code)
-        data = (resp.json() or {}).get("data") or {}
+        # audit 6.3.2b D11: HTTP 200 does not prove a PBS contract body
+        # (a transparent proxy may answer HTML).  A parse failure must
+        # stay inside the provider error contract — no raw ValueError,
+        # and no raw body in the message (it may carry secrets).
+        try:
+            payload = resp.json()
+        except ValueError as e:
+            raise PbsError(
+                f"PBS auth failed: unparseable response (HTTP {resp.status_code})",
+                resp.status_code) from e
+        data = payload.get("data") if isinstance(payload, dict) else None
+        data = data or {}
         ticket = data.get("ticket", "")
         csrf = data.get("CSRFPreventionToken", "")
         if not ticket:
@@ -178,12 +190,81 @@ class PbsClient:
         return self.get(f"/admin/{kind}") or []
 
     def run_job(self, kind: str, job_id: str) -> str:
-        """Start a job, return the UPID."""
-        return self.post(f"/admin/{kind}/{_q(job_id)}/run") or ""
+        """Start a job; return the confirmed UPID (audit 6.3.3 D16)."""
+        return self._start_task(f"/admin/{kind}/{_q(job_id)}/run")
 
     def verify_datastore(self, store: str) -> str:
-        """Start a datastore verify job, return the UPID."""
-        return self.post(f"/admin/datastore/{_q(store)}/verify") or ""
+        """Start a datastore verify job; return the confirmed UPID."""
+        return self._start_task(f"/admin/datastore/{_q(store)}/verify")
+
+    def _start_task(self, path: str) -> str:
+        """POST a start request; return the UPID it confirmed.
+
+        HTTP 200 alone does not prove the start: the response must carry
+        the task id.  A degraded 200 (data:null / wrong type) means the
+        outcome is UNKNOWN — the server may have accepted the request.
+        The same is true for a transport failure while the request was
+        in flight.  Both raise an explicit "outcome unknown" error and
+        are never retried automatically (a silent second start could
+        duplicate the job).  Definitive HTTP errors (auth, permissions,
+        validation) pass through unchanged — the start did not happen.
+        """
+        had_ticket = bool(self._ticket)
+        try:
+            data = self.post(path)
+        except PbsError as exc:
+            if had_ticket and exc.status_code == 0:
+                # transport-class failure with credentials in hand: the
+                # request itself was (or may have been) sent
+                raise PbsError(
+                    "job start outcome unknown (the request was not "
+                    f"confirmed): {exc}", 0) from exc
+            raise
+        if isinstance(data, str) and data.strip():
+            return data.strip()
+        raise PbsError(
+            "job start outcome unknown: the server accepted the request "
+            "(HTTP 200) but the response does not contain a task id "
+            "(UPID) — check the task list on the server", 200)
+
+    # ── task tracking (audit 6.3.3 D16) ──────────────────────────
+
+    def node_name(self) -> str:
+        """The PBS server's own node name (GET /nodes, first entry).
+
+        PBS is single-node; ``/nodes`` reports the real hostname.  The
+        result is cached per client (one fresh provider per worker).
+        """
+        if self._node:
+            return self._node
+        for item in self.nodes():
+            if isinstance(item, dict):
+                name = item.get("name")
+                if isinstance(name, str) and name:
+                    self._node = name
+                    return name
+        raise PbsError(
+            "could not determine the PBS node name (unexpected /nodes "
+            "response)")
+
+    def forget_node(self) -> None:
+        """Drop the cached node name (e.g. after a 404 on task status)."""
+        self._node = ""
+
+    def task_status(self, node: str, upid: str) -> dict:
+        """GET /nodes/{node}/tasks/{upid}/status — raw task status.
+
+        Confirmed response shape (PBS ``api2/node/tasks.rs``): a dict
+        with ``status`` ('running'|'stopped') and, once stopped,
+        ``exitstatus`` ('OK', 'Error: <msg>', or 'unknown').  Anything
+        that is not a dict is an unreadable response, not a status.
+        """
+        data = self.get(f"/nodes/{_q(node)}/tasks/{_q(upid)}/status")
+        if not isinstance(data, dict):
+            raise PbsError(
+                f"unexpected task status response for {upid!r} "
+                f"(not an object)")
+        return data
 
     def forget_snapshot(self, store: str, backup_type: str, backup_id: str,
                         backup_time: int, ns: str = "") -> None:

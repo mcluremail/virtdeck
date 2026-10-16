@@ -475,6 +475,46 @@ class TestClusterAPI:
         api = ClusterAPI(mock_session)
         assert api.next_vmid() == 102
 
+    # --- audit 6.3.2b D17: the int() conversion must stay inside the
+    # typed error hierarchy (no raw ValueError/TypeError leaks) --------
+
+    def test_next_vmid_int(self, mock_session):
+        mock_session.proxmox.cluster.nextid.get = MagicMock(return_value=103)
+        api = ClusterAPI(mock_session)
+        assert api.next_vmid() == 103
+
+    def test_next_vmid_none_is_api_error(self, mock_session):
+        mock_session.proxmox.cluster.nextid.get = MagicMock(return_value=None)
+        api = ClusterAPI(mock_session)
+        with pytest.raises(ProxmoxApiError, match="nextid"):
+            api.next_vmid()
+
+    def test_next_vmid_empty_string_is_api_error(self, mock_session):
+        mock_session.proxmox.cluster.nextid.get = MagicMock(return_value="")
+        api = ClusterAPI(mock_session)
+        with pytest.raises(ProxmoxApiError, match="nextid"):
+            api.next_vmid()
+
+    def test_next_vmid_garbage_string_is_api_error(self, mock_session):
+        mock_session.proxmox.cluster.nextid.get = MagicMock(return_value="abc")
+        api = ClusterAPI(mock_session)
+        with pytest.raises(ProxmoxApiError, match="nextid"):
+            api.next_vmid()
+
+    def test_next_vmid_dict_without_data_is_api_error(self, mock_session):
+        mock_session.proxmox.cluster.nextid.get = MagicMock(
+            return_value={"unexpected": "shape"})
+        api = ClusterAPI(mock_session)
+        with pytest.raises(ProxmoxApiError, match="nextid"):
+            api.next_vmid()
+
+    def test_next_vmid_error_does_not_produce_an_id(self, mock_session):
+        # a broken response must never be silently converted to a valid id
+        mock_session.proxmox.cluster.nextid.get = MagicMock(return_value=None)
+        api = ClusterAPI(mock_session)
+        with pytest.raises(ProxmoxError):
+            api.next_vmid()
+
     def test_list_storage_configs(self, mock_session):
         mock_session.proxmox.storage.get = MagicMock(
             return_value=[{"storage": "local", "type": "dir"}]
@@ -766,6 +806,48 @@ class TestClusterAPI:
         chain.assert_called_with("job1")
         chain.return_value.delete.assert_called_once()
         mock_session.proxmox.cluster.jobs.assert_not_called()
+
+    # --- audit 6.3.2b D12: the legacy /cluster/backup path must mark
+    # "outcome unknown" symmetric to the /cluster/jobs path -------------
+
+    def test_create_backup_job_pve7_timeout_outcome_unknown(self, mock_session):
+        mock_session.proxmox.cluster.backup.post = MagicMock(
+            side_effect=ProxmoxTimeoutError("read timed out"))
+        api = ClusterAPI(mock_session)
+        with pytest.raises(ProxmoxTimeoutError,
+                           match="may still have been applied"):
+            api.create_backup_job({"storage": "local"}, pve_major=7)
+        # no automatic retry: the POST was issued exactly once
+        assert mock_session.proxmox.cluster.backup.post.call_count == 1
+
+    def test_update_backup_job_pve7_timeout_outcome_unknown(self, mock_session):
+        chain = mock_session.proxmox.cluster.backup
+        chain.return_value.put = MagicMock(
+            side_effect=ProxmoxTimeoutError("read timed out"))
+        api = ClusterAPI(mock_session)
+        with pytest.raises(ProxmoxTimeoutError,
+                           match="may still have been applied"):
+            api.update_backup_job("job1", {"schedule": "03:00"}, pve_major=7)
+        assert chain.return_value.put.call_count == 1
+
+    def test_delete_backup_job_pve7_timeout_outcome_unknown(self, mock_session):
+        chain = mock_session.proxmox.cluster.backup
+        chain.return_value.delete = MagicMock(
+            side_effect=ProxmoxTimeoutError("read timed out"))
+        api = ClusterAPI(mock_session)
+        with pytest.raises(ProxmoxTimeoutError,
+                           match="may still have been applied"):
+            api.delete_backup_job("job1", pve_major=7)
+        assert chain.return_value.delete.call_count == 1
+
+    def test_create_backup_job_pve7_validation_not_masked(self, mock_session):
+        # only timeouts are re-framed; a 400 reaches the user as-is
+        mock_session.proxmox.cluster.backup.post = MagicMock(
+            side_effect=ProxmoxApiError("storage 'x' does not exist",
+                                        status_code=400))
+        api = ClusterAPI(mock_session)
+        with pytest.raises(ProxmoxApiError, match="storage 'x'"):
+            api.create_backup_job({"storage": "x"}, pve_major=7)
 
 
 class TestNodeAPI:

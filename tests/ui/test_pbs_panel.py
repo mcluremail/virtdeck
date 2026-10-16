@@ -161,8 +161,10 @@ class TestDatastoreView:
         panel.show_datastore("pbs1", "main")
         panel._fill_jobs([PbsJob(id="s1", kind="sync", store="main")])
         # simulate the context-menu action without exec()
-        panel._start("run_job", "sync", "s1", tag=("run", "pbs1"))
-        assert panel.started[-1] == ("run_job", ("sync", "s1"), ("run", "pbs1"), {})
+        panel._start("run_job", "sync", "s1",
+                     tag=("run", "pbs1", "sync", "s1"))
+        assert panel.started[-1] == (
+            ("run_job", ("sync", "s1"), ("run", "pbs1", "sync", "s1"), {}))
 
 
 class TestUsageColors:
@@ -366,3 +368,252 @@ class TestPbsWorkerTracking:
         # void — no callback into the destroyed widget, no exception.
         w.run()
         assert p.made[0]._client.closed
+
+
+# --- audit 6.3.2b D10: jobs result states reach the UI ----------------------
+
+
+def _job(kind="sync", id_="s1", store="main"):
+    return PbsJob(id=id_, kind=kind, store=store, schedule="daily")
+
+
+class TestJobsResultStates:
+    def _with_server(self, panel):
+        panel._server = "pbs1"  # fixture leaves it empty; tags filter on it
+        return panel
+
+    def test_partial_load_marks_unread_kinds(self, panel):
+        """Partially loaded jobs are shown with an explicit note —
+        a failed kind must not look like a confident 'no jobs'."""
+        self._with_server(panel)._on_worker_done(
+            ("jobs", "pbs1"), ([_job()], ["verify", "prune"]))
+        assert panel._jobs_table.rowCount() == 1
+        text = panel._status_lbl.text()
+        assert "verify" in text and "prune" in text
+
+    def test_empty_success_is_not_an_error(self, panel):
+        self._with_server(panel)._on_worker_done(("jobs", "pbs1"), ([], []))
+        assert panel._jobs_table.rowCount() == 0
+        assert panel._status_lbl.text() == ""
+
+    def test_full_success_after_partial_clears_the_note(self, panel):
+        self._with_server(panel)._on_worker_done(
+            ("jobs", "pbs1"), ([], ["verify"]))
+        assert panel._status_lbl.text()
+        panel._on_worker_done(("jobs", "pbs1"), ([_job()], []))
+        assert panel._status_lbl.text() == ""
+
+    def test_stale_server_result_is_ignored(self, panel):
+        self._with_server(panel)._on_worker_done(
+            ("jobs", "other"), ([_job()], ["verify"]))
+        assert panel._jobs_table.rowCount() == 0
+        assert panel._status_lbl.text() == ""
+
+    def test_total_failure_shows_error_text(self, panel):
+        self._with_server(panel)._on_worker_failed(
+            ("jobs", "pbs1"),
+            "could not read jobs (sync, verify, prune): boom")
+        assert "could not read jobs" in panel._status_lbl.text()
+
+
+# ── audit 6.3.3 D16: PBS task tracking in the panel ─────────────────────
+
+import json
+
+from PySide6.QtCore import QRunnable
+
+from virtdeck.pbs.workers import _TrackerSignals
+
+
+def _upid(n=1):
+    return f"UPID:pbs:1:2:{n}:syncjob:j{n}:root@pam"
+
+
+@pytest.fixture
+def stub_tracker(monkeypatch):
+    """Replace PbsTaskTracker with a no-thread stub; return started list."""
+    started = []
+
+    class StubTracker(QRunnable):
+        def __init__(self, cfg, upid, **kw):
+            super().__init__()
+            self.cfg = cfg
+            self.upid = upid
+            self.kw = kw
+            self.signals = _TrackerSignals()
+            started.append(self)
+
+        def run(self):  # never actually polled in UI tests
+            pass
+
+    monkeypatch.setattr(pbs_panel_mod, "PbsTaskTracker", StubTracker)
+    return started
+
+
+class TestTaskTracking:
+    def test_run_done_starts_tracker_and_row(self, panel, stub_tracker):
+        panel._server = "pbs1"
+        panel._on_worker_done(
+            ("run", "pbs1", "sync", "j1"), _upid())
+        assert len(stub_tracker) == 1
+        assert stub_tracker[0].upid == _upid()
+        row = panel._ops[0]
+        assert row["state"] == "starting"
+        assert "sync/j1" in row["op"]
+        assert panel._ops_table.rowCount() == 1
+
+    def test_verify_done_tracks_datastore(self, panel, stub_tracker):
+        panel._server = "pbs1"
+        panel._on_worker_done(("verify", "pbs1", "main"), _upid(2))
+        assert stub_tracker[0].upid == _upid(2)
+        assert "main" in panel._ops[0]["op"]
+
+    def test_run_done_without_upid_is_no_success(self, panel, stub_tracker):
+        # contract drift guard: a start without UPID must not read as
+        # a confirmed start
+        panel._server = "pbs1"
+        panel._on_worker_done(("run", "pbs1", "sync", "j1"), "")
+        assert stub_tracker == []
+        assert "not be confirmed" in panel._status_lbl.text()
+
+    def test_stale_run_result_ignored(self, panel, stub_tracker):
+        # a run that finished while the user switched servers must not
+        # write anything into the current server's UI (§6.9)
+        panel._server = "pbs1"
+        panel._on_worker_done(("run", "other", "sync", "j1"), _upid())
+        assert stub_tracker == []
+        assert panel._status_lbl.text() == ""
+        assert panel._ops == []
+
+    def test_stale_verify_result_ignored(self, panel, stub_tracker):
+        panel._server = "pbs1"
+        panel._on_worker_done(("verify", "other", "main"), _upid())
+        assert stub_tracker == []
+        assert panel._status_lbl.text() == ""
+
+    def test_duplicate_upid_not_tracked_twice(self, panel, stub_tracker):
+        panel._server = "pbs1"
+        panel._start_tracker("pbs1", _upid(), "Run job sync/j1")
+        panel._start_tracker("pbs1", _upid(), "Run job sync/j1")
+        assert len(stub_tracker) == 1
+        assert "already being tracked" in panel._status_lbl.text()
+
+    def test_tracking_limit_is_honest(self, panel, stub_tracker):
+        panel._server = "pbs1"
+        limit = pbs_panel_mod._MAX_PBS_TRACKERS
+        for i in range(limit):
+            panel._start_tracker("pbs1", _upid(i + 1), "op")
+        assert len(stub_tracker) == limit
+        panel._start_tracker("pbs1", _upid(limit + 1), "op")
+        assert len(stub_tracker) == limit  # no new watcher
+        assert "not be watched" in panel._status_lbl.text()
+
+    def test_states_and_terminal_result_persist(self, panel, stub_tracker):
+        panel._server = "pbs1"
+        panel._start_tracker("pbs1", _upid(), "Run job sync/j1")
+        key = ("pbs1", _upid())
+        panel._on_tracker_update(key, ("running", ""))
+        assert panel._ops[0]["state"] == "running"
+        panel._on_tracker_update(key, ("failed", "Error: verify boom"))
+        assert panel._ops[0]["state"] == "failed"
+        assert "Task failed" in panel._status_lbl.text()
+        # worker finished → resources freed, the result stays readable
+        panel._on_tracker_finished(key, stub_tracker[0])
+        assert key not in panel._trackers
+        assert panel._ops[0]["state"] == "failed"
+        assert "verify boom" in panel._ops_table.item(0, 2).text()
+
+    def test_unknown_and_timeout_states(self, panel, stub_tracker):
+        panel._server = "pbs1"
+        panel._start_tracker("pbs1", _upid(), "op")
+        key = ("pbs1", _upid())
+        panel._on_tracker_update(key, ("unknown", "status unreadable"))
+        assert panel._ops[0]["state"] == "unknown"
+        assert "outcome unknown" in panel._status_lbl.text()
+        panel._on_tracker_update(key, ("timeout", ""))
+        assert panel._ops[0]["state"] == "timeout"
+        assert "timed out" in panel._status_lbl.text()
+
+    def test_success_state_shown(self, panel, stub_tracker):
+        panel._server = "pbs1"
+        panel._start_tracker("pbs1", _upid(), "op")
+        panel._on_tracker_update(("pbs1", _upid()), ("success", ""))
+        assert panel._ops[0]["state"] == "success"
+        assert "successfully" in panel._status_lbl.text()
+
+    def test_stale_server_update_ignored(self, panel, stub_tracker):
+        panel._server = "pbs1"
+        panel._start_tracker("pbs1", _upid(), "op")
+        panel._on_tracker_update(("other", _upid()), ("failed", "x"))
+        assert panel._ops[0]["state"] == "starting"
+        assert panel._status_lbl.text() == ""
+
+    def test_server_switch_filters_rows(self, panel, stub_tracker):
+        panel.update_nodes_cfg([
+            _CFG,
+            {"name": "pbs2", "type": "pbs", "host": "h2", "port": 8007,
+             "user": "root@pam", "token_value": "s"},
+        ])
+        panel._server = "pbs1"
+        panel._start_tracker("pbs1", _upid(), "op")
+        assert panel._ops_table.rowCount() == 1
+        panel.show_server("pbs2")
+        assert panel._ops_table.rowCount() == 0  # other server's ops hidden
+        panel.show_server("pbs1")
+        assert panel._ops_table.rowCount() == 1
+
+    def test_close_sets_stop_events(self, panel, stub_tracker):
+        panel._server = "pbs1"
+        panel._start_tracker("pbs1", _upid(), "op")
+        assert len(stub_tracker) == 1
+        panel._stop_all_trackers()
+        assert stub_tracker[0].kw["stop_event"].is_set()
+
+    def test_finished_tracker_removed_from_registry(self, panel, stub_tracker):
+        panel._server = "pbs1"
+        panel._start_tracker("pbs1", _upid(), "op")
+        key = ("pbs1", _upid())
+        panel._on_tracker_finished(key, stub_tracker[0])
+        assert key not in panel._trackers
+
+    def test_update_after_widget_destroyed_is_safe(self, stub_tracker):
+        # §6.10: a tracker finishing after the panel is destroyed must
+        # not touch dead Qt objects (guards + Qt auto-disconnect).  No
+        # qtbot registration: the C++ object is deleted by hand here and
+        # pytest-qt must not try to close it again.
+        panel = PbsPanel()
+        panel.update_nodes_cfg([_CFG])
+        panel._server = "pbs1"
+        panel._start_tracker("pbs1", _upid(), "op")
+        assert len(stub_tracker) == 1
+        key = ("pbs1", _upid())
+        panel.deleteLater()
+        QCoreApplication.sendPostedEvents(panel, QEvent.DeferredDelete)
+        panel._on_tracker_update(key, ("success", ""))   # must not raise
+        panel._on_tracker_finished(key, stub_tracker[0])
+        panel._render_ops()
+        panel._stop_all_trackers()
+
+
+def test_task_tracking_i18n_keys_translated():
+    """Every new D16 UI key must exist in all shipped locales."""
+    from pathlib import Path
+
+    keys = [
+        "Starting", "Success", "Failed", "Unknown outcome",
+        "Watch timed out", "Run job {kind}/{id}",
+        "Verify datastore {store}", "Operation",
+        "This task is already being tracked",
+        "Tracking limit reached — the result will not be watched; "
+        "check the server",
+        "Task finished successfully", "Task failed: {detail}",
+        "Task outcome unknown: {detail}",
+        "Task watch timed out — it may still be running on the server",
+        "Job start could not be confirmed — no task id in the response",
+    ]
+    i18n_dir = Path(__file__).parents[1].parent / "virtdeck" / "ui" / "i18n"
+    for lang in ("ru", "ar", "zh", "fr", "es"):
+        data = json.loads((i18n_dir / f"{lang}.json").read_text(
+            encoding="utf-8"))
+        missing = [k for k in keys if k not in data]
+        assert not missing, f"{lang}: missing {missing}"

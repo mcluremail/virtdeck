@@ -40,11 +40,20 @@ class ClusterAPI:
     def next_vmid(self) -> int:
         """GET /cluster/nextid — next free VMID."""
         result = self._s.call(self._s.proxmox.cluster.nextid.get)
-        if isinstance(result, str):
+        # audit 6.3.2b D17: the int() conversion must stay inside the
+        # typed error hierarchy — int(None)/int("") would otherwise leak
+        # a raw ValueError/TypeError past ProxmoxError, and workers show
+        # the raw text to the user.  A broken response never becomes a
+        # "valid" id.
+        try:
+            if isinstance(result, str):
+                return int(result)
+            if isinstance(result, dict):
+                return int(result.get("data", result))
             return int(result)
-        if isinstance(result, dict):
-            return int(result.get("data", result))
-        return int(result)
+        except (TypeError, ValueError) as exc:
+            raise ProxmoxApiError(
+                f"unexpected /cluster/nextid response: {result!r}") from exc
 
     # -- Storage config (B4) --
 
@@ -221,7 +230,12 @@ class ClusterAPI:
                 return self._s.call(self._s.proxmox.cluster.jobs.post, **p)
             except ProxmoxTimeoutError as exc:
                 self._raise_ambiguous(exc, "job creation")
-        return self._s.call(self._s.proxmox.cluster.backup.post, **params)
+        # audit 6.3.2b D12: the legacy path carries the same "outcome
+        # unknown" semantics as /cluster/jobs — no raw timeout, no retry
+        try:
+            return self._s.call(self._s.proxmox.cluster.backup.post, **params)
+        except ProxmoxTimeoutError as exc:
+            self._raise_ambiguous(exc, "job creation")
 
     def update_backup_job(self, job_id: str, params: dict, pve_major: int = 7) -> object:
         """PUT /cluster/jobs/{id} (PVE8+) or /cluster/backup/{id}.
@@ -240,7 +254,11 @@ class ClusterAPI:
                 )
             except ProxmoxTimeoutError as exc:
                 self._raise_ambiguous(exc, "the update")
-        return self._s.call(self._s.proxmox.cluster.backup(_q(job_id)).put, **p)
+        try:
+            return self._s.call(self._s.proxmox.cluster.backup(_q(job_id)).put,
+                                **p)
+        except ProxmoxTimeoutError as exc:
+            self._raise_ambiguous(exc, "the update")
 
     def delete_backup_job(self, job_id: str, pve_major: int = 7) -> object:
         """DELETE /cluster/jobs/{id} (PVE8+) or /cluster/backup/{id}.
@@ -257,4 +275,8 @@ class ClusterAPI:
                 )
             except ProxmoxTimeoutError as exc:
                 self._raise_ambiguous(exc, "the deletion")
-        return self._s.call(self._s.proxmox.cluster.backup(_q(job_id)).delete)
+        try:
+            return self._s.call(
+                self._s.proxmox.cluster.backup(_q(job_id)).delete)
+        except ProxmoxTimeoutError as exc:
+            self._raise_ambiguous(exc, "the deletion")

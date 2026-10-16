@@ -9,6 +9,8 @@ All data loads through PbsApiWorker; tags route results back.
 
 from __future__ import annotations
 
+import threading
+
 from PySide6.QtCore import Qt, QThreadPool, Signal
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
@@ -26,7 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..pbs.workers import PbsApiWorker
+from ..pbs.workers import TRACKER_TERMINAL, PbsApiWorker, PbsTaskTracker
 from .i18n import tr
 from .icons import get_icon
 from .theme import Color, enable_column_reorder
@@ -40,6 +42,24 @@ VERIFY_COLORS = {
 # Cap on concurrent PBS requests started by this panel (audit 6.3.2a D9):
 # workers used to start unbounded via QThreadPool directly.
 _MAX_PBS_WORKERS = 16
+
+# Separate, smaller cap for task trackers (audit 6.3.3 D16): each tracker
+# is long-lived (polls one UPID until a terminal outcome), so they do not
+# share the short-request budget — but they are still bounded, and hitting
+# the cap is reported honestly instead of failing the task.
+_MAX_PBS_TRACKERS = 8
+
+# Tracker state → (i18n label, status color).  Terminal states come from
+# PbsTaskTracker (success/failed/unknown/timeout); "starting" is the
+# panel-side state between a confirmed UPID and the first status read.
+_TRACKER_STATE_STYLE = {
+    "starting": ("Starting", Color.TEXT_SEC),
+    "running": ("Running", Color.TEXT_SEC),
+    "success": ("Success", Color.STATUS_OK),
+    "failed": ("Failed", Color.DANGER),
+    "unknown": ("Unknown outcome", Color.WARNING),
+    "timeout": ("Watch timed out", Color.WARNING),
+}
 
 
 def _fmt_size(num) -> str:
@@ -72,8 +92,16 @@ class PbsPanel(QWidget):
         self._cfg_by_name: dict[str, dict] = {}
         self._server = ""
         self._store = ""
+        self._jobs_note = ""  # D10: last partial-jobs note, to clear it later
         self._workers: set = set()
+        # Task tracking (audit 6.3.3 D16): (server, upid) -> (tracker,
+        # stop_event).  _ops holds the display entries (newest first),
+        # per server, so finished results stay readable after the
+        # tracker worker is gone.
+        self._trackers: dict = {}
+        self._ops: list[dict] = []
         self._build_ui()
+        self.destroyed.connect(lambda *_: self._stop_all_trackers())
 
     # ── UI ───────────────────────────────────────────────────────
 
@@ -94,6 +122,21 @@ class PbsPanel(QWidget):
 
         self._stack = QStackedWidget(self)
         layout.addWidget(self._stack, 1)
+
+        # Operations strip (audit 6.3.3 D16): active and recently
+        # finished PBS task watches, filtered by the current server.
+        # Hidden while there is nothing to show.
+        self._ops_table = QTableWidget(0, 3)
+        self._ops_table.setHorizontalHeaderLabels(
+            [tr("Operation"), tr("State"), tr("Detail")])
+        self._ops_table.verticalHeader().setVisible(False)
+        self._ops_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self._ops_table.setSelectionMode(QTableWidget.SingleSelection)
+        self._ops_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self._ops_table.setMaximumHeight(110)
+        self._ops_table.horizontalHeader().setStretchLastSection(True)
+        self._ops_table.setVisible(False)
+        layout.addWidget(self._ops_table)
 
         # page 0: server view (datastores table)
         self._ds_table = QTableWidget(0, 5)
@@ -235,6 +278,7 @@ class PbsPanel(QWidget):
         self._server = server_name
         self._store = ""
         self._title_lbl.setText(f"{server_name} — Proxmox Backup Server")
+        self._render_ops()
         if self._cfg(server_name).get("_ambiguous"):
             # Stage 5.1.2 §3.1: conflicting connections are not refreshed.
             self._set_status(tr(
@@ -254,6 +298,7 @@ class PbsPanel(QWidget):
         self._server = server_name
         self._store = store
         self._title_lbl.setText(f"{server_name} / {store}")
+        self._render_ops()
         self._stack.setCurrentIndex(1)
         if not same:
             self._tabs.setCurrentIndex(0)
@@ -346,21 +391,175 @@ class PbsPanel(QWidget):
                     self._ns_combo.setVisible(visible)
             elif kind == "jobs":
                 if tag[1] == self._server:
-                    self._fill_jobs(result)
+                    jobs, failed_kinds = result  # D10: (jobs, failed_kinds)
+                    self._fill_jobs(jobs, failed_kinds)
             elif kind == "run":
-                self._set_status(tr("Job started"), Color.STATUS_OK)
-                self._start("jobs", tag=("jobs", self._server))
+                if tag[1] != self._server:
+                    return  # stale result for another server (§6.9)
+                if isinstance(result, str) and result.strip():
+                    # result is the confirmed UPID (audit 6.3.3 D16):
+                    # the start really happened — now watch its outcome
+                    self._start_tracker(
+                        tag[1], result.strip(),
+                        tr("Run job {kind}/{id}").format(
+                            kind=tag[2], id=tag[3]))
+                    self._set_status(tr("Job started"), Color.STATUS_OK)
+                    self._start("jobs", tag=("jobs", self._server))
+                else:
+                    self._set_status(
+                        tr("Job start could not be confirmed — no task "
+                           "id in the response"), Color.WARNING)
             elif kind == "forget":
                 self._set_status(tr("Snapshot deleted"), Color.STATUS_OK)
                 self._load_snapshots()
             elif kind == "verify":
-                self._set_status(tr("Verify started"), Color.STATUS_OK)
+                if tag[1] != self._server:
+                    return  # stale result for another server (§6.9)
+                if isinstance(result, str) and result.strip():
+                    self._start_tracker(
+                        tag[1], result.strip(),
+                        tr("Verify datastore {store}").format(
+                            store=tag[2]))
+                    self._set_status(tr("Verify started"), Color.STATUS_OK)
+                else:
+                    self._set_status(
+                        tr("Job start could not be confirmed — no task "
+                           "id in the response"), Color.WARNING)
         except RuntimeError:
             pass
 
     def _on_worker_failed(self, tag, error):
         try:
             self._set_status(error, Color.STATUS_ERR)
+        except RuntimeError:
+            pass
+
+    # ── task tracking (audit 6.3.3 D16) ──────────────────────────
+
+    def _start_tracker(self, server: str, upid: str, op_label: str) -> None:
+        """Watch one UPID in the background; register a display row.
+
+        One tracker per (server, upid); bounded by _MAX_PBS_TRACKERS —
+        hitting the cap means the result will not be watched (reported
+        honestly), never that the task failed.
+        """
+        key = (server, upid)
+        if key in self._trackers:
+            self._set_status(tr("This task is already being tracked"),
+                             Color.WARNING)
+            return
+        if len(self._trackers) >= _MAX_PBS_TRACKERS:
+            self._set_status(
+                tr("Tracking limit reached — the result will not be "
+                   "watched; check the server"), Color.STATUS_ERR)
+            return
+        cfg = self._cfg(server)
+        if not cfg:
+            return
+        stop = threading.Event()
+        tracker = PbsTaskTracker(cfg, upid, tag=key, stop_event=stop)
+        self._trackers[key] = (tracker, stop)
+        self._ops_add(key, op_label)
+        # Connects happen before start (audit 6.3.2a D9): a fast
+        # completion cannot race the wiring; per-instance signals keep
+        # finished->discard from leaking closed widgets.
+        tracker.signals.update.connect(self._on_tracker_update)
+        tracker.signals.finished.connect(
+            lambda k=key, t=tracker: self._on_tracker_finished(k, t))
+        QThreadPool.globalInstance().start(tracker)
+
+    def _on_tracker_update(self, key, payload):
+        try:
+            server, _upid = key
+            state, detail = payload
+            entry = self._ops_update(key, state, detail)
+            if server != self._server:
+                return  # another server's watcher must not touch this UI
+            label, color = _TRACKER_STATE_STYLE.get(
+                state, (state, Color.TEXT_SEC))
+            if entry is not None:
+                self._render_ops()
+            if state == "success":
+                self._set_status(tr("Task finished successfully"),
+                                 Color.STATUS_OK)
+            elif state == "failed":
+                self._set_status(
+                    tr("Task failed: {detail}").format(detail=detail),
+                    Color.STATUS_ERR)
+            elif state == "unknown":
+                self._set_status(
+                    tr("Task outcome unknown: {detail}").format(
+                        detail=detail), Color.WARNING)
+            elif state == "timeout":
+                self._set_status(
+                    tr("Task watch timed out — it may still be running "
+                       "on the server"), Color.WARNING)
+        except RuntimeError:
+            pass
+
+    def _on_tracker_finished(self, key, tracker):
+        try:
+            known = self._trackers.get(key)
+            if known is not None and known[0] is tracker:
+                del self._trackers[key]
+        except RuntimeError:
+            pass
+
+    def _stop_all_trackers(self, *_args) -> None:
+        """End all watches promptly (panel is being destroyed)."""
+        for _tracker, stop in self._trackers.values():
+            stop.set()
+
+    # ── operations strip ─────────────────────────────────────────
+
+    def _ops_add(self, key, op_label: str) -> None:
+        self._ops.insert(0, {
+            "key": key, "op": op_label, "state": "starting", "detail": "",
+        })
+        self._render_ops()
+
+    def _ops_update(self, key, state: str, detail: str) -> dict | None:
+        for entry in self._ops:
+            if entry["key"] == key:
+                entry["state"] = state
+                entry["detail"] = detail
+                if state in TRACKER_TERMINAL:
+                    self._ops_prune()
+                self._render_ops()
+                return entry
+        return None
+
+    def _ops_prune(self) -> None:
+        """Keep the last few finished results per server readable."""
+        kept: dict[str, int] = {}
+        kept_entries: list[dict] = []
+        for entry in self._ops:
+            if entry["state"] in TRACKER_TERMINAL:
+                server = entry["key"][0]
+                kept[server] = kept.get(server, 0) + 1
+                if kept[server] > 8:
+                    continue  # drop the oldest finished result
+            kept_entries.append(entry)
+        self._ops = kept_entries
+
+    def _render_ops(self) -> None:
+        try:
+            rows = [e for e in self._ops if e["key"][0] == self._server]
+            self._ops_table.setRowCount(0)
+            for entry in rows:
+                row = self._ops_table.rowCount()
+                self._ops_table.insertRow(row)
+                self._ops_table.setItem(row, 0, QTableWidgetItem(
+                    entry["op"]))
+                label, color = _TRACKER_STATE_STYLE.get(
+                    entry["state"], (entry["state"], Color.TEXT_SEC))
+                state_item = QTableWidgetItem(label)
+                state_item.setForeground(QBrush(QColor(color)))
+                self._ops_table.setItem(row, 1, state_item)
+                self._ops_table.setItem(row, 2, QTableWidgetItem(
+                    entry["detail"]))
+            self._ops_table.resizeColumnsToContents()
+            self._ops_table.setVisible(bool(rows))
         except RuntimeError:
             pass
 
@@ -440,7 +639,7 @@ class PbsPanel(QWidget):
         if self._ns_combo.count() <= 1:
             self._load_namespaces()
 
-    def _fill_jobs(self, jobs):
+    def _fill_jobs(self, jobs, failed_kinds=()):
         self._jobs_table.setRowCount(0)
         kind_labels = {"sync": tr("Sync"), "verify": tr("Verify"),
                        "prune": tr("Prune")}
@@ -456,6 +655,16 @@ class PbsPanel(QWidget):
             state = tr("Disabled") if j.disabled else tr("Enabled")
             self._jobs_table.setItem(row, 4, QTableWidgetItem(state))
         self._jobs_table.resizeColumnsToContents()
+        # audit 6.3.2b D10: a partly unreadable job list must not look
+        # like a confident "no jobs"; the note clears on a full success
+        note = ""
+        if failed_kinds:
+            note = tr("Some job types could not be read: {kinds}").format(
+                kinds=", ".join(failed_kinds))
+            self._set_status(note, Color.WARNING)
+        elif self._jobs_note and self._status_lbl.text() == self._jobs_note:
+            self._set_status("")
+        self._jobs_note = note
 
     # ── actions ──────────────────────────────────────────────────
 
@@ -498,6 +707,8 @@ class PbsPanel(QWidget):
         act_run = menu.addAction(get_icon("start"), tr("Run now"))
         act = menu.exec(self._jobs_table.viewport().mapToGlobal(pos))
         if act == act_run:
+            # tag carries (server, kind, id): the tracker row needs the
+            # operation label, and stale results must be server-filtered
             self._start("run_job", kind, id_item.text(),
-                        tag=("run", self._server))
+                        tag=("run", self._server, kind, id_item.text()))
             self._set_status(tr("Starting job..."))
