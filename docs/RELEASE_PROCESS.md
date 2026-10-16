@@ -44,9 +44,11 @@
    - переименованные/переформулированные фичи — синхронно с CHANGELOG.
 5. **Сайт virtdeck.mclure.ru** — второй обязательный шаг (источник правды для
    установочных команд — README; сайт синхронизируется с ним):
-   - source-checkout сайта: `/home/taurus/Work/pvecenter/virtdeck-site/public/`
-     (`index.html` + `i18n.js`; ключи i18n обязаны быть в паритете во всех 6
-     языках — проверяет `check-site.js`);
+   - source-checkout сайта: `/home/taurus/virtdeck-site/` (`public/index.html`
+     + `public/i18n.js`; ключи i18n обязаны быть в паритете во всех 6
+     языках — проверяет `check-site.js`; для гейтов нужен `node` —
+     на рабочей станции используется официальный тарбалл nodejs.org,
+     системный пакет может требовать более новый glibc);
    - `./update-version.sh <old> <new> [date]` — переписывает версии, локализованные
      даты (включая футер «Site updated»), HEAD-проверяет все ссылки на assets
      релиза; после — сверить apt/dnf-блоки сайта с README вручную (команды
