@@ -1943,7 +1943,7 @@ class HostTabs:
             panel._workers_mgr.discard_worker(w),
         ))
         worker.signals.error.connect(lambda err, w=worker: (
-            panel.config_update_result.emit(tr("HA error: {err}").format(err=err)),
+            panel.config_update_result.emit(tr("Job error: {err}").format(err=err)),
             panel._workers_mgr.discard_worker(w),
         ))
         panel._workers_mgr.run_host_worker(worker)

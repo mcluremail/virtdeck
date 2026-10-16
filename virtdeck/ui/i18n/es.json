@@ -430,6 +430,7 @@
   "HA Manager": "Gestor de HA",
   "HA Resources": "Recursos HA",
   "HA error: {err}": "Error de HA: {err}",
+  "Job error: {err}": "Error de tarea: {err}",
   "HA error: {}": "Error de HA: {}",
   "HA group": "Grupo HA",
   "HA group:": "Grupo de HA:",

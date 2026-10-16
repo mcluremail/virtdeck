@@ -37,6 +37,10 @@ VERIFY_COLORS = {
     "none": Color.TEXT_SEC,
 }
 
+# Cap on concurrent PBS requests started by this panel (audit 6.3.2a D9):
+# workers used to start unbounded via QThreadPool directly.
+_MAX_PBS_WORKERS = 16
+
 
 def _fmt_size(num) -> str:
     try:
@@ -70,8 +74,6 @@ class PbsPanel(QWidget):
         self._store = ""
         self._workers: set = set()
         self._build_ui()
-        PbsApiWorker.signals.done.connect(self._on_worker_done)
-        PbsApiWorker.signals.failed.connect(self._on_worker_failed)
 
     # ── UI ───────────────────────────────────────────────────────
 
@@ -269,8 +271,20 @@ class PbsPanel(QWidget):
         cfg = self._cfg()
         if not cfg:
             return
+        if len(self._workers) >= _MAX_PBS_WORKERS:
+            self._set_status(
+                tr("Too many concurrent operations. Please wait and try again."),
+                Color.STATUS_ERR)
+            return
         worker = PbsApiWorker(cfg, method, *args, tag=tag, **kwargs)
         self._workers.add(worker)
+        # Per-instance signals (audit 6.3.2a D9): connects happen before
+        # start, and finished -> discard removes the worker from tracking
+        # on success, error and any exception (finished fires in finally).
+        worker.signals.done.connect(self._on_worker_done)
+        worker.signals.failed.connect(self._on_worker_failed)
+        worker.signals.finished.connect(
+            lambda w=worker: self._workers.discard(w))
         QThreadPool.globalInstance().start(worker)
 
     def _load_datastores(self):

@@ -36,7 +36,7 @@ from ..backend import (
     ClusterTasksWorker,
     DeleteVmWorker,
     FetchWorker,
-    delete_host_token,
+    HostTokenDeleteWorker,
 )
 from ..backend.events import Event, EventBus
 from ..backend.fleet import build_fleet_targets
@@ -148,6 +148,8 @@ class MainWindow(QMainWindow):
         self._last_vm_statuses = {}
         self._offline_mode = False
         self._offline_ts = None
+        # One host/cluster removal at a time (audit 6.3.2a D13).
+        self._host_token_del_active = False
 
         self.tree_panel = TreePanel(self.nodes_cfg)
         self.detail_panel = DetailPanel(self.nodes_cfg)
@@ -1016,7 +1018,12 @@ class MainWindow(QMainWindow):
             self._optimistic.rollback(host_name, vmid),
             self._notifications.show(tr("Action error: {}").format(err), error=True)
         ))
-        self._run_worker(worker)
+        if not self._run_worker(worker):
+            # Pool full: the worker never starts and never reports — undo
+            # the optimistic status so the tree does not show a phantom
+            # pending state (audit 6.3.2a D6).
+            self._optimistic.rollback(host_name, vmid)
+            return
 
     def _on_bulk_vm_action(self, vm_keys, action):
         plan = plan_bulk_action(vm_keys, self._vm_repo, set(self._cfg_by_name.keys()))
@@ -1082,7 +1089,11 @@ class MainWindow(QMainWindow):
         worker.signals.vm_done.connect(on_vm_done)
         worker.signals.finished.connect(on_finished)
         progress.canceled.connect(worker.cancel)
-        self._run_worker(worker)
+        if not self._run_worker(worker):
+            # Pool full: no progress/vm_done/finished will ever arrive —
+            # close the dialog instead of freezing it (audit 6.3.2a D6).
+            progress.cancel()
+            return
 
     # ------------------------------------------------------------
     # Server groups (B16)
@@ -1459,14 +1470,30 @@ class MainWindow(QMainWindow):
             return
         if not self._confirm_delete(text):
             return
-        errors = []
-        for cfg in matched:
-            ok = delete_host_token(cfg)
-            if not ok:
-                errors.append(cfg.get("name", cfg.get("host", "?")))
-        if errors:
+        if self._host_token_del_active:
+            # One removal at a time (audit 6.3.2a D13): the same token must
+            # not be deleted twice in parallel, and two async removals would
+            # race on nodes_cfg.
             self._notifications.show(
-                tr("Failed to delete tokens: {}. Configuration cleared.").format(", ".join(errors)),
+                tr("Too many concurrent operations. Please wait and try again."),
+                error=True)
+            return
+        worker = HostTokenDeleteWorker(matched)
+        self._host_token_del_active = True
+        worker.signals.delete_result.connect(
+            lambda failed: self._finish_host_removal(matched, failed))
+        worker.signals.finished.connect(
+            lambda: setattr(self, "_host_token_del_active", False))
+        if not self._run_worker(worker):
+            self._host_token_del_active = False
+            return
+
+    def _finish_host_removal(self, matched, failed_names):
+        """Applies the host/cluster removal after the token deletion
+        worker reports back (runs in the GUI thread via the signal)."""
+        if failed_names:
+            self._notifications.show(
+                tr("Failed to delete tokens: {}. Configuration cleared.").format(", ".join(failed_names)),
                 error=True
             )
         self.nodes_cfg = [c for c in self.nodes_cfg if c not in matched]

@@ -202,6 +202,41 @@ class TokenCreationWorker(QRunnable):
                 self.signals.finished.emit()
             except RuntimeError:
                 pass
+# ----------------------------------------------------------------------
+# Delete token from the server
+# ----------------------------------------------------------------------
+class HostTokenDeleteSignals(QObject):
+    delete_result = Signal(list)  # names of hosts whose token deletion failed
+    finished = Signal()
+
+
+class HostTokenDeleteWorker(QRunnable):
+    """Deletes the API tokens of removed hosts off the UI thread
+    (audit 6.3.2a D13 — the sync call used to freeze the GUI for up to
+    10 s per host). Hosts are processed sequentially, so the same token
+    is never deleted twice in parallel."""
+
+    def __init__(self, host_cfgs):
+        super().__init__()
+        self.host_cfgs = list(host_cfgs)
+        self.signals = HostTokenDeleteSignals()
+
+    def run(self):
+        failed = []
+        for cfg in self.host_cfgs:
+            if not delete_host_token(cfg):
+                failed.append(cfg.get("name", cfg.get("host", "?")))
+        try:
+            self.signals.delete_result.emit(failed)
+        except RuntimeError:
+            pass
+        finally:
+            try:
+                self.signals.finished.emit()
+            except RuntimeError:
+                pass
+
+
 def delete_host_token(host_cfg):
     """Deletes the API token from the PVE server.
     Returns True on success, False on error."""

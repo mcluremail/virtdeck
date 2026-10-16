@@ -430,6 +430,7 @@
   "HA Manager": "HA管理器",
   "HA Resources": "HA资源",
   "HA error: {err}": "HA错误：{err}",
+  "Job error: {err}": "任务错误：{err}",
   "HA error: {}": "HA错误：{}",
   "HA group": "HA 组",
   "HA group:": "HA组：",

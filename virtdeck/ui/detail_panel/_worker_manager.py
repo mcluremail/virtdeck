@@ -1,5 +1,6 @@
 import logging
 from collections import deque
+from collections.abc import Callable
 
 from PySide6.QtCore import QThreadPool
 
@@ -22,26 +23,39 @@ class WorkerManager:
         self.current_hist_worker = None
         self.current_snap_worker = None
         self.current_host_workers = set()
+        # Set by the owning panel (audit 6.3.2a D8): called when a worker
+        # is dropped because both the pool and the queue are full, so the
+        # user learns the request was not accepted instead of staring at
+        # an eternal "Loading…".
+        self.on_overload: Callable[[], None] | None = None
 
-    def run_worker(self, worker):
-        self._try_start(worker, host=False)
+    def run_worker(self, worker) -> bool:
+        """True — started or queued; False — dropped (never will run)."""
+        started = self._try_start(worker, host=False)
         self._pump()
+        return started
 
-    def run_host_worker(self, worker):
+    def run_host_worker(self, worker) -> bool:
         """Run a host-detail worker that is tracked for cancellation on tab switch."""
-        self._try_start(worker, host=True)
+        started = self._try_start(worker, host=True)
         self._pump()
+        return started
 
-    def _try_start(self, worker, host):
+    def _try_start(self, worker, host) -> bool:
         if len(self._workers) >= _MAX_WORKERS_DP:
             if len(self._pending) >= _MAX_PENDING:
                 logger.warning(
                     "worker pool and queue full (%d+%d), dropping worker",
                     len(self._workers), len(self._pending),
                 )
-                return
+                if self.on_overload is not None:
+                    try:
+                        self.on_overload()
+                    except Exception:
+                        logger.exception("on_overload callback failed")
+                return False
             self._pending.append((worker, host))
-            return
+            return True
         self._workers.add(worker)
         if host:
             self.current_host_workers.add(worker)
@@ -51,6 +65,7 @@ class WorkerManager:
         else:
             worker.signals.finished.connect(lambda w=worker: self.discard_worker(w))
         QThreadPool.globalInstance().start(worker)
+        return True
 
     def _pump(self):
         """Start queued workers as pool slots free up."""

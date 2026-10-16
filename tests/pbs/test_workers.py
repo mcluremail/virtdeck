@@ -45,10 +45,10 @@ def fake_provider(monkeypatch):
 
 def _run_worker(cfg):
     results, failures = [], []
-    signals = PbsApiWorker.signals
-    signals.done.connect(lambda tag, res: results.append(res))
-    signals.failed.connect(lambda tag, err: failures.append(err))
     w = PbsApiWorker(cfg, "datastores")
+    # signals are per instance now (audit 6.3.2a D9)
+    w.signals.done.connect(lambda tag, res: results.append(res))
+    w.signals.failed.connect(lambda tag, err: failures.append(err))
     w.run()  # no QThreadPool needed: run() called directly
     return results, failures
 
@@ -66,3 +66,13 @@ def test_provider_closed_on_error(fake_provider):
     assert results == []
     assert failures == ["boom"]
     assert fake_provider[0]._client.closed
+
+
+def test_finished_emitted_in_finally(fake_provider):
+    """Audit 6.3.2a D9: finished fires exactly once per run — success,
+    error and any exception must release the tracking slot."""
+    finished = []
+    w = PbsApiWorker({"host": "h"}, "datastores")
+    w.signals.finished.connect(lambda: finished.append(True))
+    w.run()
+    assert finished == [True]

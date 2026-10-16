@@ -330,9 +330,6 @@ def test_delete_flow_keeps_winner_identity(mw, monkeypatch):
     mw._rebuild_cfg_indexes()
     winner_id = a["conn_id"]
 
-    import virtdeck.ui.mainwindow as mw_mod
-    monkeypatch.setattr(mw_mod, "delete_host_token",
-                        lambda name: None)  # no keyring in tests
     # emulate the delete-flow list mutation for the exact loser
     mw.nodes_cfg = [c for c in mw.nodes_cfg if c.get("name") != "web"]
     mw._rebuild_cfg_indexes()

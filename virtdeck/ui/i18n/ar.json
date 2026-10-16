@@ -430,6 +430,7 @@
   "HA Manager": "مدير HA",
   "HA Resources": "موارد HA",
   "HA error: {err}": "خطأ HA: {err}",
+  "Job error: {err}": "خطأ في المهمة: {err}",
   "HA error: {}": "خطأ HA: {}",
   "HA group": "مجموعة HA",
   "HA group:": "مجموعة HA:",

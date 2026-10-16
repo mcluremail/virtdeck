@@ -1,10 +1,14 @@
 """Tests for PbsPanel — PBS datastore/snapshot/job views (B17 stage 2)."""
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication, QEvent, Qt
 
 from virtdeck.domain.pbs import PbsDatastore, PbsJob, PbsSnapshot
+from virtdeck.pbs.client import PbsError
+from virtdeck.pbs.provider import PbsProvider
 from virtdeck.ui import pbs_panel as pbs_panel_mod
 from virtdeck.ui.pbs_panel import PbsPanel
 from virtdeck.ui.theme import Color
@@ -237,3 +241,128 @@ class TestShowDatastoreTabKeep:
         panel._tabs.setCurrentIndex(1)
         panel.show_datastore("pbs1", "other")
         assert panel._tabs.currentIndex() == 0
+
+
+# --- audit 6.3.2a D9: worker tracking, discard and pool limit ---------------
+
+
+class _FakePbsClient:
+    def __init__(self, boom=False):
+        self.boom = boom
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+    def datastores(self):
+        if self.boom:
+            raise PbsError("boom", 500)
+        return [{"store": "main"}]
+
+
+def _make_live(monkeypatch):
+    """PbsPanel with the real _start, no qtbot registration (callers that
+    destroy the panel must not register it)."""
+    p = PbsPanel()
+    p._server = "pbs1"
+    p.update_nodes_cfg([_CFG])
+    started = []
+    made = []
+
+    def fake_start(runnable):
+        started.append(runnable)
+
+    monkeypatch.setattr(pbs_panel_mod.QThreadPool, "globalInstance",
+                        staticmethod(lambda: SimpleNamespace(start=fake_start)))
+
+    def _make_provider(cfg, timeout=15):
+        prov = PbsProvider(cfg, timeout=timeout)
+        prov._client = _FakePbsClient(boom=cfg.get("_boom", False))
+        made.append(prov)
+        return prov
+
+    monkeypatch.setattr("virtdeck.pbs.workers.PbsProvider", _make_provider)
+    p.started = started
+    p.made = made
+    return p
+
+
+@pytest.fixture
+def live_panel(qtbot, monkeypatch):
+    """PbsPanel with the real _start: QThreadPool stubbed (workers are
+    collected, never auto-run), PbsProvider faked in the workers module."""
+    p = _make_live(monkeypatch)
+    qtbot.addWidget(p)
+    return p
+
+
+def _drain_deferred_deletes():
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    QCoreApplication.processEvents()
+
+
+class TestPbsWorkerTracking:
+    def test_finished_worker_discarded_on_success(self, live_panel):
+        p = live_panel
+        p._start("datastores", tag=("ds", "pbs1"))
+        assert len(p._workers) == 1
+        w = p.started[0]
+        w.run()  # same thread: done/finished fire synchronously
+        assert p.made[0]._client.closed
+        assert w not in p._workers
+
+    def test_finished_worker_discarded_on_error(self, live_panel):
+        p = live_panel
+        boom_cfg = dict(_CFG, _boom=True)
+        p._cfg_by_name["pbs1"] = boom_cfg
+        p._start("datastores", tag=("ds", "pbs1"))
+        w = p.started[0]
+        w.run()
+        assert p.made[0]._client.closed
+        assert w not in p._workers
+
+    def test_starts_connect_before_start_no_fast_finish_race(
+            self, live_panel, monkeypatch):
+        """A worker finishing instantly still removes itself: all
+        connections are made before QThreadPool.start (audit 6.3.2a D9)."""
+        p = live_panel
+
+        class _InstantProvider:
+            def __init__(self, cfg, timeout=15):
+                pass
+
+            def datastores(self):
+                return []
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr("virtdeck.pbs.workers.PbsProvider",
+                            _InstantProvider)
+        p._start("datastores", tag=("ds", "pbs1"))
+        w = p.started[0]
+        w.run()
+        assert p._workers == set()
+
+    def test_concurrent_starts_capped(self, live_panel):
+        p = live_panel
+        from virtdeck.ui.pbs_panel import _MAX_PBS_WORKERS
+        for _ in range(_MAX_PBS_WORKERS):
+            p._start("jobs", tag=("jobs", "pbs1"))
+        assert len(p.started) == _MAX_PBS_WORKERS
+        p._start("jobs", tag=("jobs", "pbs1"))
+        assert len(p.started) == _MAX_PBS_WORKERS  # 17th refused
+        assert "Too many concurrent operations" in p._status_lbl.text()
+
+    def test_panel_destroyed_while_worker_running_is_safe(self, qapp,
+                                                          monkeypatch):
+        p = _make_live(monkeypatch)  # deliberately NOT tracked by qtbot
+        p._start("datastores", tag=("ds", "pbs1"))
+        w = p.started[0]
+        p.close()
+        p.deleteLater()
+        _drain_deferred_deletes()
+        # The panel is destroyed; the worker completes and emits into the
+        # void — no callback into the destroyed widget, no exception.
+        w.run()
+        assert p.made[0]._client.closed

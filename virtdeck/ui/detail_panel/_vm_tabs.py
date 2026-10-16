@@ -262,16 +262,24 @@ class VMTabs:
         for btn in panel._action_buttons.values():
             btn.setEnabled(False)
         panel.detail_label.setText(tr("VM/CT: {name}").format(name=(panel._last_vm_data.name or vmid)) + " — " + VM_ACTION_MESSAGE_LABELS.get(action, action) + "...")
-        worker.signals.action_result.connect(lambda msg: (
-            self.on_action_finished(msg),
-            self.refresh_after_action(),
+        # Identity capture (audit 6.3.2a D7): the reply must be applied to
+        # the VM it was sent for, not to whatever the panel shows by then.
+        worker.signals.action_result.connect(lambda msg, v=vmid, h=host_name: (
+            self.on_action_finished(msg, v, h),
             panel._workers_mgr.discard_worker(worker)
         ))
-        worker.signals.action_error.connect(lambda err: (
-            self.on_action_error(err),
+        worker.signals.action_error.connect(lambda err, v=vmid, h=host_name: (
+            self.on_action_error(err, v, h),
             panel._workers_mgr.discard_worker(worker)
         ))
-        panel._workers_mgr.run_worker(worker)
+        if not panel._workers_mgr.run_worker(worker):
+            # Dropped (pool and queue full, audit 6.3.2a D6/D8): the action
+            # never starts and never reports — restore the buttons and the
+            # header instead of leaving them frozen.
+            self.update_action_buttons(panel._last_vm_data)
+            panel.detail_label.setText(tr("VM/CT: {name}").format(
+                name=(panel._last_vm_data.name or vmid)))
+            return
 
     def update_action_buttons(self, vm_data=None):
         panel = self.panel
@@ -296,13 +304,28 @@ class VMTabs:
             vm_type in ("qemu", "lxc") and status == "running" and not is_template
         )
 
-    def on_action_finished(self, msg):
+    def _is_current_vm(self, vmid, host_name):
+        """True when the panel still shows the VM the reply belongs to
+        (audit 6.3.2a D7): stale replies from a previous selection or a
+        removed host must not repaint the current VM's header/buttons."""
         panel = self.panel
+        vm = panel._last_vm_data
+        if not vm or vm.vmid != vmid:
+            return False
+        return (vm.host_name or vm.node) == host_name
+
+    def on_action_finished(self, msg, vmid, host_name):
+        panel = self.panel
+        if not self._is_current_vm(vmid, host_name):
+            return
         vm = panel._last_vm_data
         panel.detail_label.setText(tr("VM/CT: {name}").format(name=(vm.name or vm.vmid) if vm else "") + " — " + msg)
         self.update_action_buttons(vm)
+        self.refresh_after_action()
 
-    def on_action_error(self, err):
+    def on_action_error(self, err, vmid, host_name):
+        if not self._is_current_vm(vmid, host_name):
+            return
         panel = self.panel
         panel.detail_label.setText(parse_pve_error(err))
         self.update_action_buttons(panel._last_vm_data)
@@ -813,6 +836,15 @@ class VMTabs:
         panel = self.panel
         detail_key = (host_name, vmid)
         panel.vm_snapshots_cache.pop(detail_key, None)
+        # Identity gate (audit 6.3.2a D5), same check as on_snapshots_loaded:
+        # a snapshot operation finished for a VM the user has already left —
+        # repainting the current VM's tab as "Loading…" would hang it until
+        # the next manual reselect, and the worker below would fetch the old
+        # VM's snapshots through the current VM's node/vm_type.
+        if not panel._last_vm_data \
+                or panel._last_vm_data.vmid != vmid \
+                or (panel._last_vm_data.host_name or panel._last_vm_data.node) != host_name:
+            return
         panel.vm_snapshots_tree.clear()
         panel.vm_snapshots_loading.setText(tr("Loading..."))
         panel.vm_snapshots_stack.setCurrentIndex(0)

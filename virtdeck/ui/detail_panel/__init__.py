@@ -77,6 +77,8 @@ class DetailPanel(QWidget):
         self._current_cluster_cfg = None
 
         self._workers_mgr = WorkerManager()
+        self._workers_mgr.on_overload = lambda: self.config_update_result.emit(
+            tr("Too many concurrent operations. Please wait and try again."))
         self._host_tabs = HostTabs(self)
         self._storage_tabs = StorageTabs(self)
         self._vm_tabs = VMTabs(self)

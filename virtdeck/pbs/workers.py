@@ -19,15 +19,18 @@ logger = logging.getLogger(__name__)
 class _Signals(QObject):
     done = Signal(object, object)   # tag, result
     failed = Signal(object, str)    # tag, error message
+    finished = Signal()
 
 
 class PbsApiWorker(QRunnable):
     """Call ``PbsProvider.<method>(*args)`` off the UI thread.
 
     ``tag`` echoes back the request (e.g. server name or (server, store)).
+    ``signals`` is per instance (audit 6.3.2a D9): completion tracking
+    connects ``finished`` per worker, and a class-level signals object
+    would keep every such connection (with the worker it closes over)
+    alive for the whole session.
     """
-
-    signals = _Signals()
 
     def __init__(self, cfg: dict, method: str, *args,
                  timeout: float = 15, tag=None, **kwargs):
@@ -38,6 +41,7 @@ class PbsApiWorker(QRunnable):
         self.kwargs = kwargs
         self.timeout = timeout
         self.tag = tag
+        self.signals = _Signals()
         self.setAutoDelete(True)
 
     def run(self):
@@ -58,3 +62,7 @@ class PbsApiWorker(QRunnable):
         finally:
             if provider is not None:
                 provider.close()
+            try:
+                self.signals.finished.emit()
+            except RuntimeError:
+                pass

@@ -430,6 +430,7 @@
   "HA Manager": "Менеджер HA",
   "HA Resources": "HA ресурсы",
   "HA error: {err}": "Ошибка HA: {err}",
+  "Job error: {err}": "Ошибка задания: {err}",
   "HA error: {}": "Ошибка HA: {}",
   "HA group": "HA группа",
   "HA group:": "Группа HA:",
