@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.0.7 — honest task outcomes and visible degradation (external audit stage 6.3.4)
+
+**Bug fixes**
+- A PVE answer without a task id is no longer reported as success (audit A1): for an async operation a 200 without a UPID may mean a task nobody tracks — the outcome is now reported as unknown; the six genuinely synchronous endpoints (content delete, /storage create/update/delete, snapshot delete, template-flag config) are marked `expect_upid=False`, where a null answer IS the success and an UPID is still awaited if one arrives
+- Fleet Health no longer hides a failed storage forecast (audit A2): a storage whose rrddata series cannot be read was silently skipped, silencing both the runway estimate and the "storage almost full" fallback — an unreadable storage now renders an explicit yellow "Runway data unavailable" row with the sanitized reason (D4 "unverified" pattern)
+- A cluster whose collection crashes inside its own error path no longer disappears from the Fleet Health dialog (audit A3): the stub report with the CollectError row is built in the job wrapper too, so every target always reaches `finished_all`
+- Timeout texts of awaited PVE tasks lead with the honest state (audit B1): "still running after N s" read as "X failed: still running…" in op composites — now "outcome unknown — the task is still running after N s"
+- Quitting the app no longer waits on PBS task trackers (audit D1): the panel stops all watches on `aboutToQuit`, not only on `destroyed`
+
+**Internal**
+- Post-6.3.3 audit-implementation review (four directions: partial-as-full results, unknown-outcome display, provider/worker contracts, worker lifecycle) with fixes; see `docs/AUDIT_2026-10-16_POST_6_3_3_REVIEW.md` and `docs/AUDIT_2026-10-16_AUDIT_REVIEW_FIXES.md`
+- 6 new tests (1622 → 1628); i18n version 45 (1 new key in all 5 locales)
+
 ## v3.0.6 — data honesty and transport error classification (external audit stages 6.2.3, 6.3 and 6.3.1)
 
 **Bug fixes**
