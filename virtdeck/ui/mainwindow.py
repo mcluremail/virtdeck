@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QSystemTrayIcon,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -350,13 +351,13 @@ class MainWindow(QMainWindow):
         self._toolbar.addSeparator()
 
         export_action = QAction(get_icon("export"), tr("Export configuration"), self)
-        export_action.setToolTip(tr("Export configuration"))
+        export_action.setToolTip(tr("Export configuration") + " (Ctrl+E)")
         export_action.triggered.connect(self._on_export_config)
         self._toolbar.addAction(export_action)
         self._toolbar_icon_actions.append((export_action, "export"))
 
         import_action = QAction(get_icon("import"), tr("Import configuration"), self)
-        import_action.setToolTip(tr("Import configuration"))
+        import_action.setToolTip(tr("Import configuration") + " (Ctrl+I)")
         import_action.triggered.connect(self._on_import_config)
         self._toolbar.addAction(import_action)
         self._toolbar_icon_actions.append((import_action, "import"))
@@ -364,7 +365,7 @@ class MainWindow(QMainWindow):
         self._toolbar.addSeparator()
 
         about_action = QAction(get_icon("about"), tr("About"), self)
-        about_action.setToolTip(tr("About"))
+        about_action.setToolTip(tr("About") + " (F1)")
         about_action.triggered.connect(self._on_about)
         self._toolbar.addAction(about_action)
         self._toolbar_icon_actions.append((about_action, "about"))
@@ -383,6 +384,13 @@ class MainWindow(QMainWindow):
 
         self.addToolBar(self._toolbar)
 
+        # U35: QToolBar is NoFocus by default, so its QToolButtons never
+        # entered the Tab chain — Export/Import/About had no keyboard path
+        # at all (no shortcut, no menubar). StrongFocus makes each button
+        # reachable by Tab and activatable with Space/Enter.
+        for tb in self._toolbar.findChildren(QToolButton):
+            tb.setFocusPolicy(Qt.StrongFocus)
+
         QShortcut(QKeySequence("Ctrl+R"), self, activated=self.refresh_data)
         QShortcut(QKeySequence("F5"), self, activated=self.refresh_data)
         QShortcut(QKeySequence("Ctrl+Q"), self, activated=self._tray_quit)
@@ -391,6 +399,14 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+F"), self, activated=self._open_global_search)
         QShortcut(QKeySequence("Ctrl+Shift+F"), self, activated=self._open_fleet_health)
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self._open_command_palette)
+        QShortcut(QKeySequence("Ctrl+E"), self, activated=self._on_export_config)
+        QShortcut(QKeySequence("Ctrl+I"), self, activated=self._on_import_config)
+        QShortcut(QKeySequence("F1"), self, activated=self._on_about)
+
+        # U35: initial focus belongs to the tree (the primary navigation
+        # surface), not to the mode combo that merely starts the Tab chain.
+        QTimer.singleShot(0, lambda: self.tree_panel.tree.setFocus(
+            Qt.OtherFocusReason))
 
         # Auto-refresh timer for the main data
         self.refresh_timer = QTimer(self)

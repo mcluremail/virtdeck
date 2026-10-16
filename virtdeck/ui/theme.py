@@ -443,6 +443,32 @@ def _build_qss() -> str:
         border-color: {Color.BORDER_LIGHT};
     }}
 
+    /* Keyboard focus must stay visible: QSS-styled buttons suppress the
+       native focus ring (audit U34, WCAG 2.4.7). Filled buttons need the
+       ring in the on-accent color — an accent border is invisible on an
+       accent background. */
+    QPushButton:focus {{
+        border-color: {Color.ACCENT};
+    }}
+    QPushButton#accentBtn:focus, QPushButton#dangerBtn:focus {{
+        border-color: {Color.ON_ACCENT};
+    }}
+    QPushButton#segBtnLeft:focus, QPushButton#segBtnRight:focus {{
+        border-color: {Color.ACCENT};
+    }}
+    /* Borderless tool buttons (toolbar icons) get a hover-like
+       background as the focus indicator — there is no border to color. */
+    QToolButton:focus {{
+        background: {Color.HOVER};
+        border-radius: 6px;
+    }}
+    QToolButton#neutralBtn:focus {{
+        border-color: {Color.ACCENT};
+    }}
+    QCheckBox::indicator:focus {{
+        border-color: {Color.ACCENT};
+    }}
+
     /* ── Dialogs ── */
     QDialog {{
         background: {Color.PANEL};

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QPushButton,
+    QSizePolicy,
     QTabWidget,
     QToolButton,
     QVBoxLayout,
@@ -36,6 +37,39 @@ from ._vm_tabs import VMTabs
 from ._worker_manager import WorkerManager
 
 logger = logging.getLogger(__name__)
+
+
+class _TitleLabel(QLabel):
+    """One-line object title with elide (audit DELIGHT-1).
+
+    A 59-character VM name is valid data; the previous word-wrapped label
+    unfolded it into a column and pushed tabs/actions out of view. The
+    full text stays available in the tooltip — the same pattern as the
+    tree delegate (tree_panel two-line rows).
+    """
+
+    def __init__(self, text: str = ""):
+        super().__init__()
+        self._full = ""
+        self.setText(text)
+
+    def setText(self, text: str) -> None:  # noqa: N802 (Qt naming)
+        self._full = text or ""
+        self._apply_elide()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        super().resizeEvent(event)
+        self._apply_elide()
+
+    def _apply_elide(self) -> None:
+        width = self.width()
+        if width <= 0:
+            super().setText(self._full)
+            return
+        metrics = self.fontMetrics()
+        elided = metrics.elidedText(self._full, Qt.ElideRight, width)
+        super().setText(elided)
+        self.setToolTip(self._full if elided != self._full else "")
 
 
 class DetailPanel(QWidget):
@@ -83,8 +117,12 @@ class DetailPanel(QWidget):
         self._storage_tabs = StorageTabs(self)
         self._vm_tabs = VMTabs(self)
 
-        self.detail_label = QLabel(tr("Select object in tree"))
-        self.detail_label.setWordWrap(True)
+        self.detail_label = _TitleLabel(tr("Select object in tree"))
+        # One line + elide (DELIGHT-1): long object names must not push
+        # tabs/actions out of view. Expanding lets the elide reveal as
+        # much of the name as the window allows.
+        self.detail_label.setSizePolicy(QSizePolicy.Expanding,
+                                        QSizePolicy.Preferred)
         self.detail_label.setAlignment(Qt.AlignTop)
         self.detail_label.setContentsMargins(0, 0, 0, 0)
         self.detail_label.setObjectName("titleMain")
@@ -160,7 +198,9 @@ class DetailPanel(QWidget):
         title_left.addWidget(self.detail_label)
         title_left.addWidget(self.detail_sublabel)
         title_block.addLayout(title_left)
-        title_block.addStretch()
+        # No stretch: the elided title is Expanding and takes the free
+        # width (with a stretch item it would stay at the elided sizeHint
+        # and never reveal more of the name on wide windows).
 
         self._cluster_view_toggle = QWidget()
         self._cluster_view_toggle.setVisible(False)

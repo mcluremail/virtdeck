@@ -293,12 +293,17 @@ class TestBuildRegistry:
         by_id["global.refresh"].invoke(Selection())
         assert "refresh_data" in win.log
 
-    def test_delete_invoke_uses_tree(self):
+    def test_delete_noop_removed_from_palette(self):
+        """U13: object.delete was an enabled no-op for group/storage/pbs/pool
+        (request_delete_current handles only vm/host/cluster) — it must not
+        be advertised by the palette. Per-type delete specs are the source."""
         win = _StubWindow()
         reg = build_registry(win)
-        by_id = {s.action_id: s for s in reg.all()}
-        by_id["object.delete"].invoke(_sel(_FakeVm()))
-        assert win.log == ["delete"]
+        ids = [s.action_id for s in reg.all()]
+        assert "object.delete" not in ids
+        for aid in ("vm.delete", "host.delete", "cluster.delete",
+                    "group.delete", "storage.delete"):
+            assert aid in ids, aid
 
     def test_registry_specs_shared_with_tree(self):
         """Specs in the palette registry are the same objects as TreePanel's."""

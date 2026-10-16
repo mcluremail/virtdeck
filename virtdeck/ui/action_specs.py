@@ -18,21 +18,12 @@ from .action_registry import (
     SCOPE_CT,
     SCOPE_GROUP,
     SCOPE_HOST,
-    SCOPE_PBS,
-    SCOPE_POOL,
     SCOPE_STORAGE,
-    SCOPE_TEMPLATE,
     SCOPE_VM,
     ActionRegistry,
     ActionSpec,
 )
 from .i18n import tr
-
-# Object scopes of the tree — for actions on an arbitrary item.
-_ALL_OBJECT_SCOPES = frozenset({
-    SCOPE_VM, SCOPE_CT, SCOPE_TEMPLATE, SCOPE_HOST, SCOPE_CLUSTER,
-    SCOPE_STORAGE, SCOPE_PBS, SCOPE_POOL, SCOPE_GROUP,
-})
 
 _VM_SCOPES = frozenset({SCOPE_VM, SCOPE_CT})
 
@@ -308,18 +299,19 @@ def build_registry(window) -> ActionRegistry:
     ))
     reg.register(ActionSpec(
         action_id="global.export", label=tr("Export configuration"),
-        icon="export",
+        icon="export", shortcut="Ctrl+E",
         keywords=("backup", "config", "save"),
         invoke=lambda sel: window._on_export_config(),
     ))
     reg.register(ActionSpec(
         action_id="global.import", label=tr("Import configuration"),
-        icon="import",
+        icon="import", shortcut="Ctrl+I",
         keywords=("restore", "config", "load"),
         invoke=lambda sel: window._on_import_config(),
     ))
     reg.register(ActionSpec(
         action_id="global.about", label=tr("About"), icon="about",
+        shortcut="F1",
         invoke=lambda sel: window._on_about(),
     ))
     reg.register(ActionSpec(
@@ -328,13 +320,13 @@ def build_registry(window) -> ActionRegistry:
         keywords=("exit", "close"),
         invoke=lambda sel: window._tray_quit(),
     ))
-    reg.register(ActionSpec(
-        action_id="object.delete", label=tr("Delete"), icon="remove",
-        scopes=_ALL_OBJECT_SCOPES, shortcut="Del", dangerous=True,
-        keywords=("remove", "destroy"),
-        enabled=lambda sel: not sel.is_empty,
-        invoke=lambda sel: window.tree_panel.request_delete_current(),
-    ))
+
+    # NOTE (audit U13): the former "object.delete" spec (all object scopes,
+    # enabled on any selection) was an enabled no-op: request_delete_current
+    # handles only vm/host/cluster, so the palette advertised "Delete" for
+    # group/storage/pbs/pool where nothing happened. Per-type delete specs
+    # (vm.delete, host.delete, cluster.delete, group.delete, storage.delete)
+    # are the single source now; Del is bound to request_delete_current.
 
     # ── Tree actions — single source with the context menu ──────────
     for spec in window.tree_panel.action_registry.all():
