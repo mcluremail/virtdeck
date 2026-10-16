@@ -83,6 +83,14 @@ class ActionSpec:
     enabled: Callable[[Selection], bool] | None = None
     """None — always enabled; otherwise a predicate over the selection."""
 
+    disabled_reason: Callable[[Selection], str] | None = None
+    """GAP-10: human explanation for a disabled state (per selection),
+    shown as the tooltip of the grayed-out context-menu item."""
+
+    label_fn: Callable[[Selection], str] | None = None
+    """U18: dynamic label per selection (e.g. "Delete template" for a
+    template, "Delete VM" otherwise). Falls back to *label*."""
+
     invoke: Callable[[Selection], None] | None = None
     """Invoking closure (argument — the selection at call time)."""
 
@@ -91,6 +99,12 @@ class ActionSpec:
 
     section: str = ""
     """Ordering group (sorting within matches): lower is higher."""
+
+    def display_label(self, selection: Selection | None = None) -> str:
+        """Label for display: label_fn(selection) when available."""
+        if self.label_fn is not None and selection is not None:
+            return self.label_fn(selection)
+        return self.label
 
 
 class ActionRegistry:

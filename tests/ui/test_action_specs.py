@@ -260,6 +260,7 @@ class _StubWindow:
         self._handlers = {
             "global.add_server": "_on_add_server",
             "global.refresh": "refresh_data",
+            "global.fleet": "_open_fleet_health",
             "global.search": "_open_global_search",
             "global.export": "_on_export_config",
             "global.import": "_on_import_config",

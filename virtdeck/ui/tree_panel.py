@@ -506,15 +506,21 @@ class TreePanel(QWidget):
     def _add_action_specs(self, menu, sel, action_ids):
         """Registry QActions into the context menu: labels, icons and
         enablement rules come from ActionSpec. Disabled actions are shown
-        (menu semantics), not hidden as in the palette."""
+        (menu semantics), not hidden as in the palette; a disabled item
+        with a reason explains itself in the tooltip (GAP-10)."""
         by_id = {s.action_id: s for s in self.action_registry.all()}
         for aid in action_ids:
             spec = by_id[aid]
-            act = QAction(spec.label, self.tree)
+            act = QAction(spec.display_label(sel), self.tree)
             if spec.icon:
                 act.setIcon(get_icon(spec.icon))
             if spec.enabled is not None and not spec.enabled(sel):
                 act.setEnabled(False)
+                if spec.disabled_reason is not None:
+                    reason = spec.disabled_reason(sel)
+                    if reason:
+                        act.setToolTip(reason)
+                        menu.setToolTipsVisible(True)
             if spec.invoke is not None:
                 act.triggered.connect(
                     lambda checked=False, sp=spec: sp.invoke(sel))
@@ -567,6 +573,9 @@ class TreePanel(QWidget):
                     self._edit_note_dialog(it, ks)
             )
             menu.addAction(vm_note_act)
+            # U17: destructive actions live at the bottom, after a
+            # separator, so the hand never travels into them by accident.
+            menu.addSeparator()
             self._add_action_specs(menu, vm_sel, ("vm.delete",))
             return menu
 
@@ -601,8 +610,7 @@ class TreePanel(QWidget):
                     host_ids.append("host.clone_from_template")
                 self._add_action_specs(menu, sel, tuple(host_ids))
                 menu.addSeparator()
-                self._add_action_specs(
-                    menu, sel, ("host.delete", "host.refresh_token"))
+                self._add_action_specs(menu, sel, ("host.refresh_token",))
                 host_cfg = next(
                     (c for c in self.nodes_cfg if c.get("name") == host_name),
                     None)
@@ -629,6 +637,10 @@ class TreePanel(QWidget):
                         self._edit_note_dialog(it, ks, df)
                 )
                 menu.addAction(note_act)
+                # U17: destructive actions live at the bottom, after a
+                # separator.
+                menu.addSeparator()
+                self._add_action_specs(menu, sel, ("host.delete",))
 
         elif item_type == "cluster":
             sel = self.selection_for_item(item)
@@ -639,7 +651,6 @@ class TreePanel(QWidget):
                 menu.addSeparator()
             if self._tree_mode == "hosts":
                 self._add_action_specs(menu, sel, ("cluster.add_node",))
-            self._add_action_specs(menu, sel, ("cluster.delete",))
             self._add_group_menu(menu, "cluster", item_name)
             note_act = QAction(tr("Edit note…"), self.tree)
             note_act.triggered.connect(
@@ -647,22 +658,28 @@ class TreePanel(QWidget):
                     self._edit_note_dialog(it, ks)
             )
             menu.addAction(note_act)
+            # U17: destructive actions live at the bottom, after a separator.
+            menu.addSeparator()
+            self._add_action_specs(menu, sel, ("cluster.delete",))
 
         elif item_type == "group":
             sel = self.selection_for_item(item)
-            self._add_action_specs(menu, sel, ("group.rename", "group.delete"))
+            self._add_action_specs(menu, sel, ("group.rename",))
             note_act = QAction(tr("Edit note…"), self.tree)
             note_act.triggered.connect(
                 lambda checked, it=item, ks=f"group:{item_name}":
                     self._edit_note_dialog(it, ks)
             )
             menu.addAction(note_act)
+            # U17: destructive actions live at the bottom, after a separator.
+            menu.addSeparator()
+            self._add_action_specs(menu, sel, ("group.delete",))
 
         elif item_type == "storage":
             sel = self.selection_for_item(item)
             scope = key[3] if len(key) > 3 else ""
             if self._storage_api_host(key):
-                self._add_action_specs(menu, sel, ("storage.edit", "storage.delete"))
+                self._add_action_specs(menu, sel, ("storage.edit",))
                 menu.addSeparator()
             note_act = QAction(tr("Edit note…"), self.tree)
             note_act.triggered.connect(
@@ -670,6 +687,9 @@ class TreePanel(QWidget):
                     self._edit_note_dialog(it, ks)
             )
             menu.addAction(note_act)
+            # U17: destructive actions live at the bottom, after a separator.
+            if self._storage_api_host(key):
+                self._add_action_specs(menu, sel, ("storage.delete",))
 
         if not menu.actions():
             return None

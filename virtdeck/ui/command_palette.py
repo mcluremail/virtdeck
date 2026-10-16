@@ -140,7 +140,8 @@ class CommandPalette(QDialog):
             empty.setForeground(0, QBrush(QColor(Color.DISABLED)))
             self._list.addTopLevelItem(empty)
         for spec in specs:
-            item = QTreeWidgetItem([spec.label, spec.shortcut])
+            item = QTreeWidgetItem([spec.display_label(self._selection),
+                                    spec.shortcut])
             item.setIcon(0, get_icon(spec.icon) if spec.icon else QIcon())
             item.setData(0, _SPEC_ROLE, spec)
             if spec.dangerous:

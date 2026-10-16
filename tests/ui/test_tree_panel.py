@@ -907,6 +907,19 @@ class TestPbsView:
         assert tp.tree.currentItem().data(0, ITEM_KEY_ROLE) == ("pbs", "pbs1")
 
 
+class _FakeSeparator:
+    """Stands in for QMenu's separator action."""
+
+    def isSeparator(self):
+        return True
+
+    def isEnabled(self):
+        return False
+
+    def text(self):
+        return ""
+
+
 class _FakeMenu:
     """Stands in for QMenu (Shiboken forbids patching QMenu.exec)."""
 
@@ -926,6 +939,9 @@ class _FakeMenu:
         return sub
 
     def addSeparator(self):
+        self._actions.append(_FakeSeparator())
+
+    def setToolTipsVisible(self, *a, **k):
         pass
 
     def actions(self):
@@ -1504,3 +1520,163 @@ class TestVMContextMenuRegistry:
             lambda hn, nd, vid: got.append((hn, nd, vid)))
         by_text["Delete VM"].trigger()
         assert got == [("h1", "pve01", 100)]
+
+
+class TestDangerousLastOrdering:
+    """U17: destructive actions sit at the bottom of the context menu,
+    after a separator, so they cannot be hit by accident."""
+
+    def _seq(self, menu):
+        """Texts with separators rendered as '---' (raw order)."""
+        from PySide6.QtGui import QAction
+        out = []
+        for a in menu.actions():
+            if isinstance(a, QAction) and a.text():
+                out.append(a.text())
+            elif getattr(a, "isSeparator", lambda: False)():
+                out.append("---")
+        return out
+
+    def _panel(self, qtbot, make_node, make_vm, cfg, vms=()):
+        tp = TreePanel(cfg)
+        qtbot.addWidget(tp)
+        node_repo = NodeRepository()
+        node_repo.add(make_node(host_name=cfg[0]["name"], node="pve01"))
+        vm_repo = VmRepository()
+        for vm in vms:
+            vm_repo.add(vm)
+        tp.update_data(node_repo.all(), vm_repo.all(), final=True,
+                       node_repo=node_repo, vm_repo=vm_repo)
+        tp._build_tree()
+        return tp
+
+    def test_host_delete_last(self, qtbot, make_node, make_vm, monkeypatch):
+        cfg = [{"name": "h1", "cluster": "", "skip": False}]
+        tp = self._panel(qtbot, make_node, make_vm, cfg)
+        item = _collect_items(tp)[("host", "pve01", "h1")]
+        seq = self._seq(_open_menu(qtbot, tp, item, monkeypatch))
+        assert seq[-1] == "Delete host"
+        assert seq[-2] == "---"
+
+    def test_vm_delete_last(self, qtbot, make_node, make_vm, monkeypatch):
+        from virtdeck.domain.vm import Vm  # noqa: F401  (fixture parity)
+        vm = make_vm(vmid=100, name="alpha", host_name="h1", node="pve01",
+                     status=VmStatus.RUNNING)
+        cfg = [{"name": "h1", "cluster": "", "skip": False}]
+        tp = self._panel(qtbot, make_node, make_vm, cfg, vms=[vm])
+        item = _collect_items(tp)[("host", "pve01", "h1")]
+
+        def walk_vm(it):
+            if it.data(0, VM_KEY_ROLE) == ("h1", 100, "pve01"):
+                return it
+            for i in range(it.childCount()):
+                f = walk_vm(it.child(i))
+                if f is not None:
+                    return f
+            return None
+
+        vm_item = None
+        for i in range(tp.tree.topLevelItemCount()):
+            vm_item = walk_vm(tp.tree.topLevelItem(i))
+            if vm_item is not None:
+                break
+        seq = self._seq(_open_menu(qtbot, tp, vm_item, monkeypatch))
+        assert seq[-1] == "Delete VM"
+        assert seq[-2] == "---"
+
+
+class TestDisabledReasons:
+    """GAP-10: a grayed-out menu item explains itself in the tooltip."""
+
+    def _menu_for(self, qtbot, make_node, make_vm, monkeypatch, **vm_kw):
+        vm = make_vm(vmid=100, name="alpha", host_name="h1", node="pve01",
+                     **vm_kw)
+        cfg = [{"name": "h1", "cluster": "", "skip": False}]
+        tp = TreePanel(cfg)
+        qtbot.addWidget(tp)
+        node_repo = NodeRepository()
+        node_repo.add(make_node(host_name="h1", node="pve01"))
+        vm_repo = VmRepository()
+        vm_repo.add(vm)
+        tp.update_data(node_repo.all(), vm_repo.all(), final=True,
+                       node_repo=node_repo, vm_repo=vm_repo)
+        tp._build_tree()
+        item = None
+
+        def walk(it):
+            if it.data(0, VM_KEY_ROLE) == ("h1", 100, "pve01"):
+                return it
+            for i in range(it.childCount()):
+                f = walk(it.child(i))
+                if f is not None:
+                    return f
+            return None
+
+        for i in range(tp.tree.topLevelItemCount()):
+            item = walk(tp.tree.topLevelItem(i))
+            if item is not None:
+                break
+        menu = _open_menu(qtbot, tp, item, monkeypatch)
+        from PySide6.QtGui import QAction
+        return {a.text(): a for a in menu.actions()
+                if isinstance(a, QAction) and a.text()}
+
+    def test_running_vm_start_disabled_reason(self, qtbot, make_node,
+                                              make_vm, monkeypatch):
+        by = self._menu_for(qtbot, make_node, make_vm, monkeypatch,
+                            status=VmStatus.RUNNING)
+        assert not by["Start"].isEnabled()
+        assert by["Start"].toolTip() == "VM is running"
+
+    def test_stopped_vm_shutdown_disabled_reason(self, qtbot, make_node,
+                                                 make_vm, monkeypatch):
+        by = self._menu_for(qtbot, make_node, make_vm, monkeypatch,
+                            status=VmStatus.STOPPED)
+        assert not by["Shutdown"].isEnabled()
+        assert by["Shutdown"].toolTip() == "VM is not running"
+
+    def test_enabled_items_keep_text_tooltip(self, qtbot, make_node,
+                                             make_vm, monkeypatch):
+        by = self._menu_for(qtbot, make_node, make_vm, monkeypatch,
+                            status=VmStatus.RUNNING)
+        assert by["Shutdown"].isEnabled()
+        # Qt falls back to the label as tooltip; no reason text appears
+        assert by["Shutdown"].toolTip() != "VM is running"
+
+
+class TestTemplateDeleteLabel:
+    """U18: the delete label follows the object kind."""
+
+    def test_delete_template_label(self, qtbot, make_node, make_vm,
+                                   monkeypatch):
+        vm = make_vm(vmid=100, name="tmpl", host_name="h1", node="pve01",
+                     template=True)
+        cfg = [{"name": "h1", "cluster": "", "skip": False}]
+        tp = TreePanel(cfg)
+        qtbot.addWidget(tp)
+        node_repo = NodeRepository()
+        node_repo.add(make_node(host_name="h1", node="pve01"))
+        vm_repo = VmRepository()
+        vm_repo.add(vm)
+        tp.update_data(node_repo.all(), vm_repo.all(), final=True,
+                       node_repo=node_repo, vm_repo=vm_repo)
+        tp._build_tree()
+        item = None
+
+        def walk(it):
+            if it.data(0, VM_KEY_ROLE) == ("h1", 100, "pve01"):
+                return it
+            for i in range(it.childCount()):
+                f = walk(it.child(i))
+                if f is not None:
+                    return f
+            return None
+
+        for i in range(tp.tree.topLevelItemCount()):
+            item = walk(tp.tree.topLevelItem(i))
+            if item is not None:
+                break
+        menu = _open_menu(qtbot, tp, item, monkeypatch)
+        texts = [a.text() for a in menu.actions() if a.text()]
+        assert "Delete template" in texts
+        assert "Delete VM" not in texts

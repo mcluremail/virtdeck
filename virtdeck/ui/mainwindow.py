@@ -391,17 +391,24 @@ class MainWindow(QMainWindow):
         for tb in self._toolbar.findChildren(QToolButton):
             tb.setFocusPolicy(Qt.StrongFocus)
 
-        QShortcut(QKeySequence("Ctrl+R"), self, activated=self.refresh_data)
-        QShortcut(QKeySequence("F5"), self, activated=self.refresh_data)
-        QShortcut(QKeySequence("Ctrl+Q"), self, activated=self._tray_quit)
-        QShortcut(QKeySequence("Ctrl+N"), self, activated=lambda: self._on_add_server())
+        # U16: window-level shortcuts are bound from the registry — the
+        # single source whose spec.shortcut the palette also displays
+        # ("Ctrl+R, F5" expands into two sequences). Del and Ctrl+K stay
+        # physical bindings: Del routes through request_delete_current
+        # (per-type semantics with confirmations), Ctrl+K is the
+        # palette's own meta-action.
+        from .action_registry import Selection
+        from .action_specs import build_registry
+        for spec in build_registry(self).all():
+            if not spec.action_id.startswith("global.") or not spec.shortcut:
+                continue
+            for seq in spec.shortcut.split(","):
+                seq = seq.strip()
+                if seq:
+                    QShortcut(QKeySequence(seq), self,
+                              activated=lambda sp=spec: sp.invoke(Selection()))
         QShortcut(QKeySequence("Del"), self, activated=self.tree_panel.request_delete_current)
-        QShortcut(QKeySequence("Ctrl+F"), self, activated=self._open_global_search)
-        QShortcut(QKeySequence("Ctrl+Shift+F"), self, activated=self._open_fleet_health)
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self._open_command_palette)
-        QShortcut(QKeySequence("Ctrl+E"), self, activated=self._on_export_config)
-        QShortcut(QKeySequence("Ctrl+I"), self, activated=self._on_import_config)
-        QShortcut(QKeySequence("F1"), self, activated=self._on_about)
 
         # U35: initial focus belongs to the tree (the primary navigation
         # surface), not to the mode combo that merely starts the Tab chain.
