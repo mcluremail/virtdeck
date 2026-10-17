@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.1.1 — nothing left running behind a closed window (crash fixes)
+
+**Bug fixes**
+- Closing the window while a VM action, refresh or PBS request is still in flight no longer risks a delayed crash (surfaced on CI as a segmentation fault, see the release-delta audit addendum): in-flight workers are disconnected from the UI at teardown — their late replies become no-ops while the poll itself keeps running harmlessly — and no new worker is started after the window is gone.
+- The same crash class is closed at the other end: the tree filter, row hover, table autofit guard and command palette pin their Python wrappers for the C++ object's lifetime, so an event filter can never fire on a garbage-collected wrapper (a second CI signature was a re-entered dead tree filter handler).
+- The test suite gained a permanent guard that fails any test leaving a QThreadPool worker running — the leaker is named where it leaks, not three tests later. The three leaks that made CI segfault (an unattended GAP-6 flight polling for 600 s, a real PBS request against a fake host, a real update-check HTTPS request started by a singleShot that outlived its test) are fixed at the source; suite coverage is unchanged (1774 tests).
+
 ## v3.1.0 — one interface language: theme engine v2, brand icon layer, live tree filter
 
 **New features**

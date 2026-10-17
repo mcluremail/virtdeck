@@ -194,3 +194,46 @@ INTERNALERROR exit 3). Плюс поздние queued-доставки ворк�
   state_primitives, forms_tables_data, column_reorder, theme_scale,
   pbs_render_restore): 100 passed, 0 утечек.
 - `ruff check virtdeck tests` — чисто.
+
+### Второй прогон CI: мёртвый eventFilter (тот же класс)
+
+8c1ec51 на CI: **сегфолта нет** (0 вхождений в логе), но на другом
+тесте всплыло чистое Python-исключение — `AttributeError` в
+`tree_panel.eventFilter` (`'TreePanel' object has no attribute
+'_filter_edit'`): обёртка панели собрана GC (dict очищен), пока
+фильтр, зарегистрированный на живом `_filter_edit`, продолжает
+получать события. Владение C++-панелью после добавления в layout
+принадлежит родителю; qtbot бросает обёртки (close + deleteLater) до
+обработки отложенного удаления C++ — GC-проход в этом окне и очищает
+dict живого C++-объекта. Тот же механизм, что и в дампе PR #54
+(24× ре-энтрантный мёртвый фильтр), теперь без сегфолта.
+
+Фикс класса (все `installEventFilter`-места): сильная ссылка на
+обёртку до `destroyed` (модульный реестр):
+
+- `tree_panel.py` — реестр + eventFilter, устойчивый к очищенному
+  dict (`getattr(self, "_filter_edit", None)`);
+- `command_palette.py` — реестр (тот же паттерн);
+- `hover.py` — реестр; до фикса обёртка `_RowHoverFilter` вообще не
+  удерживалась (результат `enable_row_hover` выбрасывался) — highlight
+  строк мог молча отмирать после GC-прохода;
+- `theme.py` — реестр для `_AutofitGuard` (guard — локальная
+  переменная, удержание отсутствовало).
+
+(`theme.py:410 app.installEventFilter(_font_watcher)` безопасен —
+модульная глобальная ссылка.)
+
+### Стратегия версии: fix-forward на v3.1.1
+
+Сервер repo.mclure.ru держит пул append-only («a rebuild of the same
+NEVRA has different bytes and must ship as a version bump instead»):
+повторная публикация 3.1.0 невозможна, шаг Release «Wait until the
+server publishes this exact build» исчерпал 5 минут ожидания — пакеты
+3.1.0 (собранные из 38ae000) остались в пуле прежними. Решение:
+
+- **v3.1.1** — фикс-релиз: версия поднята (pyproject, `__init__`,
+  uv.lock, README), секция CHANGELOG добавлена;
+- тег **v3.1.0 возвращён на 38ae000** — коммит, из которого собраны
+  опубликованные пакеты (провенанс тега = содержимое пакета);
+- страница релиза v3.1.0 на GitHub пересоздана с телом из CHANGELOG
+  (без шаблонной заглушки).

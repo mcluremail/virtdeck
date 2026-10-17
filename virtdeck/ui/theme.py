@@ -204,6 +204,14 @@ def enable_column_reorder(header):
     return header
 
 
+# The guard is parented to the header (C++-owned) and its wrapper would
+# otherwise be dropped right after this function returns: a GC pass that
+# collects it leaves the filter registered on the living viewport — a
+# later event reaches a dead Python override (CI segfault class,
+# 2026-10-17). Pin the wrapper until destroyed releases it.
+_LIVE_AUTOFIT_GUARDS: set = set()
+
+
 class _AutofitGuard(QObject):
     """Stops autofit for a column once the user drags its header."""
 
@@ -306,6 +314,8 @@ def enable_table_autofit(view, cols, max_width=None):
         model.modelReset.connect(timer.start)
     guard = _AutofitGuard(header, state)
     header.viewport().installEventFilter(guard)
+    _LIVE_AUTOFIT_GUARDS.add(guard)
+    guard.destroyed.connect(lambda *_: _LIVE_AUTOFIT_GUARDS.discard(guard))
     return header
 
 

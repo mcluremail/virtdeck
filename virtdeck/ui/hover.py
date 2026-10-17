@@ -5,6 +5,13 @@ from .theme import Color
 
 WARN_ROLE = Qt.UserRole + 10
 
+# The filter object is parented to the table (C++-owned), but its Python
+# wrapper must outlive the eventFilter registration: a GC pass that
+# collects the dropped wrapper leaves the filter registered on the living
+# viewport — a later event reaches a dead Python override (CI segfault
+# class, 2026-10-17). Pin the wrapper until destroyed releases it.
+_LIVE_HOVERS: set = set()
+
 
 class _RowHoverFilter(QObject):
     def __init__(self, table):
@@ -68,4 +75,7 @@ class _RowHoverFilter(QObject):
 
 
 def enable_row_hover(table):
-    _RowHoverFilter(table)
+    f = _RowHoverFilter(table)
+    _LIVE_HOVERS.add(f)
+    f.destroyed.connect(lambda *_: _LIVE_HOVERS.discard(f))
+    return f

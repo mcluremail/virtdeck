@@ -35,6 +35,13 @@ _PALETTE_WIDTH = 520
 _LIST_MAX_HEIGHT = 400
 
 
+# The wrapper must outlive the filter registration: once the dialog is
+# reparented, the C++ object is owned by its parent, and a GC pass that
+# clears the wrapper dict while the C++ object is still alive leaves a
+# dead eventFilter registered (CI segfault class, 2026-10-17).
+_LIVE_PALETTES: set = set()
+
+
 class CommandPalette(QDialog):
     """Fuzzy palette of actions applicable to the selected tree object."""
 
@@ -64,6 +71,13 @@ class CommandPalette(QDialog):
         self._input.setClearButtonEnabled(True)
         self._input.textChanged.connect(self._refresh)
         self._input.installEventFilter(self)
+        # The wrapper must outlive the filter registration: once this
+        # dialog is reparented, the C++ object is owned by its parent,
+        # and a GC pass that clears the wrapper dict while the C++ object
+        # is still alive leaves a dead eventFilter registered (CI
+        # segfault class, 2026-10-17).
+        _LIVE_PALETTES.add(self)
+        self.destroyed.connect(lambda *_: _LIVE_PALETTES.discard(self))
         lay.addWidget(self._input)
 
         self._list = QTreeWidget()

@@ -231,6 +231,17 @@ class GroupTreeWidget(QTreeWidget):
         self._panel.group_move_requested.emit(payload["kind"], payload["name"], group)
 
 
+# A wrapper that installs itself as an event filter must outlive the
+# registration. Ownership of the C++ panel moves to the parent layout, so
+# a GC pass that runs while the wrapper is already unreferenced but the
+# deferred C++ deletion is not processed yet clears the wrapper dict and
+# leaves the filter registered on the living _filter_edit — a later event
+# then reaches a dead Python override (AttributeError; in a mid-dispatch
+# GC pass this segfaulted CI, 2026-10-17). Pin the wrapper until the C++
+# object's destroyed signal releases it.
+_LIVE_PANELS: set = set()
+
+
 class TreePanel(QWidget):
     item_selected = Signal(str, str, object)
     host_remove_requested = Signal(str, str)
@@ -330,6 +341,8 @@ class TreePanel(QWidget):
         self._filter_edit.setAccessibleName(tr("Filter"))
         self._filter_edit.textChanged.connect(self._apply_filter)
         self._filter_edit.installEventFilter(self)
+        _LIVE_PANELS.add(self)
+        self.destroyed.connect(lambda *_: _LIVE_PANELS.discard(self))
         filter_row = QHBoxLayout()
         filter_row.setContentsMargins(4, 4, 4, 0)
         filter_row.addWidget(self._filter_edit)
@@ -1459,15 +1472,16 @@ class TreePanel(QWidget):
 
     def eventFilter(self, obj, event):
         """Esc in the filter: clear it (or leave the field) → back to tree."""
-        if (obj is self._filter_edit
-                and event.type() == QEvent.Type.KeyPress
-                and event.key() == Qt.Key.Key_Escape):
-            if self._filter_edit.text():
-                self._filter_edit.clear()      # textChanged applies ""
-            else:
-                self.tree.setFocus()
-            return True
-        return super().eventFilter(obj, event)
+        filter_edit = getattr(self, "_filter_edit", None)
+        if (filter_edit is None or obj is not filter_edit
+                or event.type() != QEvent.Type.KeyPress
+                or event.key() != Qt.Key.Key_Escape):
+            return super().eventFilter(obj, event)
+        if filter_edit.text():
+            filter_edit.clear()      # textChanged applies ""
+        else:
+            self.tree.setFocus()
+        return True
 
     @staticmethod
     def _search_text(item):
