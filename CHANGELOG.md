@@ -1,5 +1,42 @@
 # Changelog
 
+## v3.1.0 — one interface language: theme engine v2, brand icon layer, live tree filter
+
+**New features**
+- Theme engine v2: the QPalette is rebuilt from theme tokens on every activation — native painting (tree branch/indent selection, text selection, combo popups) follows the theme instead of showing system blue; spacing/radius/type scales replace per-surface magic numbers, and the whole UI scales with the system font (the application font is no longer pinned to 14px; text never goes below 12px); a font-change watcher rebuilds the stylesheet live (docs/THEMES.md)
+- Brand icon layer: ~50 builtin icons are one shape language (filled brand bodies + white glyphs + status dot) colored through 7 new ICON_* theme tokens — the same hues in every theme; a theme can mute the layer to monochrome or override icons entirely (S2/Д5)
+- Live tree filter (GAP-7): Ctrl+F or the search box above the tree matches display name, VMID, node and the info line, case-insensitive; parents of matches stay visible as containers; the expansion snapshot is restored when the filter is cleared; Esc clears, and a jump from global search bypasses the filter
+- One empty-state primitive everywhere (Д6): global search, command palette, tasks dock, Fleet Health and the PBS panel show icon + title + hint with the next step instead of bare column headers; the detail panel shows a structural skeleton of the future page while loading (Д7) instead of a text label + a second spinner
+- Task navigation (GAP-11): double-click a task in the dock to select the affected VM (or its node) in the tree
+- Disabled actions explain themselves (GAP-10): grayed-out palette rows and context-menu items carry a reason ("VM is not running", "A template cannot be migrated"); the command palette shows them instead of hiding
+- Dynamic action labels (U18/U14): "Delete template" for templates; templates surface their real actions (clone, convert, delete) in the palette
+- Locale-aware dates and plurals (Д12/U30): timestamps in tasks, snapshots, backups and token expiry follow the interface language (QLocale); plural-aware counts ("1 узел / 2 узла / 5 узлов"); module-level label tables retranslate on language switch without a restart (U31)
+
+**Bug fixes**
+- trust_ssl truth (stage 3): the UI showed "trusted" for hosts that were in fact verified strictly (the backend default is False) — the host card, edit dialog and add form now reflect the real verify behavior
+- An unreachable node's tooltip starts with WHY it is unreachable (U10) instead of a bare "CPU: 0% RAM: 0%"
+- A second click while a VM action is still in flight no longer sends a duplicate worker that PVE rejects with a confusing "already running" (GAP-6)
+- The status bar "Hosts: ok/total" denominator is the configured hosts, not the ones that happened to answer (L3); an empty application stays silent instead of showing "0/0" noise (U5); the "when did the data last arrive" stamp is explicit (U8/GAP-4)
+- Fleet Health no longer claims "No issues found" when some clusters returned incomplete data (DELIGHT-3) and never reads zero targets as a clean bill of health (U6)
+- PBS datastore usage is derived from confirmed used/total when a PBS build omits the precomputed ratio (D1) — confirmed numbers no longer degrade to dashes; byte columns use one unit per column (A10), and failed status calls render dashes, not fake zeros
+- Auto-refresh pauses after one notification when every host fails authorization (U20) — an expired token no longer spams a notification every 20 seconds; a manual Refresh retries and un-pauses
+- Keyboard focus is visible on every button style (U34, WCAG 2.4.7); toolbar buttons are reachable by Tab (U35); initial focus lands on the tree; destructive menu items sit at the bottom after a separator (U17) and are red in every menu (A1 — per-menu inline styles are gone)
+- Purge on VM delete is now opt-in (DELIGHT-5): the checkbox that also removes the guest from HA resources and backup jobs defaults to off
+- Long VM names elide in the detail-panel title instead of pushing tabs and actions out of view (DELIGHT-1); duplicate VM names in the tree are disambiguated with the VMID (DELIGHT-8)
+- The Add Server dialog validates the port (1–65535) where it is used (U24) and submits on Enter; the token section and the cluster field hide together with their labels and separator in PBS mode (U23)
+- Task descriptions are no longer truncated at 30 characters (A9/DELIGHT-2) — the diagnostic text is the payload; a "running…" end time is a state, not an amber warning
+- Icons rasterize at the screen device pixel ratio — sharp on HiDPI instead of stretched 1x bitmaps (U36)
+- Toast copy-feedback recolors by re-rendering the style from tokens (A2); status colors in the PBS panel and card lists resolve at render time (A7/Д4) — no more stale light-theme hexes after a theme switch
+
+**Performance**
+- The tree loading skeleton is now the real structure built from configuration (U9) — no more jump from a flat stub list to the grouped tree the moment data arrives; the R11 profile (soft refresh, 200 VMs) stays within the ≤200 ms budget, so no incremental-tree machinery was needed (U1 not triggered)
+
+**Internal**
+- Shared form pattern for dialogs (Д8): one QFormLayout per dialog with spanning section headers (backup job, migrate VM dialogs)
+- i18n mechanics: plural-aware trn(), retranslatable tr_list/tr_dict, QLocale formatters; translation version 52
+- 7 new theme tokens documented in docs/THEMES.md; theme contract tests reworked (test_theme_engine.py, test_icon_language.py)
+- Audit series UX-0..UX-8 (2026-10-16, 9 documents) + consolidated plan + execution report + release-delta audit (audit/2026-10-17); test suite 1736 → 1774
+
 ## v3.0.7 — honest task outcomes and visible degradation (external audit stage 6.3.4)
 
 **Bug fixes**

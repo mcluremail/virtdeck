@@ -62,7 +62,8 @@ Install options and requirements: [README](../README.md). Themes API:
 - User-defined host groups: named groups at the tree top level, assign hosts/clusters via context menu or drag&drop; clicking a group shows an aggregated summary
 - Tree notes: short per-item note (host, cluster, group, VM, storage) rendered as a pale line under the item name; host notes default to the host FQDN; the full text is in the tooltip
 - Global search (Ctrl+F): find VMs, hosts, pools and storages across all clusters and jump to the object in the tree
-- Command palette (Ctrl+K): fuzzy search over every tree and toolbar action, keyboard navigation, context header; the tree context menu is built from the same declarative action registry
+- Live tree filter (Ctrl+F while the tree has focus): instant case-insensitive match on display name, VMID, node and the info line; parents of matches stay visible, the expansion snapshot is restored when the filter is cleared, Esc clears
+- Command palette (Ctrl+K): fuzzy search over every tree and toolbar action, keyboard navigation, context header; the tree context menu is built from the same declarative action registry; disabled actions stay visible with the reason why
 - Monitoring dashboard: metric cards with progress bars (CPU, RAM, Disk, Network, Uptime) and live charts
 - CardList widget — list views as card rows (Host VMs, Cluster Summary, Storage Overview) with status dots, filter, double-click editing
 - Node comparison view: side-by-side cluster node metrics (CPU, RAM, disk, VMs, uptime, PVE version)
@@ -73,7 +74,7 @@ Install options and requirements: [README](../README.md). Themes API:
 - System tray icon: minimize to tray, quick quit, context menu
 - Offline mode: cached resources shown on startup before first network response
 - Multi-language UI (English, Russian, Arabic, Chinese, French, Spanish)
-- Theme switcher in the status bar: Light, KDE Breeze / Breeze Dark (24px icon set, exact KDE palettes), Oxygen, Graphite, and System (follows the OS color scheme); toolbar icons and brand recolor to match; themes are plugins with a documented API ([docs/THEMES.md](THEMES.md))
+- Theme switcher in the status bar: Light, KDE Breeze / Breeze Dark (one brand icon language colored through theme tokens), Oxygen, Graphite, and System (follows the OS color scheme); native widgets, selection and ~50 brand icons recolor to match, type scale and spacing follow the system font; themes are plugins with a documented API ([docs/THEMES.md](THEMES.md))
 - Background auto-refresh every 20 seconds without losing selection or tabs
 - Toast notifications on host/VM status changes
 - Diagnostics for unreachable hosts (DNS error, timeout, auth failure, SSL errors)

@@ -17,9 +17,10 @@ VirtDeck speaks directly to the PVE API (port 8006) and to PBS (port 8007), and 
 - **Fleet Health (multi-cluster)** — one report across all independent clusters: backup compliance, version drift, storage runway with a 95% confidence interval, snapshot sprawl; an offline cluster degrades to a "data from HH:MM" plate instead of an empty report
 - **Full VM/CT lifecycle** — create, clone, migrate, snapshots, bulk power actions with optimistic UI (instant apply, rollback on error)
 - **PBS integration** — direct Proxmox Backup Server connection: datastores, snapshots, sync/verify/prune jobs, restore into a new VM or container
-- **Command palette (Ctrl+K)** — fuzzy search over every action; the palette and the tree context menu are built from one declarative registry
+- **Command palette (Ctrl+K)** — fuzzy search over every action; the palette and the tree context menu are built from one declarative registry; disabled actions explain themselves instead of disappearing
+- **Live tree filter (Ctrl+F)** — find a VM in a big park by name, VMID or node; parents of matches stay visible, the expansion state is restored when the filter is cleared
 - **Built-in noVNC console** for QEMU VMs + SPICE support
-- **Themes** — Light, exact KDE Breeze / Breeze Dark (24px icons), Oxygen, Graphite, System; plugin API in [docs/THEMES.md](docs/THEMES.md)
+- **Themes** — Light, exact KDE Breeze / Breeze Dark (brand-colored icons), Oxygen, Graphite, System; theme engine v2: native widgets, the type scale and ~50 brand icons follow the theme, the whole UI scales with your system font; plugin API in [docs/THEMES.md](docs/THEMES.md)
 - **Security by default** — user-bound API tokens in the system keyring, encrypted config export/import, per-host SSL trust and HTTP(S) proxy
 - **6 UI languages** — English, Russian, Arabic, Chinese, French, Spanish
 
@@ -36,7 +37,7 @@ VirtDeck speaks directly to the PVE API (port 8006) and to PBS (port 8007), and 
 
 Downloads are also listed on the [website](https://virtdeck.mclure.ru).
 
-Latest release: [v3.0.7](https://github.com/mcluremail/virtdeck/releases/tag/v3.0.7)
+Latest release: [v3.1.0](https://github.com/mcluremail/virtdeck/releases/tag/v3.1.0)
 
 ## How VirtDeck compares
 
@@ -164,9 +165,9 @@ Launch from the menu or via `virtdeck`.
 ### From source (any Linux)
 
 ```bash
-# download virtdeck-3.0.7-py3-none-any.whl (or the .tar.gz) from Releases,
+# download virtdeck-3.1.0-py3-none-any.whl (or the .tar.gz) from Releases,
 # then install the package together with its dependencies:
-pip install virtdeck-3.0.7-py3-none-any.whl PySide6 proxmoxer requests \
+pip install virtdeck-3.1.0-py3-none-any.whl PySide6 proxmoxer requests \
   urllib3 pyqtgraph cryptography keyring
 virtdeck
 ```
