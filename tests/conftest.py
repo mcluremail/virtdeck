@@ -16,6 +16,27 @@ def _isolate_xdg(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
 
 
+@pytest.fixture(autouse=True)
+def _no_leaked_pool_threads(request):
+    """DIAGNOSTIC (CI segfault 2026-10-17): after each test, flag tests
+    that leave active QThreadPool runnables behind. A leaked worker keeps
+    polling (up to 600 s) into later tests' event processing."""
+    yield
+    try:
+        from PySide6.QtCore import QThreadPool
+        import faulthandler
+        import sys
+        pool = QThreadPool.globalInstance()
+        if not pool.waitForDone(100):
+            sys.stderr.write(
+                f"\n!!! LEAKED POOL WORKER after: {request.node.nodeid}\n")
+            faulthandler.dump_traceback()
+            pool.clear()
+            pool.waitForDone(20000)
+    except Exception:
+        pass
+
+
 @pytest.fixture
 def make_node():
     """Factory fixture for building Node domain objects."""

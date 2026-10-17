@@ -48,11 +48,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libegl1 libgl1
           pip install -e .[dev,novnc]
+          pip install pytest-timeout
 
       - name: Run tests
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m pytest -q
+        run: python -m pytest -q --timeout=120 --timeout-method=thread --durations=25 -rA
 
   release-checks:
     # Documentation/release consistency: install-command versions, CI matrix
