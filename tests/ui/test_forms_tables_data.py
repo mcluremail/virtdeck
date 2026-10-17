@@ -239,10 +239,11 @@ class TestByteColumns:
 
 class TestDprIcons:
     def test_icon_renders_at_device_pixel_ratio(self, qapp):
-        from virtdeck.ui.icons import _HOST, _render_svg_pixmap
+        from virtdeck.ui.icons import _VM, _render_svg_pixmap
 
         pm = _render_svg_pixmap(
-            _HOST.format(c="#000", c2="#111", ok="#222"), 16, dpr=2.0)
+            _VM.format(brand="#000", deep="#111", c="#222", c2="#333"),
+            16, dpr=2.0)
         # U36: the bitmap is 2x and tagged — 16 logical px stay 16
         # logical px on a HiDPI screen, no stretching
         assert pm.width() == 32

@@ -262,10 +262,9 @@ class TestBuiltinThemePlugins:
         # WARNING darkened vs the Oxygen scheme: text contrast >=4.5
         assert tokens["WARNING"] == "#6e4a08"
 
-    def test_breeze_activates_24px_with_overrides(self, qtbot):
-        """Breeze ships 24px + overrides; after the unification
-        (2026-10-07) 24px is the base size of all themes, but only
-        Breeze has overrides."""
+    def test_breeze_activates_24px_icons(self, qtbot):
+        """Breeze ships 24px icons; since Д5 (S2) the color layer lives in
+        the builtin set — no theme ships SVG overrides anymore."""
         from PySide6.QtCore import QSize
 
         from virtdeck.ui import icons
@@ -273,8 +272,7 @@ class TestBuiltinThemePlugins:
         try:
             load_theme("breeze", persist=False)
             assert icons._BASE_SIZE == 24
-            assert {"vm", "host", "cluster", "pool", "storage",
-                    "backup", "refresh", "search"} <= set(icons._THEME_ICONS)
+            assert not icons._THEME_ICONS
             # every icon renders exactly at the base size, no downscaling
             assert QSize(24, 24) in icons.get_icon("vm").availableSizes()
             assert QSize(24, 24) in icons.get_icon("refresh").availableSizes()
@@ -313,37 +311,40 @@ class TestBuiltinThemePlugins:
         assert style.pixelMetric(QStyle.PM_IconViewIconSize) == 24
         assert style.pixelMetric(QStyle.PM_TabBarIconSize) == 24
 
-    def test_breeze_icons_cover_full_registry(self):
-        """Breeze covers the whole icon registry except the branded
-        'app'."""
-        from virtdeck.plugins._themes import BREEZE_ICONS
+    def test_icon_layer_is_token_driven(self):
+        """Д5/S2: one shape language — every builtin icon is token-driven,
+        24px-native (except the branded 'app'), no unfilled placeholders."""
+        import re
+
         from virtdeck.ui import icons
 
-        missing = set(icons._BUILTINS) - {"app"} - set(BREEZE_ICONS)
-        assert not missing, missing
-        assert "app" not in BREEZE_ICONS
-        for name, svg in BREEZE_ICONS.items():
-            assert 'viewBox="0 0 24 24"' in svg, name
-            # theme-token template OR deliberately fixed colors (filled style)
-            assert "{c}" in svg or 'fill="#' in svg or 'stroke="#' in svg, name
+        known = {"brand", "deep", "soft", "ok", "err", "warn", "pool",
+                 "c", "c2", "b"}
+        for name, svg in icons._BUILTINS.items():
+            used = set(re.findall(r"\{(\w+)\}", svg))
+            assert used, name                     # every icon is token-driven
+            assert used <= known, (name, used - known)
+            if name != "app":
+                assert 'viewBox="0 0 24 24"' in svg, name
 
-    def test_breeze_icons_apply_to_all_names(self, qtbot):
-        """Overrides apply to the whole init_icons cache (not only 7
-        names)."""
-        from PySide6.QtCore import QSize
-
+    def test_icons_render_in_every_theme(self, qtbot):
+        """The builtin color-layer set renders non-null in every theme
+        (no SVG overrides needed since Д5/S2)."""
+        from virtdeck.plugins import default_registry
         from virtdeck.ui import icons
 
         try:
-            load_theme("breeze", persist=False)
-            assert set(icons._THEME_ICONS) == set(icons._BUILTINS) - {"app"}
-            for name in icons._BUILTINS:
-                icon = icons.get_icon(name)
-                assert icon is not None and not icon.isNull(), name
-            # regression: search used to ignore the override in the cache
-            assert QSize(24, 24) in icons.get_icon("search").availableSizes()
+            for theme_id in default_registry().theme_ids():
+                load_theme(theme_id, persist=False)
+                icons.reset_icons()
+                assert not icons._THEME_ICONS
+                for name in icons._BUILTINS:
+                    icon = icons.get_icon(name)
+                    assert icon is not None and not icon.isNull(), \
+                        (theme_id, name)
         finally:
             load_theme("light", persist=False)
+            icons.reset_icons()
 
     def test_charts_retheme_live(self, qtbot):
         """An already built plot is recolored on theme change."""

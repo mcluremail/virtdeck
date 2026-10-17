@@ -136,6 +136,16 @@ class Color:
     # Icons
     ICON_FG     = "#4b5563"   # primary SVG icon stroke
     ICON_FG_DIM = "#374151"   # secondary stroke
+    # Icon color layer (Д5/S2): the brand layer is one shape language in
+    # every theme; the tokens make the colors theme-addressable (a theme
+    # can mute the layer, e.g. ICON_BRAND = ICON_FG, for a monochrome look)
+    ICON_BRAND      = "#3d8bfd"   # object bodies: host/vm/cluster/storage/...
+    ICON_BRAND_DEEP = "#2563eb"   # object shade/detail
+    ICON_BRAND_SOFT = "#93c5fd"   # object light fill
+    ICON_OK         = "#22c55e"   # positive actions (start, resume)
+    ICON_ERR        = "#ef4444"   # destructive actions (stop, reset)
+    ICON_WARN       = "#f59e0b"   # caution accents (shutdown, unlock)
+    ICON_POOL       = "#8b5cf6"   # pool accent
 
     # Fonts — resolved from the fonts installed on the system (see
     # _resolve_fonts below).
@@ -1147,6 +1157,10 @@ TOKENS = (
     "SCROLLBAR_BG", "SCROLLBAR_HANDLE", "SCROLLBAR_HOVER",
     # Icons
     "ICON_FG", "ICON_FG_DIM",
+    # Icon color layer (Д5/S2): the brand layer is one shape language in
+    # every theme; the tokens make the colors theme-addressable
+    "ICON_BRAND", "ICON_BRAND_DEEP", "ICON_BRAND_SOFT",
+    "ICON_OK", "ICON_ERR", "ICON_WARN", "ICON_POOL",
 )
 
 FONT_TOKENS = ("UI_FONT", "MONO_FONT")   # not part of the themes v1 contract

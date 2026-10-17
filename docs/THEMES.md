@@ -139,6 +139,18 @@ cohesive alternatives.
 | --- | --- | --- |
 | `ICON_FG` | Primary SVG icon stroke | `#4b5563` |
 | `ICON_FG_DIM` | Secondary stroke | `#374151` |
+| `ICON_BRAND` | Object bodies (host/vm/cluster/storage/…) | `#3d8bfd` |
+| `ICON_BRAND_DEEP` | Object shade/detail | `#2563eb` |
+| `ICON_BRAND_SOFT` | Object light fill | `#93c5fd` |
+| `ICON_OK` | Positive actions (start, resume) | `#22c55e` |
+| `ICON_ERR` | Destructive actions (stop, reset) | `#ef4444` |
+| `ICON_WARN` | Caution accents (shutdown, unlock) | `#f59e0b` |
+| `ICON_POOL` | Pool accent | `#8b5cf6` |
+
+The `ICON_*` color layer is the icon brand (Д5/S2): every builtin theme
+ships the same hues, so switching the theme does not change the graphic
+language. A theme may still mute the layer (e.g. `ICON_BRAND = ICON_FG`)
+for a monochrome look — the tokens make it addressable.
 
 ### Font tokens — not part of the contract
 
@@ -193,7 +205,7 @@ a partial `{name: svg_source}` dict; names not present fall back to the
 built-in set, recolored from theme tokens. Unknown names in the dict are
 ignored by consumers — overrides only take effect for names the app requests.
 
-**Built-in icon names** (43):
+**Built-in icon names** (51):
 `add`, `about`, `app`, `acl`, `backup`, `clone`, `cluster`, `collapse`,
 `console`, `disk`, `download`, `expand`, `export`, `folder`, `group`,
 `ha`, `hardware`, `history`, `host`, `import`, `iso`, `lock`, `migrate`,
@@ -202,13 +214,16 @@ ignored by consumers — overrides only take effect for names the app requests.
 `services`, `shutdown`, `snapshot`, `start`, `stop`, `storage`, `template`,
 `token`, `tpm`, `unlock`, `upload`, `usb`, `user`, `vm`.
 
-**Recoloring:** built-in templates use `{c}`, `{c2}`, `{ok}`, `{err}`, `{b}`
-placeholders filled with `ICON_FG`, `ICON_FG_DIM`, `STATUS_OK`, `STATUS_ERR`,
-`BORDER`. A foreign SVG **without** placeholders is used as-is (verbatim), so
-a theme has full control over its own artwork. Inline SVG only — no external
-files are loaded. The Breeze override ships a **filled fixed-color set**
-(approved 2026-09-15) — its SVGs carry literal hex colors and render
-identically in light and dark, by design.
+**Recoloring:** built-in templates use the placeholders `{c}`, `{c2}`
+(neutral strokes → `ICON_FG`, `ICON_FG_DIM`), `{brand}`, `{deep}`, `{soft}`
+(object bodies → `ICON_BRAND*`), `{ok}`, `{err}`, `{warn}` (action semantics →
+`ICON_OK`, `ICON_ERR`, `ICON_WARN`), `{pool}` (→ `ICON_POOL`), `{b}`
+(→ `BORDER`). A foreign SVG **without** placeholders is used as-is
+(verbatim), so a theme has full control over its own artwork. Inline SVG
+only — no external files are loaded. Since Д5 (S2, 2026-10-17) the color
+layer is part of the builtin set (token-driven, filled style) — no builtin
+theme ships overrides; the status dot next to an icon still follows the
+`STATUS_*` tokens, not the icon layer.
 
 **Sizing:** every icon is rendered at exactly `icon_size` px — no per-name
 down-scaling (owner decision 2026-09-15: "все иконки в 24px, ВСЕ"). The only
