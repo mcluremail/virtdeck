@@ -122,7 +122,9 @@ class AddServerDialog(QDialog):
         conn_grid.addWidget(pwd_lbl, 4, 0)
         self.pwd_input = QLineEdit()
         self.pwd_input.setEchoMode(QLineEdit.Password)
-        self.pwd_input.setPlaceholderText("••••••••")
+        # U4: a bullet placeholder reads as "already filled" — say what
+        # to type instead of masking the placeholder itself
+        self.pwd_input.setPlaceholderText(tr("enter password"))
         conn_grid.addWidget(self.pwd_input, 4, 1)
 
         info_label = QLabel(tr("An API token will be created for the specified user"))
@@ -190,7 +192,10 @@ class AddServerDialog(QDialog):
         token_grid.setColumnStretch(1, 1)
         body_lay.addLayout(token_grid)
         self._token_grid = token_grid
-        body_lay.addWidget(_section_sep())
+        # U23: the token section's trailing separator — hides with the
+        # section in PBS mode, otherwise two dividers stack in a row
+        self._sep_token = _section_sep()
+        body_lay.addWidget(self._sep_token)
 
         body_lay.addWidget(_section_title(tr("Node settings")))
 
@@ -222,15 +227,19 @@ class AddServerDialog(QDialog):
         scroll.setWidget(body)
         layout.addWidget(scroll, 1)
 
-        # PVE-only widgets hidden in PBS mode (token flow + cluster row)
+        # PVE-only widgets hidden in PBS mode (token flow + cluster row).
+        # U23: the cluster FIELD hides together with its label — a bare
+        # input without a caption is an orphan; the separator closing
+        # the token section hides with the section (no dangling line).
         self._pve_only_labels = [info_label, tn_lbl, tv_lbl, cl_lbl]
         self._pve_only_widgets = [self.token_name_label, self.token_value_label,
-                                  self._token_show_btn]
+                                  self._token_show_btn, self.cluster_input]
 
         btn_layout = QHBoxLayout()
         self.add_btn = QPushButton(tr("Add"))
         self.add_btn.setObjectName("accentBtn")
         self.add_btn.setEnabled(False)
+        self.add_btn.setDefault(True)  # U24: Enter submits the dialog
         self.add_btn.clicked.connect(self._on_add)
         cancel_btn = QPushButton(tr("Cancel"))
         cancel_btn.clicked.connect(self.reject)
@@ -260,6 +269,7 @@ class AddServerDialog(QDialog):
             self.port_input.setText("8007" if pbs else "8006")
         # PVE-only widgets: token flow + cluster assignment
         self._token_title.setVisible(not pbs)
+        self._sep_token.setVisible(not pbs)
         for w in (self.auth_btn, *self._pve_only_labels, *self._pve_only_widgets):
             w.setVisible(not pbs)
         self.user_input.setPlaceholderText(
@@ -281,8 +291,19 @@ class AddServerDialog(QDialog):
             return True
         return False
 
+    def _port_invalid(self) -> bool:
+        """U24: the digit validator alone admits 99999 — enforce the
+        TCP range when the value is actually used."""
+        port = self.port_input.text().strip()
+        return not port.isdigit() or not (1 <= int(port) <= 65535)
+
     def _on_add(self):
         if self._name_conflicts():
+            return
+        if self._port_invalid():
+            self._set_status(
+                tr("Port must be a number from 1 to 65535"),
+                Color.STATUS_ERR)
             return
         if not self._is_pbs():
             self.accept()
@@ -319,6 +340,11 @@ class AddServerDialog(QDialog):
 
         if not host:
             self._set_status(tr("Enter host"), Color.STATUS_ERR)
+            return
+        if self._port_invalid():
+            self._set_status(
+                tr("Port must be a number from 1 to 65535"),
+                Color.STATUS_ERR)
             return
         if not user:
             self._set_status(tr("Enter user"), Color.STATUS_ERR)

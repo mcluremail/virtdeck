@@ -8,9 +8,10 @@ import logging
 import os
 import re
 
-from PySide6.QtCore import QEvent, QObject, QTimer
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QFont, QFontDatabase
-from PySide6.QtWidgets import QApplication, QHeaderView, QProxyStyle, QStyle
+from PySide6.QtWidgets import (QApplication, QHeaderView, QProxyStyle,
+                               QStyle, QTableWidgetItem)
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +209,58 @@ class _AutofitGuard(QObject):
             if 0 <= col < self._header.count():
                 self._state["cols"].discard(col)
         return False
+
+
+def bytes_unit_for(max_bytes, min_unit="GiB"):
+    """A10: pick ONE unit for a whole byte column from its maximum.
+
+    Per-cell auto-unit ("500 GiB" next to "1.5 TiB" in the same column)
+    destroys vertical scanning — the unit is chosen once per column.
+    """
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    try:
+        start = units.index(min_unit)
+    except ValueError:
+        start = len(units) - 1
+    # express the maximum in min_units first, then climb
+    n = abs(float(max_bytes or 0)) / (1024 ** start)
+    for unit in units[start:]:
+        if n < 1024 or unit == units[-1]:
+            return unit
+        n /= 1024
+    return units[-1]
+
+
+def fill_bytes_column(table, col, values, *, min_unit="GiB",
+                      align_right=True):
+    """A10: fill a byte-value column with a single unit.
+
+    values — raw byte counts per row (None/0 -> "0"); the unit is picked
+    from the column maximum; numbers are right-aligned; raw bytes go to
+    Qt.UserRole so numeric sorting keeps working.
+    """
+    unit = bytes_unit_for(max([v for v in values if v is not None] or [0]),
+                          min_unit=min_unit)
+    factor = 1024 ** max(0, ("B", "KiB", "MiB", "GiB", "TiB").index(unit))
+    align = (Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+             if align_right else Qt.AlignmentFlag.AlignLeft
+             | Qt.AlignmentFlag.AlignVCenter)
+    for row, value in enumerate(values):
+        if value is None:
+            # audit D1: a failed status call is a dash, not a fake zero
+            item = QTableWidgetItem("—")
+            item.setTextAlignment(align)
+            table.setItem(row, col, item)
+            continue
+        try:
+            n = float(value or 0)
+        except (TypeError, ValueError):
+            n = 0.0
+        text = f"{n / factor:,.1f} {unit}".replace(",", " ")
+        item = QTableWidgetItem(text)
+        item.setTextAlignment(align)
+        item.setData(Qt.ItemDataRole.UserRole, n)
+        table.setItem(row, col, item)
 
 
 def enable_table_autofit(view, cols, max_width=None):

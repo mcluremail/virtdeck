@@ -32,7 +32,8 @@ from PySide6.QtWidgets import (
 from ..pbs.workers import TRACKER_TERMINAL, PbsApiWorker, PbsTaskTracker
 from .i18n import tr
 from .icons import get_icon
-from .theme import Color, enable_column_reorder, token_name, usage_color
+from .theme import (Color, enable_column_reorder, fill_bytes_column,
+                    token_name, usage_color)
 from .widgets.empty_state import EmptyState
 
 # A7/Д4: colors resolve at RENDER time, not at import time — frozen
@@ -636,7 +637,8 @@ class PbsPanel(QWidget):
     def _fill_ds_table(self, stores):
         self._last_stores = stores  # A7/Д4: for reapply_theme
         self._ds_table.setRowCount(0)
-        for ds in sorted(stores, key=lambda d: d.name.lower()):
+        ordered = sorted(stores, key=lambda d: d.name.lower())
+        for ds in ordered:
             row = self._ds_table.rowCount()
             self._ds_table.insertRow(row)
             name = QTableWidgetItem(ds.name)
@@ -645,18 +647,21 @@ class PbsPanel(QWidget):
             if ds.status_ok:
                 usage_item = QTableWidgetItem(f"{ds.usage_pct()}%")
                 usage_item.setForeground(QBrush(QColor(_usage_color(ds.usage))))
-                used_txt = _fmt_size(ds.used_bytes)
-                total_txt = _fmt_size(ds.total_bytes)
             else:
                 # status call failed — dashes, not fake zeros (audit D1)
                 usage_item = QTableWidgetItem("—")
                 usage_item.setForeground(QBrush(QColor(Color.TEXT_SEC)))
                 usage_item.setToolTip(tr("Usage data unavailable"))
-                used_txt = total_txt = "—"
             self._ds_table.setItem(row, 1, usage_item)
-            self._ds_table.setItem(row, 2, QTableWidgetItem(used_txt))
-            self._ds_table.setItem(row, 3, QTableWidgetItem(total_txt))
             self._ds_table.setItem(row, 4, QTableWidgetItem(ds.path))
+        # A10: one unit per column (no GiB/TiB jumps cell by cell),
+        # right-aligned numbers; None -> dash for failed status calls
+        fill_bytes_column(
+            self._ds_table, 2,
+            [ds.used_bytes if ds.status_ok else None for ds in ordered])
+        fill_bytes_column(
+            self._ds_table, 3,
+            [ds.total_bytes if ds.status_ok else None for ds in ordered])
         self._ds_table.resizeColumnsToContents()
 
     def _on_ds_dblclicked(self, item, _col):

@@ -538,6 +538,25 @@ class CreateVmDialog(QDialog):
             self.name_input.setStyleSheet(f"border: 1px solid {Color.STATUS_ERR};")
             return
         self.name_input.setStyleSheet("")
+        # U21: no silent fallbacks — an invented "local-lvm" or a
+        # quietly dropped VLAN tag surfaces as a PVE error later
+        if not self.storage_combo.currentData():
+            self.storage_combo.setFocus()
+            self.storage_combo.setStyleSheet(
+                f"border: 1px solid {Color.STATUS_ERR};")
+            return
+        self.storage_combo.setStyleSheet("")
+        vlan = self.vlan_input.text().strip()
+        if vlan:
+            try:
+                vlan_int = int(vlan)
+                assert 0 <= vlan_int <= 4094
+            except (ValueError, AssertionError):
+                self.vlan_input.setFocus()
+                self.vlan_input.setStyleSheet(
+                    f"border: 1px solid {Color.STATUS_ERR};")
+                return
+        self.vlan_input.setStyleSheet("")
         self.create_btn.setEnabled(False)
         self.create_btn.setText(tr("Creating..."))
         self.accept()

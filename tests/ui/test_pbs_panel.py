@@ -98,8 +98,10 @@ class TestServerView:
                             total_bytes=0, status_ok=True)
         panel._fill_ds_table([zero])
         assert panel._ds_table.item(0, 1).text() == "0%"
-        assert "0 B" in panel._ds_table.item(0, 2).text()
-        assert "0 B" in panel._ds_table.item(0, 3).text()
+        # A10: the column unit floor is GiB — but a confirmed zero stays
+        # a zero, not a dash
+        assert panel._ds_table.item(0, 2).text() == "0.0 GiB"
+        assert panel._ds_table.item(0, 3).text() == "0.0 GiB"
 
     def test_fill_status_unavailable_shows_message(self, panel):
         panel.show_datastore("pbs1", "main")

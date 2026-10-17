@@ -63,16 +63,38 @@ def _status_color(status):
         return Color.STATUS_WARN
     return None
 
-def _make_icon(svg, size=None):
+def _screen_dpr():
+    """Device pixel ratio of the primary screen (1.0 without a app)."""
+    from PySide6.QtGui import QGuiApplication
+    app = QGuiApplication.instance()
+    if app is None:
+        return 1.0
+    screen = app.primaryScreen()
+    return screen.devicePixelRatio() if screen is not None else 1.0
+
+
+def _render_svg_pixmap(svg, size=None, dpr=None):
+    """U36: rasterize an SVG template at size * devicePixelRatio and tag
+    the bitmap — a 1x bitmap is no longer stretched blurry on HiDPI."""
     if size is None:
         size = _BASE_SIZE
+    if dpr is None:
+        dpr = _screen_dpr()
+    px = max(1, round(size * dpr))
     renderer = QSvgRenderer(QByteArray(svg.encode("utf-8")))
-    pixmap = QPixmap(size, size)
+    pixmap = QPixmap(px, px)
     pixmap.fill(Qt.transparent)
+    pixmap.setDevicePixelRatio(dpr)
     painter = QPainter(pixmap)
     renderer.render(painter)
     painter.end()
-    return QIcon(pixmap)
+    return pixmap
+
+
+def _make_icon(svg, size=None, dpr=None):
+    if size is None:
+        size = _BASE_SIZE
+    return QIcon(_render_svg_pixmap(svg, size, dpr))
 
 _CLUSTER = """<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
 <circle cx="8" cy="8" r="2" fill="{c2}" stroke="{c}" stroke-width="1.2"/>

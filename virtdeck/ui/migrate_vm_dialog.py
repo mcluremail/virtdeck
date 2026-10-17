@@ -2,8 +2,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
-    QGridLayout,
-    QGroupBox,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -26,29 +25,29 @@ class MigrateVMDialog(QDialog):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
+        # Д8/DELIGHT-6: ONE QFormLayout for the whole dialog — the info
+        # block and the target block shared a label column, killing the
+        # two competing vertical rhythms.
+        from .widgets.form_pattern import add_section
+        form = QFormLayout()
+        form.setSpacing(8)
+        form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        layout.addLayout(form)
 
-        info_group = QGroupBox(tr("VM info"))
-        info_grid = QGridLayout(info_group)
         vm_name = self._vm_info.get("name", "")
         vmid = self._vm_info.get("vmid", "")
         vm_type = self._vm_info.get("type", "qemu")
         node = self._vm_info.get("node", self._current_node)
 
-        info_grid.addWidget(QLabel(tr("Name:")), 0, 0)
-        info_grid.addWidget(QLabel(vm_name), 0, 1)
-        info_grid.addWidget(QLabel("VMID:"), 1, 0)
-        info_grid.addWidget(QLabel(str(vmid)), 1, 1)
-        info_grid.addWidget(QLabel(tr("Type:")), 2, 0)
+        add_section(form, "VM info")
+        form.addRow(tr("Name:"), QLabel(vm_name))
+        form.addRow("VMID:", QLabel(str(vmid)))
         type_label = "QEMU" if vm_type == "qemu" else "LXC"
-        info_grid.addWidget(QLabel(type_label), 2, 1)
-        info_grid.addWidget(QLabel(tr("Source node:")), 3, 0)
-        info_grid.addWidget(QLabel(node), 3, 1)
-        layout.addWidget(info_group)
+        form.addRow(tr("Type:"), QLabel(type_label))
+        form.addRow(tr("Source node:"), QLabel(node))
 
-        target_group = QGroupBox(tr("Migration target"))
-        target_grid = QGridLayout(target_group)
-
-        target_grid.addWidget(QLabel(tr("Target node:")), 0, 0)
+        add_section(form, "Migration target")
         self.target_combo = QComboBox()
         for n in self._cluster_nodes:
             n_name = n.node or ""
@@ -60,11 +59,11 @@ class MigrateVMDialog(QDialog):
                 elif n_status:
                     label += f"  ({n_status})"
                 self.target_combo.addItem(label, n_name)
-        target_grid.addWidget(self.target_combo, 0, 1)
+        form.addRow(tr("Target node:"), self.target_combo)
 
         self.with_local_disks_cb = QCheckBox(tr("Migrate local disks"))
         self.with_local_disks_cb.setChecked(True)
-        target_grid.addWidget(self.with_local_disks_cb, 1, 0, 1, 2)
+        form.addRow("", self.with_local_disks_cb)
 
         if vm_type == "lxc" and self._vm_info.get("running"):
             # restart migration semantics (PVE 7/8/9): the CT is stopped
@@ -73,9 +72,7 @@ class MigrateVMDialog(QDialog):
                              "rebooted on the target node"))
             warn.setStyleSheet(f"color: {Color.STATUS_WARN}; font-size: 12px;")
             warn.setWordWrap(True)
-            target_grid.addWidget(warn, 2, 0, 1, 2)
-
-        layout.addWidget(target_group)
+            form.addRow("", warn)
 
         btn_layout = QHBoxLayout()
         self.migrate_btn = QPushButton(tr("Migrate"))

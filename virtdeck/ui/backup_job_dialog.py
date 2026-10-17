@@ -163,14 +163,25 @@ class BackupJobDialog(QDialog):
         layout.setSpacing(12)
         layout.setContentsMargins(16, 16, 16, 16)
 
+        # Д8 (DELIGHT-4): ONE QFormLayout — a single fixed label column;
+        # sections are spanning headers, not separate layouts (their
+        # independent label widths made the field edges ragged).
+        from .widgets.form_pattern import add_section
         form = QFormLayout()
         form.setSpacing(8)
+        form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
+        # "Enabled" belongs to the form header band (no orphan row)
+        header_row = QHBoxLayout()
+        header_row.addStretch()
         self._enabled_check = QCheckBox(tr("Enabled"))
         self._enabled_check.setChecked(True)
-        form.addRow("", self._enabled_check)
+        header_row.addWidget(self._enabled_check)
+        form.addRow(header_row)
 
         # -- guest selection (audit A2): three distinct job kinds --
+        add_section(form, "Selection")
         self._sel_combo = QComboBox()
         self._sel_combo.addItem(tr("All guests"), "all")
         self._sel_combo.addItem(tr("pool"), "pool")
@@ -185,7 +196,7 @@ class BackupJobDialog(QDialog):
         self._pool_combo.setEditable(True)
         for p in self._pools:
             self._pool_combo.addItem(p, p)
-        form.addRow(tr("pool"), self._pool_combo)
+        form.addRow(tr("Pool:"), self._pool_combo)
 
         self._exclude_edit = QLineEdit()
         self._exclude_edit.setPlaceholderText(tr("comma-separated VMIDs"))
@@ -195,6 +206,7 @@ class BackupJobDialog(QDialog):
         self._node_edit.setPlaceholderText(tr("empty — all nodes"))
         form.addRow(tr("Node:"), self._node_edit)
 
+        add_section(form, "Backup")
         self._mode_combo = QComboBox()
         self._mode_combo.addItem(tr("Snapshot"), "snapshot")
         self._mode_combo.addItem(tr("Suspend"), "suspend")
@@ -227,22 +239,17 @@ class BackupJobDialog(QDialog):
             self._compress_combo.setCurrentIndex(idx)
         form.addRow(tr("Compression:"), self._compress_combo)
 
-        schedule_label = QLabel(f"<b>{tr('Schedule')}</b>")
-        layout.addLayout(form)
-        layout.addWidget(schedule_label)
-
+        add_section(form, "Schedule")
         self._schedule_type_combo = QComboBox()
         self._schedule_type_combo.addItem(tr("Daily"), "daily")
         self._schedule_type_combo.addItem(tr("Weekly"), "weekly")
         self._schedule_type_combo.addItem(tr("Custom"), "custom")
-        sched_form = QFormLayout()
-        sched_form.setSpacing(8)
-        sched_form.addRow(tr("Type:"), self._schedule_type_combo)
+        form.addRow(tr("Type:"), self._schedule_type_combo)
 
         self._time_edit = QTimeEdit()
         self._time_edit.setDisplayFormat("HH:mm")
         self._time_edit.setTime(self._time_edit.time().addSecs(2 * 3600))
-        sched_form.addRow(tr("Time:"), self._time_edit)
+        form.addRow(tr("Time:"), self._time_edit)
 
         self._dow_combo = QComboBox()
         for code, label in _weekdays():
@@ -250,40 +257,33 @@ class BackupJobDialog(QDialog):
         idx = self._dow_combo.findData("sat")
         if idx >= 0:
             self._dow_combo.setCurrentIndex(idx)
-        sched_form.addRow(tr("Day of week:"), self._dow_combo)
+        form.addRow(tr("Day of week:"), self._dow_combo)
 
         self._custom_edit = QLineEdit()
         self._custom_edit.setPlaceholderText(tr("e.g. Sat 02:00"))
-        sched_form.addRow(tr("Custom schedule:"), self._custom_edit)
+        form.addRow(tr("Custom schedule:"), self._custom_edit)
 
-        layout.addLayout(sched_form)
-
-        self._schedule_type_combo.currentIndexChanged.connect(self._on_schedule_type_changed)
-        self._sel_combo.currentIndexChanged.connect(self._on_sel_mode_changed)
-
-        extra_form = QFormLayout()
-        extra_form.setSpacing(8)
-
+        add_section(form, "Retention and notes")
         self._notes_edit = QLineEdit()
         self._notes_edit.setMaxLength(255)
         self._notes_edit.setPlaceholderText(tr("Optional notes"))
-        extra_form.addRow(tr("Notes:"), self._notes_edit)
+        form.addRow(tr("Notes:"), self._notes_edit)
 
         self._remove_check = QCheckBox(tr("Remove old backups"))
         self._remove_check.toggled.connect(self._on_remove_toggled)
-        extra_form.addRow("", self._remove_check)
+        form.addRow("", self._remove_check)
 
         self._prune_edit = QLineEdit()
         self._prune_edit.setPlaceholderText(
             tr("empty — storage's own retention policy"))
-        extra_form.addRow(tr("Retention policy:"), self._prune_edit)
+        form.addRow(tr("Retention policy:"), self._prune_edit)
 
         self._bwlimit_spin = QSpinBox()
         self._bwlimit_spin.setRange(0, 999999)
         self._bwlimit_spin.setSpecialValueText(tr("No limit"))
-        extra_form.addRow(tr("Bandwidth limit (MB/s):"), self._bwlimit_spin)
+        form.addRow(tr("Bandwidth limit (MB/s):"), self._bwlimit_spin)
 
-        layout.addLayout(extra_form)
+        layout.addLayout(form)
 
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()

@@ -29,7 +29,7 @@ from ...domain import QuorumState
 from ..i18n import tr
 from ..icons import get_icon
 from ..object_id import HostId
-from ..theme import Color
+from ..theme import Color, fill_bytes_column
 from ..utils import format_uptime as _format_uptime
 from ..utils import status_text
 from ._constants import TabIndex, _progress_style
@@ -963,14 +963,8 @@ class HostTabs:
             if isinstance(content, list):
                 content = ", ".join(content)
             table.setItem(i, 2, QTableWidgetItem(content))
-            used = st.used_bytes or 0
-            total = st.total_bytes or 0
-            used_gb = round(used / (1024**3), 1) if used else 0
-            total_gb = round(total / (1024**3), 1) if total else 0
-            pct = safe_pct(used, total)
-            table.setItem(i, 3, QTableWidgetItem(f"{used_gb} GiB"))
-            table.setItem(i, 4, QTableWidgetItem(f"{total_gb} GiB"))
-            if total:
+            if (st.used_bytes or 0) and (st.total_bytes or 0):
+                pct = safe_pct(st.used_bytes, st.total_bytes)
                 bar = QProgressBar()
                 bar.setRange(0, 100)
                 bar.setValue(pct)
@@ -981,6 +975,9 @@ class HostTabs:
                 bi = QTableWidgetItem("")
                 bi.setFlags(Qt.ItemIsEnabled)
                 table.setItem(i, 5, bi)
+        # A10: one unit per byte column, right-aligned numbers
+        fill_bytes_column(table, 3, [st.used_bytes or 0 for st in storages])
+        fill_bytes_column(table, 4, [st.total_bytes or 0 for st in storages])
         table.resizeRowsToContents()
         for r in range(table.rowCount()):
             if table.rowHeight(r) > 24:

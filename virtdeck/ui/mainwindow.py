@@ -235,6 +235,8 @@ class MainWindow(QMainWindow):
         self.h_splitter.addWidget(self.right_stack)
 
         self.tasks_widget = ClusterTasksWidget()
+        # GAP-11: double-click on a task row -> select the affected object
+        self.tasks_widget.navigate_requested.connect(self._on_task_navigate)
 
         self.v_splitter = QSplitter(Qt.Vertical)
         self.v_splitter.addWidget(self.h_splitter)
@@ -276,6 +278,8 @@ class MainWindow(QMainWindow):
 
         self._lang_combo = QComboBox()
         self._lang_combo.setMinimumWidth(110)
+        # U37: comboboxes of the status bar are named for screen readers
+        self._lang_combo.setAccessibleName(tr("Interface language"))
         # A5: the same style source as on re-apply (a duplicated inline
         # QSS used to drift from _status_combo_style).
         self._lang_combo.setStyleSheet(self._status_combo_style())
@@ -375,6 +379,13 @@ class MainWindow(QMainWindow):
         about_action.triggered.connect(self._on_about)
         self._toolbar.addAction(about_action)
         self._toolbar_icon_actions.append((about_action, "about"))
+
+        # U37: the tool buttons are icon-only — give them an explicit
+        # accessible name (the action text, without the shortcut suffix)
+        for action, _kind in self._toolbar_icon_actions:
+            btn = self._toolbar.widgetForAction(action)
+            if btn is not None:
+                btn.setAccessibleName(action.text())
 
         # A11: the text-only Quit action is gone — it was the only
         # non-icon element in the icon-only toolbar. Quit stays reachable
@@ -2393,6 +2404,24 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------
     # Cluster tasks refresh
     # ------------------------------------------------------------
+    def _on_task_navigate(self, task):
+        """GAP-11: double-click on a task row selects the affected
+        object in the tree — the VM if the task carries a vmid and is
+        still known, otherwise the task's node."""
+        if task is None:
+            return
+        node_name = task.node or ""
+        vmid = int(task.vmid or 0)
+        if vmid:
+            vm = (self._vm_repo.get(node_name, vmid)
+                  if self._vm_repo else None)
+            if vm is not None:
+                self.tree_panel.find_and_select(
+                    (vm.host_name or node_name, vmid, vm.node))
+                return
+        if node_name:
+            self.tree_panel.find_and_select(("host", node_name, node_name))
+
     def refresh_cluster_tasks(self):
         # Show cached tasks instantly while the worker fetches fresh ones
         if self._cached_tasks:
@@ -2703,6 +2732,7 @@ class MainWindow(QMainWindow):
                 logger.error("saved theme %r failed: %s", saved, exc)
         self._theme_combo = QComboBox()
         self._theme_combo.setMinimumWidth(110)
+        self._theme_combo.setAccessibleName(tr("Theme"))
         self._theme_combo.setStyleSheet(self._status_combo_style())
         reg = get_registry()
         saved = load_ui_state("theme") or "light"

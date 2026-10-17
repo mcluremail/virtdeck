@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timezone
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QComboBox,
@@ -24,6 +24,10 @@ from ..theme import Color, enable_column_reorder, enable_table_autofit
 from .empty_state import EmptyState
 
 TASK_COL_WIDTHS_KEY = "task_col_widths"
+
+# GAP-11: the Task object rides on the row's first item (sorting must
+# not break the row -> task mapping)
+TASK_DATA_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
 TASK_TYPE_LABELS = {
@@ -120,6 +124,10 @@ class NumericTableItem(QTableWidgetItem):
 
 
 class ClusterTasksWidget(QWidget):
+    # GAP-11: double-click on a task row -> the main window selects the
+    # affected object (VM by vmid, otherwise the host)
+    navigate_requested = Signal(object)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._all_tasks = []
@@ -130,6 +138,7 @@ class ClusterTasksWidget(QWidget):
         self.table.setHorizontalHeaderLabels([
             tr("Start time"), tr("End time"), tr("Host"), tr("User"), tr("Description"), tr("Status")
         ])
+        self.table.itemDoubleClicked.connect(self._on_task_double_clicked)
 
         h = self.table.horizontalHeader()
         h.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -245,6 +254,7 @@ class ClusterTasksWidget(QWidget):
             item0 = NumericTableItem(start_str)
             if start_ts:
                 item0.setData(Qt.UserRole, float(start_ts))
+            item0.setData(TASK_DATA_ROLE, task)
             self.table.setItem(i, 0, item0)
 
             end_ts = task.endtime
@@ -260,7 +270,9 @@ class ClusterTasksWidget(QWidget):
             if end_ts:
                 item1.setData(Qt.UserRole, float(end_ts))
             if not end_str:
-                item1.setForeground(QColor(Color.STATUS_WARN))
+                # DELIGHT-2: "running..." is a state, not a warning —
+                # the amber badge trained the operator to ignore amber
+                item1.setForeground(QColor(Color.TEXT_SEC))
                 item1.setText(tr("running..."))
             self.table.setItem(i, 1, item1)
 
@@ -285,8 +297,11 @@ class ClusterTasksWidget(QWidget):
             self.table.setItem(i, 4, item4)
 
             status = task.status
-            item5 = QTableWidgetItem(status[:30] + '…' if len(status) > 30 else status)
-            item5.setToolTip(status if len(status) > 30 else '')
+            # DELIGHT-2/A9: the error text is the diagnostic payload —
+            # no truncation at 30 chars; the column is the stretch
+            # filler, a tooltip carries the full text for extreme cases
+            item5 = QTableWidgetItem(status)
+            item5.setToolTip(status if len(status) > 60 else '')
             if status == 'OK':
                 item5.setForeground(QColor(Color.STATUS_OK))
             elif status == 'RUNNING':
@@ -362,11 +377,13 @@ class ClusterTasksWidget(QWidget):
         """Insert a row at top showing a progress bar in the Status column."""
         self.table.insertRow(0)
         now_str = datetime.now().strftime(TIMESTAMP_FMT)
+        # DELIGHT-2: a running task is a state, not a warning — the
+        # timestamp and "running..." stay neutral
         item0 = QTableWidgetItem(now_str)
-        item0.setForeground(QColor(Color.STATUS_WARN))
+        item0.setForeground(QColor(Color.TEXT_SEC))
         self.table.setItem(0, 0, item0)
         item1 = QTableWidgetItem(tr("running..."))
-        item1.setForeground(QColor(Color.STATUS_WARN))
+        item1.setForeground(QColor(Color.TEXT_SEC))
         self.table.setItem(0, 1, item1)
         self.table.setItem(0, 2, QTableWidgetItem(""))
         self.table.setItem(0, 3, QTableWidgetItem(""))
@@ -396,10 +413,10 @@ class ClusterTasksWidget(QWidget):
         self.table.insertRow(0)
         now_str = datetime.now().strftime(TIMESTAMP_FMT)
         item0 = QTableWidgetItem(now_str)
-        item0.setForeground(QColor(Color.STATUS_WARN))
+        item0.setForeground(QColor(Color.TEXT_SEC))
         self.table.setItem(0, 0, item0)
         item1 = QTableWidgetItem(tr("running..."))
-        item1.setForeground(QColor(Color.STATUS_WARN))
+        item1.setForeground(QColor(Color.TEXT_SEC))
         self.table.setItem(0, 1, item1)
         self.table.setItem(0, 2, QTableWidgetItem(""))
         self.table.setItem(0, 3, QTableWidgetItem(""))
@@ -447,6 +464,14 @@ class ClusterTasksWidget(QWidget):
     def _on_sort_changed(self, col, order):
         """User clicked column header — re-sort data in Python."""
         self._populate_table(self._all_tasks)
+
+    def _on_task_double_clicked(self, item):
+        """GAP-11: a task row double-clicked — ask the main window to
+        open the affected object (VM if the task carries a vmid,
+        otherwise the host)."""
+        task = self.table.item(item.row(), 0).data(TASK_DATA_ROLE)
+        if task is not None:
+            self.navigate_requested.emit(task)
 
     def _save_column_widths(self):
         widths = [self.table.columnWidth(c) for c in range(self.table.columnCount())]
