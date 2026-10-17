@@ -949,12 +949,8 @@ class VMTabs:
             return
         from PySide6.QtGui import QAction
         from PySide6.QtWidgets import QMenu
+        # A1: the global theme QSS is the single menu language.
         menu = QMenu(tree)
-        menu.setStyleSheet(
-            "QMenu { font-size: 12px; padding: 2px; }"
-            "QMenu::item { padding: 4px 12px; }"
-            f"QMenu::item:selected {{ background: {Color.BORDER}; }}"
-        )
         if snap_name == "current":
             delete_act = QAction(tr("Delete snapshot"), tree)
             delete_act.triggered.connect(lambda: self.on_snapshot_delete(snap_name))

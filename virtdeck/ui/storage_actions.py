@@ -35,7 +35,7 @@ class StorageMoveDialog(QDialog):
         layout.addWidget(header)
 
         vol_label = QLabel(f"{tr('Volume:')} {volid}")
-        vol_label.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+        vol_label.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
         vol_label.setWordWrap(True)
         layout.addWidget(vol_label)
 

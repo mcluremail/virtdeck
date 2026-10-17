@@ -6,6 +6,7 @@ are used by several files (test_runtime_contract, test_optimistic).
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
+from PySide6.QtWidgets import QApplication, QMenu
 
 from tests.ui.runtime_contract import (
     install_autofire_dialogs,
@@ -50,6 +51,20 @@ def pytest_runtest_teardown(item):
     loop = QEventLoop()
     QTimer.singleShot(0, loop.quit)
     loop.exec()
+    # Popup menus (pyqtgraph's ViewBoxMenu et al) are re-parented to None
+    # the moment they are shown and therefore survive the death of their
+    # owning widget tree; pytest-qt never tracked them. Left alone they
+    # accumulate across the suite (~100 widgets per chart-bearing window)
+    # and every app-level repolish (setStyleSheet / setPalette / setFont)
+    # pays for all of them — the quadratic-degradation trap again.
+    parentless = [w for w in QApplication.allWidgets()
+                  if isinstance(w, QMenu) and w.parent() is None]
+    if parentless:
+        for m in parentless:
+            m.deleteLater()
+        loop2 = QEventLoop()
+        QTimer.singleShot(0, loop2.quit)
+        loop2.exec()
     return result
 
 

@@ -22,12 +22,18 @@ from PySide6.QtWidgets import (
 from ..i18n import tr
 from ..theme import Color
 
-_DOT_COLORS = {
-    "ok": Color.STATUS_OK,
-    "warn": Color.STATUS_WARN,
-    "err": Color.STATUS_ERR,
-    "off": Color.TEXT_DIM,
+# Colors resolve at render time (A7/Д4 family): a dict frozen at import
+# kept light-theme values after a theme switch.
+_DOT_TOKENS = {
+    "ok": "STATUS_OK",
+    "warn": "STATUS_WARN",
+    "err": "STATUS_ERR",
+    "off": "TEXT_DIM",
 }
+
+
+def _dot_color(key):
+    return getattr(Color, _DOT_TOKENS.get(key, "TEXT_DIM"))
 
 
 def _status_dot(status):
@@ -87,7 +93,7 @@ class CardRow(QFrame):
             self._dot_label.setAlignment(Qt.AlignCenter)
             dot_val = _get_field(self._data, dot_color_key, "")
             color_key = _status_dot(dot_val) or dot_val
-            self._dot_label.setStyleSheet(f"color: {_DOT_COLORS.get(color_key, Color.TEXT_DIM)}; font-size: 10px;")
+            self._dot_label.setStyleSheet(f"color: {_dot_color(color_key)}; font-size: 12px;")
             layout.addWidget(self._dot_label)
 
         title_key = self._columns.get("title")
@@ -127,7 +133,7 @@ class CardRow(QFrame):
                 dot_key = self._columns.get("dot", "status")
                 dot_val = self._data.get(dot_key, "")
                 color_key = _status_dot(dot_val) or dot_val
-                self._dot_label.setStyleSheet(f"color: {_DOT_COLORS.get(color_key, Color.TEXT_DIM)}; font-size: 10px;")
+                self._dot_label.setStyleSheet(f"color: {_dot_color(color_key)}; font-size: 12px;")
             title_key = self._columns.get("title")
             if title_key and self._title_label:
                 self._title_label.setText(str(self._data.get(title_key, "")))
@@ -141,7 +147,7 @@ class CardRow(QFrame):
                 dot_key = self._columns.get("dot", "status")
                 dot_val = _get_field(self._data, dot_key, "")
                 color_key = _status_dot(dot_val) or dot_val
-                self._dot_label.setStyleSheet(f"color: {_DOT_COLORS.get(color_key, Color.TEXT_DIM)}; font-size: 10px;")
+                self._dot_label.setStyleSheet(f"color: {_dot_color(color_key)}; font-size: 12px;")
             title_key = self._columns.get("title")
             if title_key and self._title_label:
                 val = _get_field(self._data, title_key, "")
@@ -192,7 +198,7 @@ class CardList(QWidget):
                 h_layout.addWidget(dot_placeholder)
             for label_text, width in header_labels:
                 lbl = QLabel(label_text)
-                lbl.setStyleSheet(f"color: {Color.TEXT_DIM}; font-size: 11px; text-transform: uppercase;")
+                lbl.setStyleSheet(f"color: {Color.TEXT_DIM}; font-size: 12px; text-transform: uppercase;")
                 if width:
                     lbl.setFixedWidth(width)
                 h_layout.addWidget(lbl)

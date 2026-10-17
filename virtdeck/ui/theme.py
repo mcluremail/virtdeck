@@ -170,6 +170,19 @@ def usage_color(pct):
     return Color.SUCCESS
 
 
+def token_name(color: str) -> str | None:
+    """Canonical token name by value (for recoloring on theme change).
+
+    Inline-styled widgets that must follow theme switches keep the
+    token NAME, not the frozen value — values go stale with the old
+    theme (A7/Д4). None for non-token colors.
+    """
+    for name in TOKENS:
+        if getattr(Color, name, None) == color:
+            return name
+    return None
+
+
 def enable_column_reorder(header):
     """Allow dragging columns by their header.
 
@@ -253,6 +266,144 @@ def _resolve_fonts():
     logger.info("theme fonts: ui=%s, mono=%s", Color.UI_FONT, Color.MONO_FONT)
 
 
+# ── Scale tokens (theme engine v2, Д2) ────────────────────────────
+# The v1 contract tokenized colors only; v2 adds the scales so surfaces
+# stop inventing their own values (S3/A6/U38/GAP-2).
+#
+# SPACING — primary spacing scale (layout gaps, paddings, margins).
+# SPACING_MICRO — optical exceptions beside the scale: hairlines and
+#   the tight paddings of small controls (tree rows, combos). Both
+#   sets are gated by the tests (test_theme_scale.py).
+SPACING = (4, 8, 12, 16, 24)
+SPACING_MICRO = (1, 2, 3, 6)
+
+# RADIUS — corner radius stops (xs..xl).
+RADIUS = {"XS": 3, "SM": 4, "MD": 6, "LG": 8, "XL": 10}
+
+# Type scale — relative roles, resolved to px against the application
+# font at QSS build time. The application font is NOT pinned (GAP-2):
+# the platform default (~9 pt / 12 px at 96 dpi) maps to the design
+# baseline body = 14 px, and every role grows proportionally when the
+# system font is larger. Text never goes below 12 px (U38).
+_FONT_MULT = {
+    "XS": 12 / 14, "SM": 13 / 14, "BASE": 1.0,
+    "LG": 16 / 14, "XL": 22 / 14, "DISPLAY": 24 / 14,
+}
+_BASE_REF_PX = 12.0   # platform default font (9 pt @ 96 dpi)
+_BODY_REF_PX = 14.0   # design baseline: body text at the default font
+_MIN_TEXT_PX = 12     # U38: no text below 12 px
+
+
+def _base_font_px() -> float:
+    """Current application font size in px (pointSize × dpi, or pixelSize)."""
+    app = QApplication.instance()
+    if app is None:
+        return _BASE_REF_PX
+    f = app.font()
+    ptf = f.pointSizeF()
+    if ptf > 0:
+        screen = app.primaryScreen()
+        dpi = screen.logicalDotsPerInch() if screen is not None else 96.0
+        return ptf * dpi / 72.0
+    px = f.pixelSize()
+    return float(px) if px > 0 else _BASE_REF_PX
+
+
+def font_px(role: str = "BASE") -> int:
+    """Type-scale token: UI font size in px for a scale role (Д2/GAP-2).
+
+    Roles are relative to the application font, so the whole UI scales
+    with the system font setting. Text never goes below 12 px (U38).
+    """
+    base = _base_font_px() * (_BODY_REF_PX / _BASE_REF_PX)
+    return max(_MIN_TEXT_PX, round(base * _FONT_MULT[role]))
+
+
+class _FontWatcher(QObject):
+    """Rebuilds the QSS when the application font changes.
+
+    Without it a mid-session font change (system font scale, desktop
+    settings) would leave the built QSS at the old pixel sizes.
+    """
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.ApplicationFontChange:
+            try:
+                _apply_qss()
+            except Exception:
+                logger.debug("font-change QSS rebuild failed", exc_info=True)
+        return False
+
+
+_font_watcher: _FontWatcher | None = None
+_PALETTE_SIG: tuple | None = None
+
+
+def _install_font_watcher() -> None:
+    global _font_watcher
+    app = QApplication.instance()
+    if app is None or _font_watcher is not None:
+        return
+    _font_watcher = _FontWatcher(app)
+    app.installEventFilter(_font_watcher)
+
+
+# ── QPalette from tokens (theme engine v2, Д1/S1) ─────────────────
+# The v1 engine styled everything through QSS, but native painting
+# (tree branch/indent area of the selected row, text-field selection,
+# combo popups) reads the QPalette — which stayed at the system default
+# blue (#308cc6 patchwork, S1). The palette is rebuilt from the tokens
+# on every theme activation.
+
+def _build_palette():
+    from PySide6.QtGui import QColor, QPalette
+
+    p = QPalette()
+    p.setColor(QPalette.ColorRole.Window, QColor(Color.BG))
+    p.setColor(QPalette.ColorRole.WindowText, QColor(Color.TEXT))
+    p.setColor(QPalette.ColorRole.Base, QColor(Color.PANEL))
+    p.setColor(QPalette.ColorRole.AlternateBase, QColor(Color.ALT_ROW))
+    p.setColor(QPalette.ColorRole.Text, QColor(Color.TEXT))
+    p.setColor(QPalette.ColorRole.Button, QColor(Color.PANEL))
+    p.setColor(QPalette.ColorRole.ButtonText, QColor(Color.TEXT))
+    p.setColor(QPalette.ColorRole.ToolTipBase, QColor(Color.TEXT))
+    p.setColor(QPalette.ColorRole.ToolTipText, QColor(Color.PANEL))
+    # Selection = the same accent pair the QSS uses for selected rows
+    # (item:selected) — one selection language everywhere (S1).
+    p.setColor(QPalette.ColorRole.Highlight, QColor(Color.ACCENT_LIGHT))
+    p.setColor(QPalette.ColorRole.HighlightedText, QColor(Color.ACCENT))
+    p.setColor(QPalette.ColorRole.Link, QColor(Color.ACCENT))
+    p.setColor(QPalette.ColorRole.LinkVisited, QColor(Color.ACCENT_HOVER))
+    p.setColor(QPalette.ColorRole.PlaceholderText, QColor(Color.TEXT_DIM))
+    p.setColor(QPalette.ColorRole.BrightText, QColor(Color.ON_ACCENT))
+    # Д3: the single disabled language — muted text everywhere.
+    for role in (QPalette.ColorRole.WindowText, QPalette.ColorRole.Text,
+                 QPalette.ColorRole.ButtonText):
+        p.setColor(QPalette.ColorGroup.Disabled, role, QColor(Color.DISABLED))
+    p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Button,
+               QColor(Color.ALT_ROW))
+    p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Highlight,
+               QColor(Color.BORDER))
+    p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.HighlightedText,
+               QColor(Color.DISABLED))
+    return p
+
+
+def _apply_palette() -> None:
+    """Apply the token palette once per distinct token set.
+
+    setPalette repolishes every widget (the same cost class as
+    setStyleSheet) — a repeated load_theme of the same theme must not
+    pay it again.
+    """
+    global _PALETTE_SIG
+    sig = tuple(getattr(Color, t) for t in TOKENS)
+    if sig == _PALETTE_SIG:
+        return
+    _app().setPalette(_build_palette())
+    _PALETTE_SIG = sig
+
+
 # ── Checkbox SVG indicator paths ──
 _CHECK_DIR = os.path.dirname(os.path.abspath(__file__))
 _CHECK_ON  = _CHECK_DIR + "/checkbox-checked.svg"
@@ -270,10 +421,15 @@ QSS = ""
 def _build_qss() -> str:
     ui = Color.UI_FONT
     mono = Color.MONO_FONT
+    # Type scale (Д2): px sizes resolved against the application font.
+    fx = font_px("XS")
+    fs = font_px("SM")
+    fb = font_px("BASE")
+    fxl = font_px("XL")
     return f"""
     * {{
         font-family: "{ui}", "Cantarell", "sans-serif";
-        font-size: 14px;
+        font-size: {fb}px;
         color: {Color.TEXT};
     }}
 
@@ -285,7 +441,7 @@ def _build_qss() -> str:
     }}
 
     /* ── Text widgets on cards/panels: their background must match the
-       container's background, not the window-wide one ── */
+        container's background, not the window-wide one ── */
     QLabel, QCheckBox, QRadioButton, QGroupBox {{
         background: transparent;
     }}
@@ -305,11 +461,11 @@ def _build_qss() -> str:
     }}
     QToolButton {{
         border: none;
-        border-radius: 6px;
+        border-radius: {RADIUS['MD']}px;
         padding: 4px 8px;
         background: transparent;
         color: {Color.TEXT_SEC};
-        font-size: 13px;
+        font-size: {fs}px;
     }}
     QToolButton:hover {{
         background: {Color.RAISED};
@@ -325,7 +481,7 @@ def _build_qss() -> str:
 
     /* ── Navigation tree ── */
     QTreeWidget {{
-        font-size: 13px;
+        font-size: {fs}px;
         alternate-background-color: transparent;
         border: none;
         outline: none;
@@ -348,16 +504,26 @@ def _build_qss() -> str:
     QTreeView::branch {{
         background: transparent;
     }}
+    /* S1: the branch/indent zone of the selected row used to show the
+       native palette Highlight (system blue) against the themed item —
+       a two-color patch. The palette (Д1) and this rule now keep the
+       branch in the theme's selection color. */
+    QTreeView::branch:hover {{
+        background: {Color.RAISED};
+    }}
+    QTreeView::branch:selected {{
+        background: {Color.ACCENT_LIGHT};
+    }}
 
     /* ── Data tables ── */
     QTableWidget {{
         font-family: "{ui}", "Cantarell", "sans-serif";
-        font-size: 13px;
+        font-size: {fs}px;
         background: {Color.PANEL};
         alternate-background-color: {Color.ALT_ROW};
         gridline-color: {Color.BORDER_LIGHT};
         border: 1px solid {Color.BORDER};
-        border-radius: 8px;
+        border-radius: {RADIUS['LG']}px;
     }}
     QTableWidget::item {{
         padding: 4px 8px;
@@ -377,7 +543,7 @@ def _build_qss() -> str:
         background-color: transparent;
         border: none;
         border-bottom: 1px solid {Color.BORDER_LIGHT};
-        font-size: 11px;
+        font-size: {fx}px;
         text-transform: uppercase;
         letter-spacing: 0.05em;
         color: {Color.TEXT_DIM};
@@ -396,15 +562,15 @@ def _build_qss() -> str:
         border: none;
         border-top: 1px solid {Color.BORDER};
         background: {Color.BG};
-        padding: 20px 24px;
+        padding: 16px 24px;
     }}
     QTabBar {{
         margin-left: 0;
         background: transparent;
     }}
     QTabBar::tab {{
-        padding: 10px 16px;
-        font-size: 13px;
+        padding: 8px 16px;
+        font-size: {fs}px;
         color: {Color.TEXT_SEC};
         border: none;
         border-bottom: 2px solid transparent;
@@ -423,24 +589,24 @@ def _build_qss() -> str:
     /* ── Progress bar ── */
     QProgressBar {{
         border: none;
-        border-radius: 3px;
+        border-radius: {RADIUS['XS']}px;
         text-align: center;
         height: 6px;
         background: {Color.TRACK};
-        font-size: 11px;
+        font-size: {fx}px;
         color: transparent;
     }}
     QProgressBar::chunk {{
         background-color: {Color.ACCENT};
-        border-radius: 3px;
+        border-radius: {RADIUS['XS']}px;
     }}
 
     /* ── Buttons ── */
     QPushButton {{
-        padding: 7px 14px;
-        font-size: 13px;
+        padding: 6px 12px;
+        font-size: {fs}px;
         border: 1px solid {Color.BORDER};
-        border-radius: 6px;
+        border-radius: {RADIUS['MD']}px;
         background: {Color.PANEL};
         color: {Color.TEXT};
         font-weight: 500;
@@ -452,6 +618,10 @@ def _build_qss() -> str:
     QPushButton:pressed {{
         background: {Color.ALT_ROW};
     }}
+    /* Д3: the single disabled language — every button (plain, accent,
+       danger) disables to the muted pale-outline look. A filled dark
+       blob used to read as "a dark secondary button, press me"
+       (DELIGHT-5). */
     QPushButton:disabled {{
         color: {Color.DISABLED};
         background: {Color.ALT_ROW};
@@ -475,7 +645,7 @@ def _build_qss() -> str:
        background as the focus indicator — there is no border to color. */
     QToolButton:focus {{
         background: {Color.HOVER};
-        border-radius: 6px;
+        border-radius: {RADIUS['MD']}px;
     }}
     QToolButton#neutralBtn:focus {{
         border-color: {Color.ACCENT};
@@ -501,11 +671,11 @@ def _build_qss() -> str:
     }}
     QPushButton#refreshBtn:hover {{
         background: {Color.HOVER};
-        border-radius: 3px;
+        border-radius: {RADIUS['XS']}px;
     }}
     QPushButton#refreshBtn:pressed {{
         background: {Color.ALT_ROW};
-        border-radius: 3px;
+        border-radius: {RADIUS['XS']}px;
     }}
 
     /* Accent buttons (Create VM) */
@@ -521,17 +691,12 @@ def _build_qss() -> str:
     QPushButton#accentBtn:pressed {{
         background: {Color.ACCENT_HOVER};
     }}
-    QPushButton#accentBtn:disabled {{
-        background: {Color.DISABLED};
-        border-color: {Color.BORDER};
-        color: {Color.ON_ACCENT};
-    }}
     QToolButton#neutralBtn {{
         background: {Color.PANEL};
         color: {Color.TEXT};
         border: 1px solid {Color.BORDER};
-        border-radius: 6px;
-        padding: 5px 12px;
+        border-radius: {RADIUS['MD']}px;
+        padding: 6px 12px;
         font-weight: 500;
     }}
     QToolButton#neutralBtn:hover {{
@@ -545,29 +710,24 @@ def _build_qss() -> str:
         width: 16px;
         background: transparent;
     }}
-    QToolButton#neutralBtn:disabled {{
-        background: {Color.DISABLED};
-        border-color: {Color.BORDER};
-        color: {Color.ON_ACCENT};
-    }}
 
     /* ── Segmented buttons (Clusters/Nodes toggle) ── */
     QPushButton#segBtnLeft, QPushButton#segBtnRight {{
-        font-size: 12px;
-        padding: 5px 14px;
+        font-size: {fx}px;
+        padding: 6px 12px;
         color: {Color.TEXT_SEC};
         background: {Color.TRACK};
     }}
     QPushButton#segBtnLeft {{
         border: 1px solid {Color.BORDER_STRONG};
         border-right: none;
-        border-top-left-radius: 4px;
-        border-bottom-left-radius: 4px;
+        border-top-left-radius: {RADIUS['SM']}px;
+        border-bottom-left-radius: {RADIUS['SM']}px;
     }}
     QPushButton#segBtnRight {{
         border: 1px solid {Color.BORDER_STRONG};
-        border-top-right-radius: 4px;
-        border-bottom-right-radius: 4px;
+        border-top-right-radius: {RADIUS['SM']}px;
+        border-bottom-right-radius: {RADIUS['SM']}px;
     }}
     QPushButton#segBtnLeft:checked, QPushButton#segBtnRight:checked {{
         background: {Color.ACCENT};
@@ -588,10 +748,14 @@ def _build_qss() -> str:
     QPushButton#dangerBtn:pressed {{
         background: {Color.DANGER_SOLID_PRESSED};
     }}
-    QPushButton#dangerBtn:disabled {{
-        background: {Color.DISABLED};
-        border-color: {Color.BORDER};
-        color: {Color.ON_ACCENT};
+    /* Д3: ID-селекторы перебивают базовое правило :disabled по
+       специфичности QSS, поэтому единый disabled-язык для filled-кнопок
+       задан явно: бледный контур + приглушённый текст (DELIGHT-5). */
+    QPushButton#accentBtn:disabled, QPushButton#dangerBtn:disabled,
+    QToolButton#neutralBtn:disabled {{
+        background: {Color.ALT_ROW};
+        border-color: {Color.BORDER_LIGHT};
+        color: {Color.DISABLED};
     }}
 
     /* ── Splitter ── */
@@ -604,7 +768,8 @@ def _build_qss() -> str:
         background: {Color.SCROLLBAR_HOVER};
     }}
 
-    /* ── Menus ── */
+    /* ── Menus (A1: the single menu language — only this global QSS;
+       inline per-menu styles are gone) ── */
     QMenu {{
         border: 1px solid {Color.BORDER};
         background: {Color.PANEL};
@@ -628,15 +793,16 @@ def _build_qss() -> str:
         color: {Color.PANEL};
         border: none;
         padding: 4px 8px;
-        font-size: 13px;
+        font-size: {fs}px;
     }}
 
-    /* ── Line Edit ── */
+    /* ── Line Edit (input controls share one height: same padding,
+       same border, same font) ── */
     QLineEdit {{
         border: 1px solid {Color.BORDER};
-        border-radius: 6px;
-        padding: 6px 10px;
-        font-size: 13px;
+        border-radius: {RADIUS['MD']}px;
+        padding: 6px 8px;
+        font-size: {fs}px;
         background: {Color.PANEL};
         min-height: 20px;
     }}
@@ -647,9 +813,9 @@ def _build_qss() -> str:
     /* ── ComboBox ── */
     QComboBox {{
         border: 1px solid {Color.BORDER};
-        border-radius: 4px;
-        padding: 3px 6px;
-        font-size: 13px;
+        border-radius: {RADIUS['MD']}px;
+        padding: 6px 8px;
+        font-size: {fs}px;
         background: {Color.PANEL};
     }}
     QComboBox:focus {{
@@ -667,14 +833,14 @@ def _build_qss() -> str:
 
     /* ── Scrollbar (thin, rounded) ── */
     QScrollBar:vertical {{
-        width: 10px;
+        width: 8px;
         background: {Color.SCROLLBAR_BG};
-        border-radius: 5px;
+        border-radius: {RADIUS['SM']}px;
         margin: 0;
     }}
     QScrollBar::handle:vertical {{
         background: {Color.SCROLLBAR_HANDLE};
-        border-radius: 5px;
+        border-radius: {RADIUS['SM']}px;
         min-height: 30px;
         margin: 2px;
     }}
@@ -689,14 +855,14 @@ def _build_qss() -> str:
     }}
 
     QScrollBar:horizontal {{
-        height: 10px;
+        height: 8px;
         background: {Color.SCROLLBAR_BG};
-        border-radius: 5px;
+        border-radius: {RADIUS['SM']}px;
         margin: 0;
     }}
     QScrollBar::handle:horizontal {{
         background: {Color.SCROLLBAR_HANDLE};
-        border-radius: 5px;
+        border-radius: {RADIUS['SM']}px;
         min-width: 30px;
         margin: 2px;
     }}
@@ -712,14 +878,15 @@ def _build_qss() -> str:
 
     /* ── Checkboxes ── */
     QCheckBox {{
-        font-size: 13px;
+        font-size: {fs}px;
         spacing: 6px;
     }}
+    /* U39: 18px indicator — a comfortable hit target for the 13px row. */
     QCheckBox::indicator {{
-        width: 16px;
-        height: 16px;
+        width: 18px;
+        height: 18px;
         border: 1px solid {Color.BORDER};
-        border-radius: 3px;
+        border-radius: {RADIUS['XS']}px;
         background: {Color.PANEL};
     }}
     QCheckBox::indicator:hover {{
@@ -738,11 +905,11 @@ def _build_qss() -> str:
     /* ── SpinBox ── */
     QSpinBox {{
         border: 1px solid {Color.BORDER};
-        border-radius: 4px;
-        padding: 3px 6px;
-        font-size: 13px;
+        border-radius: {RADIUS['MD']}px;
+        padding: 6px 8px;
+        font-size: {fs}px;
         background: {Color.PANEL};
-        min-height: 22px;
+        min-height: 20px;
         min-width: 100px;
     }}
     QSpinBox:focus {{
@@ -756,11 +923,11 @@ def _build_qss() -> str:
     }}
     QSpinBox::up-button {{
         subcontrol-position: top right;
-        border-top-right-radius: 3px;
+        border-top-right-radius: {RADIUS['XS']}px;
     }}
     QSpinBox::down-button {{
         subcontrol-position: bottom right;
-        border-bottom-right-radius: 3px;
+        border-bottom-right-radius: {RADIUS['XS']}px;
     }}
     QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
         background: {Color.ACCENT_LIGHT};
@@ -781,7 +948,7 @@ def _build_qss() -> str:
 
     /* ── Section headers in dialogs ── */
     QLabel#sectionTitle {{
-        font-size: 14px;
+        font-size: {fb}px;
         font-weight: 700;
         color: {Color.TEXT};
         letter-spacing: 0.3px;
@@ -790,7 +957,7 @@ def _build_qss() -> str:
     /* ── Form field labels ── */
     QLabel#fieldLabel {{
         color: {Color.TEXT_SEC};
-        font-size: 13px;
+        font-size: {fs}px;
     }}
 
     /* ── Section separator ── */
@@ -803,7 +970,7 @@ def _build_qss() -> str:
     QToolButton#extraToggle {{
         border: none;
         background: transparent;
-        font-size: 13px;
+        font-size: {fs}px;
         font-weight: 600;
         color: {Color.ACCENT};
         padding: 4px 0;
@@ -819,21 +986,21 @@ def _build_qss() -> str:
     }}
     QPlainTextEdit {{
         font-family: "{mono}", "Noto Sans Mono", monospace;
-        font-size: 13px;
+        font-size: {fs}px;
         background: {Color.PANEL};
         border: 1px solid {Color.BORDER};
-        border-radius: 6px;
+        border-radius: {RADIUS['MD']}px;
     }}
 
     /* ── Title block (object heading) ── */
     QLabel#titleMain {{
-        font-size: 22px;
+        font-size: {fxl}px;
         font-weight: 600;
         letter-spacing: -0.02em;
         color: {Color.TEXT};
     }}
     QLabel#titleSub {{
-        font-size: 13px;
+        font-size: {fs}px;
         color: {Color.TEXT_SEC};
     }}
 
@@ -841,14 +1008,14 @@ def _build_qss() -> str:
     QFrame#metricCard {{
         background: {Color.PANEL};
         border: 1px solid {Color.BORDER};
-        border-radius: 10px;
+        border-radius: {RADIUS['XL']}px;
     }}
 
     /* ── Card list ── */
     QFrame#cardList {{
         background: {Color.PANEL};
         border: 1px solid {Color.BORDER};
-        border-radius: 10px;
+        border-radius: {RADIUS['XL']}px;
     }}
     QFrame#cardRow {{
         border: none;
@@ -863,7 +1030,7 @@ def _build_qss() -> str:
 
     /* ── Key-value sections (Hardware/Options) ── */
     QLabel#kvSectionHead {{
-        font-size: 12px;
+        font-size: {fx}px;
         font-weight: 600;
         color: {Color.TEXT_DIM};
         letter-spacing: 0.05em;
@@ -877,7 +1044,7 @@ def _build_qss() -> str:
     QStatusBar {{
         background: {Color.PANEL};
         border-top: 1px solid {Color.BORDER_LIGHT};
-        font-size: 12px;
+        font-size: {fx}px;
         color: {Color.TEXT_SEC};
     }}
 """
@@ -1050,6 +1217,10 @@ def load_theme(theme_id: str, registry=None, persist: bool = True) -> str:
     reg = registry if registry is not None else get_registry()
     plugin = reg.get_theme(theme_id)
     apply_tokens(validate_tokens(plugin.tokens()))
+    # Д1: the palette is rebuilt from the tokens before the QSS, so the
+    # native painting (tree branch selection, text-field selection,
+    # combo popups) follows the theme too.
+    _apply_palette()
 
     _builtin_themes.set_scheme_resolver(_qt_scheme_name)
     _ACTIVE_THEME_ID = getattr(plugin, "id", theme_id)
@@ -1067,6 +1238,7 @@ def load_theme(theme_id: str, registry=None, persist: bool = True) -> str:
         logger.warning("theme %r: extra_qss() failed", theme_id, exc_info=True)
         _EXTRA_QSS = ""
     _apply_qss()
+    _install_font_watcher()
     install_base_icon_style()
     set_base_size(getattr(plugin, "icon_size", 24))
     reset_icons()
@@ -1090,12 +1262,24 @@ def load():
     """Startup init: fonts + theme (light by default)."""
     app = _app()
     _resolve_fonts()
+    # GAP-2: the application font is not pinned to a size — the platform
+    # default flows through and the QSS type scale (font_px) derives
+    # every UI size from it. A larger system font now scales the UI.
+    # Only the family is swapped: a fresh QFont() would reset the size
+    # to the Qt built-in 12 pt instead of the platform-resolved one.
+    # setFont repolishes the whole widget tree — skip it when the family
+    # is already the resolved one (re-entry, repeated MainWindow()).
+    if app.font().family() != Color.UI_FONT:
+        ui_font = app.font()
+        ui_font.setFamily(Color.UI_FONT)
+        ui_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        app.setFont(ui_font)
     try:
         load_theme("light", persist=False)
     except Exception:
         apply_tokens(dict(LIGHT_TOKENS))
+        _apply_palette()
         _apply_qss()
-
-    ui_font = QFont(Color.UI_FONT, 14)
-    ui_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
-    app.setFont(ui_font)
+    # After the initial load: a mid-session application-font change
+    # (system font scale) rebuilds the QSS with the new pixel sizes.
+    _install_font_watcher()

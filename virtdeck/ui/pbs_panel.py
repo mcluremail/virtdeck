@@ -31,13 +31,19 @@ from PySide6.QtWidgets import (
 from ..pbs.workers import TRACKER_TERMINAL, PbsApiWorker, PbsTaskTracker
 from .i18n import tr
 from .icons import get_icon
-from .theme import Color, enable_column_reorder, usage_color
+from .theme import Color, enable_column_reorder, token_name, usage_color
 
-VERIFY_COLORS = {
-    "ok": Color.STATUS_OK,
-    "failed": Color.DANGER,
-    "none": Color.TEXT_SEC,
+# A7/Д4: colors resolve at RENDER time, not at import time — frozen
+# dicts kept the light-theme values after a theme switch.
+VERIFY_TOKENS = {
+    "ok": "STATUS_OK",
+    "failed": "DANGER",
+    "none": "TEXT_SEC",
 }
+
+
+def _verify_color(verify: str) -> str:
+    return getattr(Color, VERIFY_TOKENS.get(verify, "TEXT_SEC"))
 
 # Cap on concurrent PBS requests started by this panel (audit 6.3.2a D9):
 # workers used to start unbounded via QThreadPool directly.
@@ -49,16 +55,17 @@ _MAX_PBS_WORKERS = 16
 # the cap is reported honestly instead of failing the task.
 _MAX_PBS_TRACKERS = 8
 
-# Tracker state → (i18n label, status color).  Terminal states come from
-# PbsTaskTracker (success/failed/unknown/timeout); "starting" is the
-# panel-side state between a confirmed UPID and the first status read.
+# Tracker state → (i18n label, color-token name).  Terminal states come
+# from PbsTaskTracker (success/failed/unknown/timeout); "starting" is
+# the panel-side state between a confirmed UPID and the first status
+# read.  Tokens resolve at render time (A7/Д4: no frozen colors).
 _TRACKER_STATE_STYLE = {
-    "starting": ("Starting", Color.TEXT_SEC),
-    "running": ("Running", Color.TEXT_SEC),
-    "success": ("Success", Color.STATUS_OK),
-    "failed": ("Failed", Color.DANGER),
-    "unknown": ("Unknown outcome", Color.WARNING),
-    "timeout": ("Watch timed out", Color.WARNING),
+    "starting": ("Starting", "TEXT_SEC"),
+    "running": ("Running", "TEXT_SEC"),
+    "success": ("Success", "STATUS_OK"),
+    "failed": ("Failed", "DANGER"),
+    "unknown": ("Unknown outcome", "WARNING"),
+    "timeout": ("Watch timed out", "WARNING"),
 }
 
 
@@ -257,10 +264,46 @@ class PbsPanel(QWidget):
 
         hint = QLabel(tr("Right-click a job to run it now"))
         hint.setStyleSheet(f"color: {Color.TEXT_SEC};")
+        self._jobs_hint = hint
         v.addWidget(hint)
         self._tabs.addTab(w, tr("Jobs"))
 
     # ── config / navigation ──────────────────────────────────────
+
+    def reapply_theme(self):
+        """Recolor inline-styled surfaces after a theme change (A7/Д4).
+
+        Status labels, the usage bar and the cached QColor brushes of
+        the tables used to hold the old theme until the next data
+        arrival ("Updated just now" measured at 1.6:1 on graphite).
+        """
+        self._path_lbl.setStyleSheet(f"color: {Color.TEXT_SEC};")
+        self._jobs_hint.setStyleSheet(f"color: {Color.TEXT_SEC};")
+        status_token = getattr(self, "_status_color_token", None)
+        if status_token:
+            self._status_lbl.setStyleSheet(
+                f"color: {getattr(Color, status_token)};")
+        elif getattr(self, "_status_color", None) is not None:
+            # non-token color — best effort, frozen value
+            self._status_lbl.setStyleSheet(
+                f"color: {self._status_color};")
+        last_stores = getattr(self, "_last_stores", None)
+        if last_stores is not None:
+            self._fill_ds_table(last_stores)
+        last_ds = getattr(self, "_last_ds", None)
+        if last_ds is not None:
+            self._fill_status(last_ds)
+        # Cached brushes: ops strip (tracker states) and the snapshot
+        # verify column re-resolve their colors from the live facade.
+        self._render_ops()
+        try:
+            for row in range(self._snap_table.rowCount()):
+                item = self._snap_table.item(row, 2)
+                if item is not None:
+                    item.setForeground(QBrush(QColor(
+                        _verify_color(item.text()))))
+        except RuntimeError:
+            pass
 
     def update_nodes_cfg(self, nodes_cfg):
         self._cfg_by_name = {
@@ -273,6 +316,10 @@ class PbsPanel(QWidget):
 
     def _set_status(self, text, color=Color.TEXT_SEC):
         self._status_lbl.setText(text)
+        # A7/Д4: keep the token NAME — the frozen value would go stale
+        # with the old theme on reapply_theme().
+        self._status_color_token = token_name(color)
+        self._status_color = color
         self._status_lbl.setStyleSheet(f"color: {color};")
 
     def show_server(self, server_name):
@@ -555,10 +602,10 @@ class PbsPanel(QWidget):
                 self._ops_table.insertRow(row)
                 self._ops_table.setItem(row, 0, QTableWidgetItem(
                     entry["op"]))
-                label, color = _TRACKER_STATE_STYLE.get(
-                    entry["state"], (entry["state"], Color.TEXT_SEC))
+                label, token = _TRACKER_STATE_STYLE.get(
+                    entry["state"], (entry["state"], "TEXT_SEC"))
                 state_item = QTableWidgetItem(label)
-                state_item.setForeground(QBrush(QColor(color)))
+                state_item.setForeground(QBrush(QColor(getattr(Color, token))))
                 self._ops_table.setItem(row, 1, state_item)
                 self._ops_table.setItem(row, 2, QTableWidgetItem(
                     entry["detail"]))
@@ -570,6 +617,7 @@ class PbsPanel(QWidget):
     # ── server view ──────────────────────────────────────────────
 
     def _fill_ds_table(self, stores):
+        self._last_stores = stores  # A7/Д4: for reapply_theme
         self._ds_table.setRowCount(0)
         for ds in sorted(stores, key=lambda d: d.name.lower()):
             row = self._ds_table.rowCount()
@@ -603,6 +651,7 @@ class PbsPanel(QWidget):
     # ── datastore view ───────────────────────────────────────────
 
     def _fill_status(self, ds):
+        self._last_ds = ds  # A7/Д4: for reapply_theme
         if ds.status_ok:
             self._usage_bar.setValue(ds.usage_pct())
             self._usage_bar.setStyleSheet(
@@ -633,8 +682,7 @@ class PbsPanel(QWidget):
             self._snap_table.setItem(row, 0, name)
             self._snap_table.setItem(row, 1, QTableWidgetItem(s.owner))
             verify = QTableWidgetItem(s.verify)
-            verify.setForeground(QBrush(QColor(VERIFY_COLORS.get(
-                s.verify, Color.TEXT_SEC))))
+            verify.setForeground(QBrush(QColor(_verify_color(s.verify))))
             self._snap_table.setItem(row, 2, verify)
             self._snap_table.setItem(row, 3, QTableWidgetItem(
                 _fmt_size(s.size_bytes)))

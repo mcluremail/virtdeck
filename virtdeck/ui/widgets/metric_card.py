@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QSizePolicy, QVBoxLayout
 
-from ..theme import TOKENS, Color, usage_color
+from ..theme import Color, font_px, token_name, usage_color
 from .spinner import SpinnerWidget
 
 # Live cards: inline styles are baked in at creation time, so they must be
@@ -26,10 +26,7 @@ def retheme_metric_cards():
 
 def _token_for(color):
     """Canonical token name by value (for recoloring on theme change)."""
-    for name in TOKENS:
-        if getattr(Color, name, None) == color:
-            return name
-    return None
+    return token_name(color)
 
 
 class MetricCard(QFrame):
@@ -52,7 +49,10 @@ class MetricCard(QFrame):
 
         self._value_label = QLabel(value)
         self._value_font = QFont()
-        self._value_font.setPointSize(18)
+        # Д2: the value uses the DISPLAY type-scale role (24 px at the
+        # platform default) instead of an absolute 18 pt — it follows
+        # the system font scale.
+        self._value_font.setPixelSize(font_px("DISPLAY"))
         self._value_font.setBold(True)
         self._value_font.setLetterSpacing(QFont.AbsoluteSpacing, -0.5)
 
@@ -99,7 +99,7 @@ class MetricCard(QFrame):
     def _restyle(self):
         """Inline styles from current tokens (creation + theme change)."""
         self._title_label.setStyleSheet(
-            f"color: {Color.TEXT_DIM}; font-size: 11px; font-weight: 600;"
+            f"color: {Color.TEXT_DIM}; font-size: 12px; font-weight: 600;"
             " text-transform: uppercase; letter-spacing: 0.05em;"
         )
         value_color = Color.TEXT

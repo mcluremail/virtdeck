@@ -37,14 +37,7 @@ class FadeToast(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 6, 10, 6)
         self.label = QLabel(text)
-        self.label.setStyleSheet(f"""
-            color: white;
-            font-size: 12px;
-            font-weight: 500;
-            background: {color};
-            border-radius: 6px;
-            padding: 6px 14px;
-        """)
+        self.label.setStyleSheet(self._toast_style())
         self.label.setWordWrap(True)
         self.label.setMaximumWidth(320)
         self.label.setCursor(Qt.PointingHandCursor)
@@ -72,20 +65,35 @@ class FadeToast(QWidget):
         self.show()
         self._fade_timer.start()
 
+    def _toast_style(self, fg=None):
+        """A2: the sheet is re-rendered from tokens (no string surgery).
+
+        The copy-feedback used to flip the color by replacing substrings
+        in styleSheet() — brittle against any QSS rewording.
+        """
+        return f"""
+            color: {fg or Color.ON_ACCENT};
+            font-size: 12px;
+            font-weight: 500;
+            background: {self._bg_color};
+            border-radius: 6px;
+            padding: 8px 16px;
+        """
+
     def _copy_to_clipboard(self):
         try:
             QApplication.clipboard().setText(self._text)
         except RuntimeError:
             return
         try:
-            self.label.setStyleSheet(self.label.styleSheet().replace("color: white;", f"color: {Color.SUCCESS_LIGHT};"))
+            self.label.setStyleSheet(self._toast_style(Color.SUCCESS_LIGHT))
         except RuntimeError:
             return
         QTimer.singleShot(400, self._restore_color)
 
     def _restore_color(self):
         try:
-            self.label.setStyleSheet(self.label.styleSheet().replace(f"color: {Color.SUCCESS_LIGHT};", "color: white;"))
+            self.label.setStyleSheet(self._toast_style())
         except RuntimeError:
             pass
 

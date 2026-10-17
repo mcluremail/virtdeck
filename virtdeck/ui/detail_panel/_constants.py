@@ -126,5 +126,5 @@ def _progress_style(value, max_val=100):
     return (
         f"QProgressBar::chunk {{ background: {color}; border-radius: 3px; }}"
         f"QProgressBar {{ border: none; border-radius: 3px;"
-        f" text-align: center; font-size: 11px; background: {Color.TRACK}; }}"
+        f" text-align: center; font-size: 12px; background: {Color.TRACK}; }}"
     )

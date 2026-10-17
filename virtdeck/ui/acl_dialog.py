@@ -43,7 +43,7 @@ class AclDialog(QDialog):
         form.addRow(tr("Path:"), self._path_edit)
 
         path_hint = QLabel(tr("e.g. /, /vms, /storage/local, /nodes/pve01"))
-        path_hint.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+        path_hint.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
         form.addRow("", path_hint)
 
         self._type_combo = QComboBox()

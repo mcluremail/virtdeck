@@ -372,7 +372,7 @@ class ClusterTasksWidget(QWidget):
         bar.setFixedHeight(16)
         bar.setStyleSheet(
             f"QProgressBar {{ border: 1px solid {Color.BORDER_LIGHT}; border-radius: 3px;"
-            f" text-align: center; font-size: 11px; }}"
+            f" text-align: center; font-size: 12px; }}"
             f"QProgressBar::chunk {{ background: {Color.STATUS_WARN}; border-radius: 2px; }}"
         )
         self.table.setCellWidget(row, 5, bar)

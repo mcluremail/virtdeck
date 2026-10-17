@@ -71,7 +71,7 @@ class MigrateVMDialog(QDialog):
             # on the source and rebooted on the target node
             warn = QLabel(tr("Restart migration: the container will be "
                              "rebooted on the target node"))
-            warn.setStyleSheet(f"color: {Color.STATUS_WARN}; font-size: 11px;")
+            warn.setStyleSheet(f"color: {Color.STATUS_WARN}; font-size: 12px;")
             warn.setWordWrap(True)
             target_grid.addWidget(warn, 2, 0, 1, 2)
 

@@ -2,7 +2,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 from .i18n import tr
-from .theme import Color
+from .theme import Color, font_px
 
 
 class AboutDialog(QDialog):
@@ -19,8 +19,10 @@ class AboutDialog(QDialog):
         from .. import __author__, __license__, __version__
 
         title = QLabel("VirtDeck")
+        # A4: the title uses the type scale (DISPLAY role) instead of an
+        # absolute point size — it follows the system font scale now.
         f = title.font()
-        f.setPointSize(20)
+        f.setPixelSize(font_px("DISPLAY"))
         f.setBold(True)
         title.setFont(f)
         title.setAlignment(Qt.AlignCenter)
@@ -69,7 +71,7 @@ class AboutDialog(QDialog):
         )
         disclaimer.setAlignment(Qt.AlignCenter)
         disclaimer.setWordWrap(True)
-        disclaimer.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+        disclaimer.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
         layout.addWidget(disclaimer)
 
         btn_layout = QHBoxLayout()

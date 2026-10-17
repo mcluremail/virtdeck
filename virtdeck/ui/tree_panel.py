@@ -88,9 +88,9 @@ class _TwoLineDelegate(QStyledItemDelegate):
         # line 2 — info, pale and smaller
         info_font = QFont(opt.font)
         if info_font.pixelSize() > 0:
-            info_font.setPixelSize(max(10, round(info_font.pixelSize() * 0.82)))
+            info_font.setPixelSize(max(12, round(info_font.pixelSize() * 0.82)))
         else:
-            info_font.setPointSizeF(max(8.0, info_font.pointSizeF() * 0.82))
+            info_font.setPointSizeF(max(9.0, info_font.pointSizeF() * 0.82))
         painter.setFont(info_font)
         painter.setPen(Color.TEXT_SEC)
         fm2 = QFontMetrics(info_font)
@@ -105,9 +105,9 @@ class _TwoLineDelegate(QStyledItemDelegate):
         if index.data(INFO_ROLE):
             f = QFont(option.font)
             if f.pixelSize() > 0:
-                f.setPixelSize(max(10, round(f.pixelSize() * 0.82)))
+                f.setPixelSize(max(12, round(f.pixelSize() * 0.82)))
             else:
-                f.setPointSizeF(max(8.0, f.pointSizeF() * 0.82))
+                f.setPointSizeF(max(9.0, f.pointSizeF() * 0.82))
             # compact: the info line partially overlaps the row padding
             hint.setHeight(hint.height() + QFontMetrics(f).height() - 2)
         return hint
@@ -537,12 +537,10 @@ class TreePanel(QWidget):
         if vm_key is not None:
             host_name, vmid, node = vm_key
             vm = self._vm_repo.get(host_name, vmid) if self._vm_repo else None
+            # A1: no inline QSS — the global theme QSS is the single
+            # menu language (the inline sheet used to repaint selection
+            # gray against the global accent blue).
             menu = QMenu(self.tree)
-            menu.setStyleSheet(
-                "QMenu { font-size: 12px; padding: 2px; }"
-                "QMenu::item { padding: 4px 12px; }"
-                f"QMenu::item:selected {{ background: {Color.BORDER}; }}"
-            )
             is_template = bool(vm and vm.template)
             is_qemu = vm is not None and vm.vm_type is VmType.QEMU
             sel = self.selection_for_item(item)
@@ -585,12 +583,8 @@ class TreePanel(QWidget):
         item_type = key[0]
         item_name = key[1] if len(key) > 1 else ""
 
+        # A1: the global theme QSS is the single menu language.
         menu = QMenu(self.tree)
-        menu.setStyleSheet(
-            "QMenu { font-size: 12px; padding: 2px; }"
-            "QMenu::item { padding: 4px 12px; }"
-            f"QMenu::item:selected {{ background: {Color.BORDER}; }}"
-        )
 
         if item_type == "host":
             host_name = key[2] if len(key) > 2 else ""

@@ -276,13 +276,9 @@ class MainWindow(QMainWindow):
 
         self._lang_combo = QComboBox()
         self._lang_combo.setMinimumWidth(110)
-        self._lang_combo.setStyleSheet(
-            f"QComboBox {{ font-size: 12px; border: 1px solid {Color.BORDER_STRONG}; border-radius: 3px; "
-            f"padding: 1px 4px; background: {Color.TRACK}; color: {Color.TEXT}; }}"
-            f"QComboBox:hover {{ border-color: {Color.BORDER_STRONG}; background: {Color.HOVER}; }}"
-            f"QComboBox::drop-down {{ border: none; width: 16px; }}"
-            f"QComboBox QAbstractItemView {{ font-size: 12px; }}"
-        )
+        # A5: the same style source as on re-apply (a duplicated inline
+        # QSS used to drift from _status_combo_style).
+        self._lang_combo.setStyleSheet(self._status_combo_style())
         self._lang_combo.blockSignals(True)
         current_lang = get_language()
         for code, native_name in sorted(supported_languages().items(), key=lambda x: x[0]):
@@ -380,11 +376,9 @@ class MainWindow(QMainWindow):
         self._toolbar.addAction(about_action)
         self._toolbar_icon_actions.append((about_action, "about"))
 
-        quit_action = QAction(tr("Quit"), self)
-        quit_action.setToolTip(tr("Quit") + " (Ctrl+Q)")
-        quit_action.triggered.connect(self._tray_quit)
-        self._toolbar.addAction(quit_action)
-
+        # A11: the text-only Quit action is gone — it was the only
+        # non-icon element in the icon-only toolbar. Quit stays reachable
+        # via Ctrl+Q (global.quit spec) and the tray menu.
         spacer = QWidget()
         spacer.setSizePolicy(spacer.sizePolicy().Policy.Expanding, spacer.sizePolicy().Policy.Fixed)
         self._toolbar.addWidget(spacer)
@@ -2760,6 +2754,10 @@ class MainWindow(QMainWindow):
         self._update_tray_state()
         self.tree_panel.reapply_theme()
         self.detail_panel.reapply_theme()
+        # A7/Д4: pbs_panel keeps inline-styled labels and cached QColor
+        # brushes — without this they held the old theme until the next
+        # data arrival (confirmed 1.6:1 on graphite).
+        self.pbs_panel.reapply_theme()
         if self._palette is not None:
             self._palette.retheme()
 

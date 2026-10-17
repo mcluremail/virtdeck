@@ -122,7 +122,7 @@ class VmNetworkEditorDialog(QDialog):
 
         if running:
             warn = QLabel(tr("On a running VM only the VLAN tag can be changed"))
-            warn.setStyleSheet(f"color: {Color.WARNING}; font-size: 11px;")
+            warn.setStyleSheet(f"color: {Color.WARNING}; font-size: 12px;")
             warn.setWordWrap(True)
             layout.addWidget(warn)
 
@@ -254,7 +254,7 @@ class VmCdromEditorDialog(QDialog):
         layout.addLayout(form)
 
         info = QLabel(tr("ISO images are loaded from node storage"))
-        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
         info.setWordWrap(True)
         layout.addWidget(info)
 
@@ -358,7 +358,7 @@ class VmDiskEditorDialog(QDialog):
         layout.addLayout(action_row)
 
         info = QLabel(tr("Cache can be changed here. Use Resize or Move for size/storage."))
-        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
         info.setWordWrap(True)
         layout.addWidget(info)
 
@@ -454,7 +454,7 @@ class VmDiskResizeDialog(QDialog):
         layout.addLayout(form)
 
         info = QLabel(tr("Disk can only be enlarged. To shrink, stop the VM and use the PVE CLI."))
-        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
         info.setWordWrap(True)
         layout.addWidget(info)
 
@@ -516,7 +516,7 @@ class VmDiskMoveDialog(QDialog):
 
         if self._storage_combo.count() == 0:
             warn = QLabel(tr("No other storage available on this node."))
-            warn.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+            warn.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
             warn.setWordWrap(True)
             layout.addWidget(warn)
 
@@ -570,7 +570,7 @@ class VmBootEditorDialog(QDialog):
         layout.addWidget(header)
 
         info = QLabel(tr("Move devices between available and boot order"))
-        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
         info.setWordWrap(True)
         layout.addWidget(info)
 
@@ -807,7 +807,7 @@ class VmStartupEditorDialog(QDialog):
         layout.addLayout(form)
 
         info = QLabel(tr("Lower number starts earlier"))
-        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
         info.setWordWrap(True)
         layout.addWidget(info)
 
@@ -869,7 +869,7 @@ class VmAddDiskDialog(QDialog):
         bus = slot_key.rstrip("0123456789")
         info = QLabel(tr("Bus: {bus}, slot: {slot}").format(
             bus=bus, slot=slot_key[len(bus):]))
-        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
         layout.addWidget(info)
 
         form = QFormLayout()
@@ -952,7 +952,7 @@ class VmAddUsbDialog(QDialog):
         layout.addWidget(header)
 
         info = QLabel(f"{tr('Slot:')} {slot_key}")
-        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
         layout.addWidget(info)
 
         form = QFormLayout()
@@ -1025,7 +1025,7 @@ class VmAddPciDialog(QDialog):
         layout.addWidget(header)
 
         info = QLabel(f"{tr('Slot:')} {slot_key}")
-        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
         layout.addWidget(info)
 
         form = QFormLayout()
@@ -1088,7 +1088,7 @@ class VmAddSerialDialog(QDialog):
         layout.addWidget(header)
 
         info = QLabel(f"{tr('Slot:')} {slot_key}")
-        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+        info.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
         layout.addWidget(info)
 
         form = QFormLayout()
@@ -1286,7 +1286,7 @@ class VmRemoveDeviceDialog(QDialog):
                 tr("Without destroying, the disk image remains on storage "
                    "and can be re-attached later.")
             )
-            warn.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+            warn.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
             warn.setWordWrap(True)
             layout.addWidget(warn)
         else:

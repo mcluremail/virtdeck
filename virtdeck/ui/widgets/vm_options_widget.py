@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QVBoxLayout, QWidg
 from ..detail_panel._table_utils import set_empty_placeholder
 from ..hover import enable_row_hover
 from ..i18n import tr
-from ..theme import Color, enable_column_reorder, enable_table_autofit
+from ..theme import Color, enable_column_reorder, enable_table_autofit, font_px
 from ..vm_config_display import OPT_DEFAULTS, get_editor_spec, get_options_rows
 from ..vm_config_editor_dialog import VmConfigEditorDialog
 from ..vm_device_editors import VmBootdiskEditorDialog, VmBootEditorDialog, VmStartupEditorDialog
@@ -72,7 +72,7 @@ class VmOptionsWidget(QWidget):
                 item.setData(_SECTION_ROLE, True)
                 f = QFont()
                 f.setBold(True)
-                f.setPointSize(9)
+                f.setPixelSize(font_px("XS"))
                 item.setFont(f)
                 item.setForeground(QColor(_SECTION_FG))
                 item.setBackground(QColor(_SECTION_BG))

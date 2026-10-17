@@ -38,7 +38,7 @@ class VmRestoreDialog(QDialog):
         layout.addWidget(header)
 
         vol_label = QLabel(f"{tr('Archive:')} {self._volid}")
-        vol_label.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+        vol_label.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
         vol_label.setWordWrap(True)
         layout.addWidget(vol_label)
 

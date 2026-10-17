@@ -161,7 +161,11 @@ class AddServerDialog(QDialog):
         tn_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         token_grid.addWidget(tn_lbl, 0, 0)
         self.token_name_label = QLabel("—")
-        self.token_name_label.setStyleSheet("font-family: monospace;")
+        # A3: the mono family comes from the theme token, not the bare
+        # `monospace` keyword (which Qt may resolve differently from
+        # Color.MONO_FONT on some systems).
+        self.token_name_label.setStyleSheet(
+            f"font-family: \"{Color.MONO_FONT}\";")
         token_grid.addWidget(self.token_name_label, 0, 1)
 
         tv_lbl = QLabel(tr("Value:"))
@@ -169,7 +173,8 @@ class AddServerDialog(QDialog):
         token_grid.addWidget(tv_lbl, 1, 0)
         self._token_value_real = ""
         self.token_value_label = QLabel("—")
-        self.token_value_label.setStyleSheet(f"font-family: monospace; color: {Color.STATUS_OK};")
+        self.token_value_label.setStyleSheet(
+            f"font-family: \"{Color.MONO_FONT}\"; color: {Color.STATUS_OK};")
         token_grid.addWidget(self.token_value_label, 1, 1)
 
         self._token_show_btn = QPushButton(tr("Show"))

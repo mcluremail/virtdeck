@@ -81,11 +81,11 @@ class VmConfigEditorDialog(QDialog):
             if key.rstrip("0123456789") in ("net", "ide", "sata", "scsi", "virtio"):
                 if key.rstrip("0123456789") not in ("ide",) or key != "ide2":
                     hint = QLabel(tr("Format: model=MAC,bridge=vmbr0,tag=10"))
-                    hint.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+                    hint.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
                     form.addRow("", hint)
             elif key.rstrip("0123456789") == "efidisk":
                 hint = QLabel(tr("Format: storage:size,format=qcow2"))
-                hint.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 11px;")
+                hint.setStyleSheet(f"color: {Color.TEXT_SEC}; font-size: 12px;")
                 form.addRow("", hint)
 
         elif field_type == "readonly":
@@ -93,7 +93,7 @@ class VmConfigEditorDialog(QDialog):
             self._editor.setTextInteractionFlags(Qt.TextSelectableByMouse)
             form.addRow(tr("Read only:"), self._editor)
             warning = QLabel(tr("This parameter cannot be changed via API"))
-            warning.setStyleSheet(f"color: {Color.WARNING}; font-size: 11px;")
+            warning.setStyleSheet(f"color: {Color.WARNING}; font-size: 12px;")
             form.addRow(warning)
 
         else:
