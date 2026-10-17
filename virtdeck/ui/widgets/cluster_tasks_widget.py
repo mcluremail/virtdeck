@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from ...config import load_ui_state, save_ui_state
 from ...domain.task import Task
 from ..hover import enable_row_hover
-from ..i18n import tr
+from ..i18n import format_datetime, tr, tr_dict
 from ..theme import Color, enable_column_reorder, enable_table_autofit
 from .empty_state import EmptyState
 
@@ -30,7 +30,7 @@ TASK_COL_WIDTHS_KEY = "task_col_widths"
 TASK_DATA_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
-TASK_TYPE_LABELS = {
+TASK_TYPE_LABELS = tr_dict(lambda: {
     # VM
     "qemstart": tr("Start VM"),
     "qmstart": tr("Start VM"),
@@ -104,9 +104,7 @@ TASK_TYPE_LABELS = {
     "ceph-destroy": tr("Destroy Ceph"),
     "ceph-create-fs": tr("Create Ceph FS"),
     "ceph-install": tr("Install Ceph"),
-}
-
-TIMESTAMP_FMT = "%d.%m.%y %H:%M"
+})
 
 
 class NumericTableItem(QTableWidgetItem):
@@ -246,7 +244,7 @@ class ClusterTasksWidget(QWidget):
             if start_ts:
                 try:
                     start_dt = datetime.fromtimestamp(float(start_ts), tz=timezone.utc)
-                    start_str = start_dt.strftime(TIMESTAMP_FMT)
+                    start_str = format_datetime(start_dt)
                 except (ValueError, TypeError):
                     start_str = str(start_ts)
             else:
@@ -261,7 +259,7 @@ class ClusterTasksWidget(QWidget):
             if end_ts:
                 try:
                     end_dt = datetime.fromtimestamp(float(end_ts), tz=timezone.utc)
-                    end_str = end_dt.strftime(TIMESTAMP_FMT)
+                    end_str = format_datetime(end_dt)
                 except (ValueError, TypeError):
                     end_str = str(end_ts)
             else:
@@ -376,7 +374,7 @@ class ClusterTasksWidget(QWidget):
     def add_progress_row(self, key, description):
         """Insert a row at top showing a progress bar in the Status column."""
         self.table.insertRow(0)
-        now_str = datetime.now().strftime(TIMESTAMP_FMT)
+        now_str = format_datetime(datetime.now())
         # DELIGHT-2: a running task is a state, not a warning — the
         # timestamp and "running..." stay neutral
         item0 = QTableWidgetItem(now_str)
@@ -411,7 +409,7 @@ class ClusterTasksWidget(QWidget):
 
     def _insert_progress_row(self, key, description):
         self.table.insertRow(0)
-        now_str = datetime.now().strftime(TIMESTAMP_FMT)
+        now_str = format_datetime(datetime.now())
         item0 = QTableWidgetItem(now_str)
         item0.setForeground(QColor(Color.TEXT_SEC))
         self.table.setItem(0, 0, item0)
@@ -448,7 +446,7 @@ class ClusterTasksWidget(QWidget):
         if isinstance(bar, QProgressBar):
             self.table.removeCellWidget(row, 5)
         if success:
-            now_str = datetime.now().strftime(TIMESTAMP_FMT)
+            now_str = format_datetime(datetime.now())
             self.table.setItem(row, 1, QTableWidgetItem(now_str))
             item5 = QTableWidgetItem("OK")
             item5.setForeground(QColor(Color.STATUS_OK))

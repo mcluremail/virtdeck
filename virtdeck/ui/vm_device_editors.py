@@ -16,18 +16,19 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from .i18n import tr
+from .i18n import tr, tr_list
 from .theme import Color
 
 NET_MODELS = ["virtio", "e1000", "rtl8139", "vmxnet3"]
 
-DISK_CACHE = [
-    ("none", tr("None")),
+DISK_CACHE = tr_list(lambda: [
+    # canonical definition (U33 dedup): create_vm_dialog imports this
+    ("none", tr("No cache")),
     ("writeback", tr("Write back")),
     ("writethrough", tr("Write through")),
     ("directsync", tr("Direct sync")),
     ("unsafe", tr("Unsafe")),
-]
+])
 
 
 def _parse_net(val):
@@ -839,12 +840,12 @@ class VmStartupEditorDialog(QDialog):
 # Add device dialogs
 # ---------------------------------------------------------------------------
 
-DISK_BUSES = [
+DISK_BUSES = tr_list(lambda: [
     ("scsi", tr("SCSI")),
     ("virtio", tr("VirtIO")),
     ("sata", tr("SATA")),
     ("ide", tr("IDE")),
-]
+])
 
 DISK_FORMATS = [("qcow2", "qcow2"), ("raw", "raw")]
 

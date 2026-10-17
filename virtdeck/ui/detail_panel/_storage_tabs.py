@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..i18n import tr
+from ..i18n import format_datetime, tr
 from ..icons import get_icon
 from ..object_id import StorageId
 from ..storage_actions import StorageMoveDialog, confirm_file_delete
@@ -786,7 +786,7 @@ class StorageTabs:
             table.setItem(i, 2, QTableWidgetItem(format_volsize(vol.get("size", 0))))
             ctime = vol.get("ctime")
             if ctime:
-                table.setItem(i, 3, QTableWidgetItem(datetime.fromtimestamp(ctime).strftime("%Y-%m-%d %H:%M")))
+                table.setItem(i, 3, QTableWidgetItem(format_datetime(datetime.fromtimestamp(ctime))))
             else:
                 mtime = vol.get("mtime")
                 if mtime:
@@ -981,7 +981,7 @@ class StorageTabs:
             table.setItem(i, 3, QTableWidgetItem(format_volsize(size) if size else "0"))
             ctime = b.get("ctime")
             if ctime:
-                table.setItem(i, 4, QTableWidgetItem(datetime.fromtimestamp(ctime).strftime("%Y-%m-%d %H:%M")))
+                table.setItem(i, 4, QTableWidgetItem(format_datetime(datetime.fromtimestamp(ctime))))
             else:
                 table.setItem(i, 4, QTableWidgetItem(""))
         table.resizeRowsToContents()

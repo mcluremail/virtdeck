@@ -19,12 +19,13 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import load_ui_state, save_ui_state
-from .i18n import tr
+from .i18n import tr, tr_list
 from .theme import Color
+from .vm_device_editors import DISK_CACHE  # U33 dedup: canonical definition
 
 VM_SETTINGS_KEY = "create_vm_settings"
 
-VM_OS_TYPES = [
+VM_OS_TYPES = tr_list(lambda: [
     ("other", tr("Other")),
     ("l26", tr("Linux 2.6+ / 3.x / 4.x")),
     ("l24", tr("Linux 2.4")),
@@ -38,9 +39,9 @@ VM_OS_TYPES = [
     ("wvista", tr("Windows Vista")),
     ("wxp", tr("Windows XP")),
     ("solaris", tr("Solaris")),
-]
+])
 
-VGA_TYPES = [
+VGA_TYPES = tr_list(lambda: [
     ("qxl", tr("qxl (SPICE)")),
     ("std", "std"),
     ("virtio", "virtio"),
@@ -50,26 +51,18 @@ VGA_TYPES = [
     ("qxl2", tr("qxl2 (dual)")),
     ("qxl3", tr("qxl3 (triple)")),
     ("qxl4", tr("qxl4 (quad)")),
-]
+])
 
-SCSI_CONTROLLERS = [
+SCSI_CONTROLLERS = tr_list(lambda: [
     ("virtio-scsi-single", tr("VirtIO SCSI Single")),
     ("virtio-scsi-pci", tr("VirtIO SCSI PCI")),
     ("megasas", "MegaSAS"),
     ("pvscsi", "VMware PVSCSI"),
     ("lsi", tr("LSI (legacy)")),
     ("lsi53c810", "LSI 53C810"),
-]
+])
 
-DISK_CACHE = [
-    ("none", tr("No cache")),
-    ("writeback", tr("Write back")),
-    ("writethrough", tr("Write through")),
-    ("directsync", tr("Direct sync")),
-    ("unsafe", tr("Unsafe")),
-]
-
-CPU_TYPES = [
+CPU_TYPES = tr_list(lambda: [
     ("host", tr("host (recommended)")),
     ("custom-x86-64-v2-AES", "x86-64-v2-AES"),
     ("custom-x86-64-v3", "x86-64-v3"),
@@ -90,7 +83,7 @@ CPU_TYPES = [
     ("Skylake-Client", "Intel Skylake"),
     ("Skylake-Server", "Intel Skylake Server"),
     ("Cascadelake-Server", "Intel Cascade Lake"),
-]
+])
 
 DISK_BUSES = ["virtio", "scsi", "sata", "ide"]
 NET_MODELS = ["virtio", "e1000", "rtl8139", "vmxnet3"]
@@ -100,10 +93,10 @@ CHIPSETS = [
     ("i440fx", "i440fx"),
 ]
 
-BIOS_TYPES = [
+BIOS_TYPES = tr_list(lambda: [
     ("seabios", tr("SeaBIOS")),
     ("ovmf", tr("OVMF (UEFI)")),
-]
+])
 
 
 class CreateVmDialog(QDialog):

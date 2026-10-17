@@ -1,7 +1,7 @@
-from .i18n import tr
+from .i18n import tr, tr_dict
 
 # Labels for config keys
-HW_LABELS = {
+HW_LABELS = tr_dict(lambda: {
     "name": tr("Name"),
     "cpu": tr("CPU type"),
     "cores": tr("Cores"),
@@ -41,9 +41,9 @@ HW_LABELS = {
     "running-machine": tr("Chipset (running)"),
     "efidisk0": tr("EFI disk"),
     "tpmstate0": tr("TPM"),
-}
+})
 
-_DEVICE_PREFIX_LABELS = {
+_DEVICE_PREFIX_LABELS = tr_dict(lambda: {
     "net": tr("Network"),
     "ide": tr("IDE"),
     "sata": tr("SATA"),
@@ -54,7 +54,7 @@ _DEVICE_PREFIX_LABELS = {
     "usb": tr("USB"),
     "hostpci": tr("PCI"),
     "serial": tr("Serial port"),
-}
+})
 
 
 def _device_label(key, value=None):
@@ -74,7 +74,7 @@ def _device_label(key, value=None):
     return base
 
 
-CHOICE_LABELS = {
+CHOICE_LABELS = tr_dict(lambda: {
     "cpu": {
         "kvm64": tr("KVM64 (compatible)"),
         "host": tr("Host (maximum)"),
@@ -176,7 +176,7 @@ CHOICE_LABELS = {
         "disk,usb": tr("Disks, USB"),
         "network,disk,usb": tr("Network, Disks, USB"),
     },
-}
+})
 
 # Device keys that can be edited as raw strings
 _EDITABLE_DEVICE_PREFIXES = {"net", "ide", "sata", "scsi", "virtio", "efidisk", "tpmstate", "usb", "hostpci", "serial"}
@@ -747,7 +747,7 @@ def get_editor_spec(key):
 # ---------------------------------------------------------------------------
 
 
-_HW_SECTION_LABELS = {
+_HW_SECTION_LABELS = tr_dict(lambda: {
     "identity": lambda: tr("Identity"),
     "cpu": lambda: tr("CPU"),
     "memory": lambda: tr("Memory"),
@@ -757,9 +757,9 @@ _HW_SECTION_LABELS = {
     "usb": lambda: tr("USB"),
     "pci": lambda: tr("PCI"),
     "serial": lambda: tr("Serial ports"),
-}
+})
 
-_OPT_SECTION_LABELS = {
+_OPT_SECTION_LABELS = tr_dict(lambda: {
     "os": lambda: tr("OS"),
     "boot": lambda: tr("Boot"),
     "video": lambda: tr("Display"),
@@ -767,7 +767,7 @@ _OPT_SECTION_LABELS = {
     "hotplug": lambda: tr("Hotplug"),
     "behaviour": lambda: tr("Behaviour"),
     "misc": lambda: tr("Misc"),
-}
+})
 
 
 def get_hardware_rows(config_data, detail_data=None):

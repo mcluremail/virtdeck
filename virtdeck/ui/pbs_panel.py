@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..pbs.workers import TRACKER_TERMINAL, PbsApiWorker, PbsTaskTracker
-from .i18n import tr
+from .i18n import tr, tr_dict
 from .icons import get_icon
 from .theme import (Color, enable_column_reorder, fill_bytes_column,
                     token_name, usage_color)
@@ -62,14 +62,15 @@ _MAX_PBS_TRACKERS = 8
 # from PbsTaskTracker (success/failed/unknown/timeout); "starting" is
 # the panel-side state between a confirmed UPID and the first status
 # read.  Tokens resolve at render time (A7/Д4: no frozen colors).
-_TRACKER_STATE_STYLE = {
-    "starting": ("Starting", "TEXT_SEC"),
-    "running": ("Running", "TEXT_SEC"),
-    "success": ("Success", "STATUS_OK"),
-    "failed": ("Failed", "DANGER"),
-    "unknown": ("Unknown outcome", "WARNING"),
-    "timeout": ("Watch timed out", "WARNING"),
-}
+# U31: tr_dict — labels re-translate on language change.
+_TRACKER_STATE_STYLE = tr_dict(lambda: {
+    "starting": (tr("Starting"), "TEXT_SEC"),
+    "running": (tr("Running"), "TEXT_SEC"),
+    "success": (tr("Success"), "STATUS_OK"),
+    "failed": (tr("Failed"), "DANGER"),
+    "unknown": (tr("Unknown outcome"), "WARNING"),
+    "timeout": (tr("Watch timed out"), "WARNING"),
+})
 
 
 def _fmt_size(num) -> str:
@@ -621,7 +622,7 @@ class PbsPanel(QWidget):
                 self._ops_table.setItem(row, 0, QTableWidgetItem(
                     entry["op"]))
                 label, token = _TRACKER_STATE_STYLE.get(
-                    entry["state"], (entry["state"], "TEXT_SEC"))
+                    entry["state"], (tr(str(entry["state"])), "TEXT_SEC"))
                 state_item = QTableWidgetItem(label)
                 state_item.setForeground(QBrush(QColor(getattr(Color, token))))
                 self._ops_table.setItem(row, 1, state_item)

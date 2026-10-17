@@ -1,22 +1,22 @@
-from .i18n import tr
+from .i18n import tr, tr_dict
 
-VM_ACTION_BUTTON_LABELS = {
+VM_ACTION_BUTTON_LABELS = tr_dict(lambda: {
     "start": tr("Start"),
     "shutdown": tr("Shutdown"),
     "reboot": tr("Reboot"),
     "reset": tr("Reset"),
     "stop": tr("Stop"),
     "resume": tr("Resume"),
-}
+})
 
-VM_ACTION_MESSAGE_LABELS = {
+VM_ACTION_MESSAGE_LABELS = tr_dict(lambda: {
     "start": tr("Start"),
     "shutdown": tr("Shutdown"),
     "stop": tr("Force stop"),
     "reboot": tr("Reboot"),
     "reset": tr("Reset"),
     "resume": tr("Resume"),
-}
+})
 
 VM_ACTION_ICONS = {
     "start": "start",
@@ -27,20 +27,20 @@ VM_ACTION_ICONS = {
     "resume": "resume",
 }
 
-VM_ACTION_TOOLTIPS = {
+VM_ACTION_TOOLTIPS = tr_dict(lambda: {
     "start": tr("Start VM"),
     "shutdown": tr("Send ACPI shutdown signal to VM"),
     "reboot": tr("Send ACPI reboot signal to VM"),
     "reset": tr("Hard reset VM (unsaved data will be lost)"),
     "stop": tr("Force stop VM (kill process, unsaved data lost)"),
     "resume": tr("Resume suspended VM"),
-}
+})
 
-VM_EXTRA_ACTION_LABELS = {
+VM_EXTRA_ACTION_LABELS = tr_dict(lambda: {
     "clone": tr("Clone"),
     "convert_template": tr("Convert to Template"),
     "convert_vm": tr("Convert to VM"),
-}
+})
 
 VM_EXTRA_ACTION_ICONS = {
     "clone": "clone",
@@ -48,11 +48,11 @@ VM_EXTRA_ACTION_ICONS = {
     "convert_vm": "vm",
 }
 
-VM_EXTRA_ACTION_TOOLTIPS = {
+VM_EXTRA_ACTION_TOOLTIPS = tr_dict(lambda: {
     "clone": tr("Clone this VM"),
     "convert_template": tr("Convert this VM to a template (VM must be stopped)"),
     "convert_vm": tr("Convert this template back to a VM"),
-}
+})
 
 _CONFIRM_ACTIONS = ("stop", "reset", "shutdown", "reboot")
 

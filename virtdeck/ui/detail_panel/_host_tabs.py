@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...domain import QuorumState
-from ..i18n import tr
+from ..i18n import format_date, format_datetime, tr, trn
 from ..icons import get_icon
 from ..object_id import HostId
 from ..theme import Color, fill_bytes_column
@@ -432,7 +432,9 @@ class HostTabs:
         if answered < configured:
             return (f"{configured} {tr('configured')} · "
                     f"{running} {tr('online')}")
-        return f"{answered} {tr('hosts')} · {running} {tr('online')}"
+        # U30: "1 узел / 2 узла / 5 узлов" — plural-aware noun
+        return (f"{answered} {trn('host', 'hosts', answered)} · "
+                f"{running} {tr('online')}")
 
     def populate_host_summary(self, hosts):
         panel = self.panel
@@ -1433,7 +1435,7 @@ class HostTabs:
             name = snap.get("name", "")
             desc = snap.get("description", "") or ""
             snaptime = snap.get("snaptime", 0)
-            ts = datetime.fromtimestamp(snaptime).strftime("%Y-%m-%d %H:%M:%S") if snaptime else ""
+            ts = format_datetime(datetime.fromtimestamp(snaptime)) if snaptime else ""
             vm_state = tr("yes") if snap.get("vmstate", 0) else tr("no")
             size_val = snap.get("size", 0)
             if isinstance(size_val, (int, float)) and size_val > 0:
@@ -1740,7 +1742,7 @@ class HostTabs:
                 name = snap.get("name", "")
                 desc = snap.get("description", "") or ""
                 ctime = snap.get("snaptime", 0)
-                created = datetime.fromtimestamp(ctime).strftime("%Y-%m-%d %H:%M") if ctime else ""
+                created = format_datetime(datetime.fromtimestamp(ctime)) if ctime else ""
                 parent = snap.get("parent", "") or ""
                 size = snap.get("size", 0) or 0
                 if isinstance(size, (int, float)) and size > 0:
@@ -2696,7 +2698,7 @@ class HostTabs:
                 expire = int(expire)
             if expire and expire > 0:
                 from datetime import datetime as _dt
-                expire_text = _dt.fromtimestamp(expire).strftime("%Y-%m-%d")
+                expire_text = format_date(_dt.fromtimestamp(expire))
             else:
                 expire_text = tr("Never")
             table.setItem(i, 2, QTableWidgetItem(expire_text))
@@ -2811,7 +2813,7 @@ class HostTabs:
                 expire = int(expire)
             if expire and expire > 0:
                 from datetime import datetime as _dt
-                expire_text = _dt.fromtimestamp(expire).strftime("%Y-%m-%d")
+                expire_text = format_date(_dt.fromtimestamp(expire))
             else:
                 expire_text = tr("Never")
             table.setItem(row, 4, QTableWidgetItem(expire_text))

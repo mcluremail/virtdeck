@@ -133,7 +133,8 @@ class CommandPalette(QDialog):
 
     def _refresh(self, query):
         self._list.clear()
-        specs = self._registry.search(query, self._selection)
+        specs = self._registry.search(query, self._selection,
+                                      include_disabled=True)
         if not specs:
             # Д6/U3: empty state with the next step, not a bare body
             title = (tr("Start typing to search commands")
@@ -149,18 +150,34 @@ class CommandPalette(QDialog):
                 empty.setForeground(0, QBrush(QColor(Color.DISABLED)))
                 self._list.addTopLevelItem(empty)
         for spec in specs:
-            item = QTreeWidgetItem([spec.display_label(self._selection),
-                                    spec.shortcut])
+            label = spec.display_label(self._selection)
+            item = QTreeWidgetItem([label, spec.shortcut])
             item.setIcon(0, get_icon(spec.icon) if spec.icon else QIcon())
             item.setData(0, _SPEC_ROLE, spec)
-            if spec.dangerous:
+            if spec.enabled is not None and not spec.enabled(self._selection):
+                # GAP-10: keep the action visible, grayed out, with the
+                # reason why it cannot run right now (owner decision:
+                # show first — hide later if disliked)
+                reason = (spec.disabled_reason(self._selection)
+                          if spec.disabled_reason is not None else "")
+                if reason:
+                    item.setText(0, f"{label}   ·   {reason}")
+                item.setFlags(Qt.NoItemFlags)
+                item.setForeground(0, QBrush(QColor(Color.DISABLED)))
+            elif spec.dangerous:
                 item.setForeground(0, QBrush(QColor(Color.DANGER)))
             if spec.shortcut:
                 item.setTextAlignment(1, int(Qt.AlignRight | Qt.AlignVCenter))
                 item.setForeground(1, QBrush(QColor(Color.TEXT_SEC)))
             self._list.addTopLevelItem(item)
         if specs:
-            self._list.setCurrentItem(self._list.topLevelItem(0))
+            # current = first selectable (enabled) row; disabled rows are
+            # shown but skipped by navigation and Enter
+            for i in range(self._list.topLevelItemCount()):
+                it = self._list.topLevelItem(i)
+                if it.flags() & Qt.ItemIsSelectable:
+                    self._list.setCurrentItem(it)
+                    break
         row_h = self._list.sizeHintForRow(0) or (base_size() + 14)
         rows = max(self._list.topLevelItemCount(), 1)
         self._list.setFixedHeight(min(rows * row_h + 10, _LIST_MAX_HEIGHT))
@@ -172,6 +189,8 @@ class CommandPalette(QDialog):
         spec = item.data(0, _SPEC_ROLE) if item is not None else None
         if spec is None or spec.invoke is None:
             return
+        if spec.enabled is not None and not spec.enabled(self._selection):
+            return  # GAP-10: a disabled row is visible but not runnable
         try:
             spec.invoke(self._selection)
         except Exception:
@@ -199,8 +218,14 @@ class CommandPalette(QDialog):
                 if count:
                     current = self._list.indexOfTopLevelItem(self._list.currentItem())
                     step = 1 if key == Qt.Key_Down else -1
-                    row = max(0, min(count - 1, current + step))
-                    self._list.setCurrentItem(self._list.topLevelItem(row))
+                    # GAP-10: skip non-selectable (disabled) rows
+                    row = current + step
+                    while 0 <= row < count and not (
+                            self._list.topLevelItem(row).flags()
+                            & Qt.ItemIsSelectable):
+                        row += step
+                    if 0 <= row < count:
+                        self._list.setCurrentItem(self._list.topLevelItem(row))
                 return True
             if key in (Qt.Key_Return, Qt.Key_Enter):
                 self._invoke_current()

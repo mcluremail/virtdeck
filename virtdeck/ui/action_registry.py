@@ -120,26 +120,38 @@ class ActionRegistry:
     def all(self) -> tuple[ActionSpec, ...]:
         return tuple(self._specs)
 
-    def actions_for(self, selection: Selection) -> list[ActionSpec]:
+    def actions_for(
+        self, selection: Selection, include_disabled: bool = False
+    ) -> list[ActionSpec]:
         """Specs applicable to the selection: by scope and the enabled rule.
 
         Specs with SCOPE_GLOBAL are always applicable (including with an
         empty selection); the others — when the object type matches.
+        Disabled specs are skipped unless *include_disabled* (GAP-10: the
+        command palette shows them grayed out with the reason).
         """
         out = []
         for spec in self._specs:
             if SCOPE_GLOBAL not in spec.scopes and selection.kind not in spec.scopes:
                 continue
             if spec.enabled is not None and not spec.enabled(selection):
-                continue
+                if not include_disabled:
+                    continue
+                # GAP-10: a disabled row is shown only when it can explain
+                # itself; reason-less disabled specs (e.g. bulk-selection
+                # singles covered by bulk actions) stay hidden
+                if (spec.disabled_reason is None
+                        or not spec.disabled_reason(selection)):
+                    continue
             out.append(spec)
         return out
 
     def search(
-        self, query: str, selection: Selection, limit: int = 30
+        self, query: str, selection: Selection, limit: int = 30,
+        include_disabled: bool = False,
     ) -> list[ActionSpec]:
         """Fuzzy search over the label and keywords; empty query — all."""
-        specs = self.actions_for(selection)
+        specs = self.actions_for(selection, include_disabled=include_disabled)
         query = query.strip()
         if not query:
             return specs[:limit]

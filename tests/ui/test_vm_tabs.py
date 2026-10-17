@@ -47,7 +47,9 @@ class TestPopulateVmSnapshotsTree:
         item = tree.topLevelItem(0)
         assert item.text(0) == "base"
         assert item.text(1) == "clean"
-        expected_ts = datetime.fromtimestamp(1700000000).strftime("%Y-%m-%d %H:%M:%S")
+        # Д12: the timestamp follows the interface locale
+        from virtdeck.ui.i18n import format_datetime
+        expected_ts = format_datetime(datetime.fromtimestamp(1700000000))
         assert item.text(2) == expected_ts
         assert item.text(4) == "32.0 GiB"
         assert fake.panel.vm_snapshots_stack.currentIndex() == 1

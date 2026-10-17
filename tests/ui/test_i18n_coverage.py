@@ -1,36 +1,23 @@
-"""CI gate: every tr() literal used in virtdeck/ui must exist in every
-shipped locale dictionary (audit U26).
+"""CI gate: every key that can reach tr() must exist in every shipped
+locale dictionary (audit U26).
 
-Extraction is AST-based: Call(func=Name('tr'), args=[Const(str)]).
-Dynamic tr(variable) calls cannot be extracted — they degrade to the
-English fallback by design and are out of scope here.
-
-Keys are collected from the AST (not regex) so multi-line implicit
-string concatenation inside tr(...) is handled correctly.
+Extraction rules live in tools/i18n_hygiene.py (U32/U33) so the gate and
+the prune report can never disagree: tr("literal"), tr("a" + joined
+prefix), add_section(form, "title"), plus an explicit allow-list for
+keys that reach tr() through runtime variables.
 """
 import ast
 import json
+import sys
 from pathlib import Path
 
 _UI_DIR = Path(__file__).resolve().parents[2] / "virtdeck" / "ui"
 _JSON_LANGS = ("ru", "ar", "zh", "fr", "es")
 
-
-def _extract_tr_keys() -> set[str]:
-    keys: set[str] = set()
-    for path in sorted(_UI_DIR.rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "tr"
-                and node.args
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[0].value, str)
-            ):
-                keys.add(node.args[0].value)
-    return keys
+# U32/U33: the extraction rules live in one place — the hygiene tool —
+# so the CI gate and the prune report can never disagree.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+from i18n_hygiene import _extract_tr_keys  # noqa: E402
 
 
 def test_tr_keys_present_in_every_locale():

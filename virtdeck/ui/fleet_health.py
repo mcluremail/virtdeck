@@ -33,7 +33,7 @@ from ..fleet.collector import TASK_HISTORY_LIMIT
 from ..fleet.drift import detect_drift
 from ..fleet.runway import SPARSE, RunwayEstimate
 from .api.fleet import scan_fleet_snapshots
-from .i18n import tr
+from .i18n import format_datetime, format_time, tr
 from .icons import get_icon
 from .theme import Color, enable_column_reorder, enable_table_autofit
 from .widgets.empty_state import EmptyState
@@ -525,5 +525,4 @@ def _days_ago(ts: int | None, now: int) -> int | None:
 def _fmt_time(ts: int) -> str:
     dt = datetime.fromtimestamp(ts)
     today = datetime.now().date() == dt.date()
-    return dt.strftime("%H:%M") if today \
-        else dt.strftime("%Y-%m-%d %H:%M")
+    return (format_time(dt) if today else format_datetime(dt))

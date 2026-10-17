@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 
 from ..detail_panel._table_utils import set_empty_placeholder
 from ..hover import enable_row_hover
-from ..i18n import tr
+from ..i18n import tr, tr_list
 from ..icons import get_icon
 from ..theme import Color, enable_column_reorder, enable_table_autofit, font_px
 from ..vm_config_display import (
@@ -52,7 +52,7 @@ _SECTION_ROLE = Qt.UserRole + 102
 _SECTION_BG = "transparent"
 _SECTION_FG = f"{Color.TEXT_DIM}"
 
-_ADD_TYPES = [
+_ADD_TYPES = tr_list(lambda: [
     ("disk", tr("Add: Hard Disk")),
     ("cdrom", tr("Add: CD/DVD Drive")),
     ("net", tr("Add: Network Device")),
@@ -61,7 +61,7 @@ _ADD_TYPES = [
     ("serial", tr("Add: Serial Port")),
     ("efidisk", tr("Add: EFI Disk")),
     ("tpmstate", tr("Add: TPM")),
-]
+])
 
 
 def _next_free_slot(config_data, prefix, max_count):

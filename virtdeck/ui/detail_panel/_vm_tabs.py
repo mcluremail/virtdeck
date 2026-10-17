@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...domain import Vm
-from ..i18n import tr
+from ..i18n import format_datetime, tr
 from ..icons import get_icon
 from ..theme import Color
 from ..utils import format_uptime as _format_uptime
@@ -1065,7 +1065,7 @@ class VMTabs:
         def create_item(snap):
             desc = snap.description or ""
             if snap.snaptime:
-                ts = datetime.fromtimestamp(snap.snaptime).strftime("%Y-%m-%d %H:%M:%S")
+                ts = format_datetime(datetime.fromtimestamp(snap.snaptime))
             else:
                 ts = ""
             vm_state = tr("yes") if snap.vmstate else tr("no")
@@ -1395,7 +1395,7 @@ class VMTabs:
             table.setItem(i, 3, QTableWidgetItem(format_volsize(size) if size else "0"))
             ctime = b.get("ctime")
             if ctime:
-                table.setItem(i, 4, QTableWidgetItem(datetime.fromtimestamp(ctime).strftime("%Y-%m-%d %H:%M")))
+                table.setItem(i, 4, QTableWidgetItem(format_datetime(datetime.fromtimestamp(ctime))))
             else:
                 table.setItem(i, 4, QTableWidgetItem(""))
             table.setItem(i, 5, QTableWidgetItem(b.get("storage", "")))

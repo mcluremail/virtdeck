@@ -936,10 +936,11 @@ class MainWindow(QMainWindow):
         confirm_check = QCheckBox(tr("I confirm deletion"))
         layout.addWidget(confirm_check)
 
-        # purge also removes the guest from HA resources and backup jobs;
-        # default on (previous hardwired behavior), user can opt out
+        # DELIGHT-5: purge also removes the guest from HA resources and
+        # backup jobs — destructive enough to require an explicit opt-in
+        # (owner decision: safe default; re-check = one line if disliked)
         purge_check = QCheckBox(tr("Purge from HA resources and backup jobs"))
-        purge_check.setChecked(True)
+        purge_check.setChecked(False)
         layout.addWidget(purge_check)
 
         if is_running:
