@@ -1276,5 +1276,6 @@
   "~{}–{} days left": "quedan ~{}–{} días",
   "~{}–∞ days left": "~{}–∞ días para llenarse",
   "— none —": "— ninguno —",
-  "❌ {} is unavailable": "❌ {} no está disponible"
+  "❌ {} is unavailable": "❌ {} no está disponible",
+  "Filter: name, VMID, node": "Filtro: nombre, VMID, nodo"
 }

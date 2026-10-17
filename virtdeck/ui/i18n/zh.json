@@ -1276,5 +1276,6 @@
   "~{}–{} days left": "约 {}–{} 天后写满",
   "~{}–∞ days left": "~{}–∞ 天后写满",
   "— none —": "— 无 —",
-  "❌ {} is unavailable": "❌ {} 不可用"
+  "❌ {} is unavailable": "❌ {} 不可用",
+  "Filter: name, VMID, node": "筛选：名称、VMID、节点"
 }

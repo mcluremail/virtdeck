@@ -355,7 +355,7 @@
   "File deleted: {volid}": "Файл удалён: {volid}",
   "Filename:": "Имя файла:",
   "Fill level": "Заполнение",
-  "Filter": "Поиск",
+  "Filter": "Фильтр",
   "Filter...": "Фильтр...",
   "Fingerprint": "Отпечаток",
   "Finnish": "Финская",
@@ -1276,5 +1276,6 @@
   "~{}–{} days left": "~{}–{} дней до заполнения",
   "~{}–∞ days left": "~{}–∞ дней до заполнения",
   "— none —": "— нет —",
-  "❌ {} is unavailable": "❌ {} недоступен"
+  "❌ {} is unavailable": "❌ {} недоступен",
+  "Filter: name, VMID, node": "Фильтр: имя, VMID, узел"
 }

@@ -18,6 +18,7 @@ The frames are committed next to the report so the evidence survives
 | `main_light` | honest status bar, hosts tree, task list (stage 5); icon color layer in the tree (Д5/S2) |
 | `main_graphite` | theme persistence via the real switcher path (R5, stage 4); same icon language as light — colors do not drift (Д5/S2) |
 | `park200` | GAP-7 / DELIGHT-8: 200-VM park; duplicate names carry VMIDs, unique names stay clean |
+| `tree_filter` | GAP-7 (product part): the live tree filter narrows the park to the matches |
 | `palette` | GAP-10: disabled actions stay visible in grey with the reason |
 | `delete_vm` | DELIGHT-5: purge from HA/backup jobs is an explicit opt-in |
 | `backup_job` | Д8: dialog sections (Selection / Backup / Schedule / Retention) |

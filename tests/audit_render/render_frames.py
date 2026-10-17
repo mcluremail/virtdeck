@@ -15,6 +15,7 @@ Frame            → audit evidence
 main_light       → R5 honest status bar, L3 tree, empty states (stage 5)
 main_graphite    → theme persistence (R5 / stage 4)
 park200          → GAP-7 / DELIGHT-8: 200-VM park, duplicate names carry VMIDs
+tree_filter      → GAP-7 (product part): live tree filter narrows the park to matches
 palette          → GAP-10: disabled actions stay visible with the reason
 delete_vm        → DELIGHT-5: purge is an explicit opt-in (not pre-checked)
 backup_job       → Д8: dialog sections and terminology
@@ -165,6 +166,13 @@ mw.tree_panel.update_data(nr.all(), vr.all(), [], final=True, node_repo=nr,
                           vm_repo=vr)
 app.processEvents()
 shoot(mw, "park200")
+
+# ── GAP-7 (product part): the live tree filter at park scale ────────
+mw.tree_panel._filter_edit.setText("web-9")
+app.processEvents()
+shoot(mw, "tree_filter")
+mw.tree_panel._filter_edit.clear()
+app.processEvents()
 
 # ── command palette: a stopped VM, disabled rows carry reasons ──────
 from virtdeck.ui import action_specs  # noqa: E402

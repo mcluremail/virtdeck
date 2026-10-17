@@ -4,8 +4,8 @@ from collections import defaultdict
 from dataclasses import replace
 from datetime import timedelta
 
-from PySide6.QtCore import QMimeData, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QDrag, QFont, QFontMetrics
+from PySide6.QtCore import QEvent, QMimeData, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QDrag, QKeySequence, QFont, QFontMetrics, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QMenu,
+    QLineEdit,
     QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
@@ -265,6 +266,8 @@ class TreePanel(QWidget):
         self._node_repo = None
         self.all_vms = []
         self._dup_vm_names = set()  # DELIGHT-8: names shared by 2+ guests
+        self._filter_needle = ""        # GAP-7: current filter text
+        self._pre_filter_expanded = []  # expansion snapshot before filtering
         self._vm_repo = None
         self.all_storages = []
         # M2: action registry for tree objects — the single source for the
@@ -314,6 +317,28 @@ class TreePanel(QWidget):
         mode_row.addWidget(self._mode_combo)
         mode_row.addStretch()
         layout.addLayout(mode_row)
+
+        # GAP-7 (product part): live tree filter — "find a VM in a big
+        # park". Matches the display name, VMID, node and the info line;
+        # parents of matches stay visible as containers.
+        self._filter_edit = QLineEdit()
+        self._filter_edit.setPlaceholderText(tr("Filter"))
+        self._filter_edit.setClearButtonEnabled(True)
+        self._filter_edit.addAction(get_icon("search"),
+                                    QLineEdit.LeadingPosition)
+        self._filter_edit.setToolTip(tr("Filter: name, VMID, node"))
+        self._filter_edit.setAccessibleName(tr("Filter"))
+        self._filter_edit.textChanged.connect(self._apply_filter)
+        self._filter_edit.installEventFilter(self)
+        filter_row = QHBoxLayout()
+        filter_row.setContentsMargins(4, 4, 4, 0)
+        filter_row.addWidget(self._filter_edit)
+        layout.addLayout(filter_row)
+        # Ctrl+F focuses the filter (view-local, not a global command —
+        # so it is a plain widget-scoped shortcut, unlike registry actions)
+        self._filter_shortcut = QShortcut(QKeySequence.Find, self)
+        self._filter_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self._filter_shortcut.activated.connect(self._focus_filter)
 
         self._toggle_btn = QToolButton()
         self._toggle_btn.setIcon(get_icon("expand"))
@@ -412,6 +437,7 @@ class TreePanel(QWidget):
                     self.tree.setCurrentItem(target)
             finally:
                 self._building = False
+            self._apply_filter()   # refilled children must honor the filter
             return
 
     def set_mode(self, mode):
@@ -441,6 +467,10 @@ class TreePanel(QWidget):
                 self.set_mode("storages")
             elif key_data[0] in ("pbs", "pbs_datastore") and self._tree_mode != "pbs":
                 self.set_mode("pbs")
+        if self._filter_needle:
+            # the reveal target may be filtered out — clear the filter
+            # so the jump actually shows the item
+            self._filter_edit.clear()
         self.find_and_select(key_data)
 
     def _toggle_expand(self):
@@ -1075,6 +1105,7 @@ class TreePanel(QWidget):
                 self.tree.setCurrentItem(item)
         self.tree.verticalScrollBar().setValue(scroll_val)
         self._building = False
+        self._apply_filter()   # GAP-7: the rebuild must honor an active filter
 
     def _compute_grouping(self):
         """B16/B20: split hosts into cluster/standalone/group buckets."""
@@ -1379,7 +1410,8 @@ class TreePanel(QWidget):
         """Remove VM count suffix like '[3/5]' for stable paths."""
         return re.sub(r'\s+\[\d+/\d+\]$', '', text)
 
-    def _save_expanded_state(self):
+    def _expanded_paths(self):
+        """Expanded-state snapshot (stable label paths)."""
         paths = []
         def collect_paths(item, path=""):
             label = self._strip_count(item.text(0))
@@ -1390,7 +1422,22 @@ class TreePanel(QWidget):
                 collect_paths(item.child(i), current)
         for i in range(self.tree.topLevelItemCount()):
             collect_paths(self.tree.topLevelItem(i))
-        save_ui_state("expandedTreePaths", json.dumps(paths))
+        return paths
+
+    def _expand_paths(self, paths):
+        saved = set(paths)
+        def match_and_expand(item, path=""):
+            label = self._strip_count(item.text(0))
+            current = path + "|" + label if path else label
+            if current in saved:
+                item.setExpanded(True)
+            for i in range(item.childCount()):
+                match_and_expand(item.child(i), current)
+        for i in range(self.tree.topLevelItemCount()):
+            match_and_expand(self.tree.topLevelItem(i))
+
+    def _save_expanded_state(self):
+        save_ui_state("expandedTreePaths", json.dumps(self._expanded_paths()))
 
     def _restore_expanded_state(self):
         raw = load_ui_state("expandedTreePaths")
@@ -1402,15 +1449,74 @@ class TreePanel(QWidget):
             return
         if not saved_paths:
             return
-        def match_and_expand(item, path=""):
-            label = self._strip_count(item.text(0))
-            current = path + "|" + label if path else label
-            if current in saved_paths:
-                item.setExpanded(True)
+        self._expand_paths(saved_paths)
+
+    # ── GAP-7 (product part): live tree filter ──────────────────────
+
+    def _focus_filter(self):
+        self._filter_edit.setFocus()
+        self._filter_edit.selectAll()
+
+    def eventFilter(self, obj, event):
+        """Esc in the filter: clear it (or leave the field) → back to tree."""
+        if (obj is self._filter_edit
+                and event.type() == QEvent.Type.KeyPress
+                and event.key() == Qt.Key.Key_Escape):
+            if self._filter_edit.text():
+                self._filter_edit.clear()      # textChanged applies ""
+            else:
+                self.tree.setFocus()
+            return True
+        return super().eventFilter(obj, event)
+
+    @staticmethod
+    def _search_text(item):
+        """What the filter matches against: display name, info line,
+        VMID, node and host names from the item roles."""
+        parts = [item.text(0) or "", item.data(0, INFO_ROLE) or ""]
+        for role in (VM_KEY_ROLE, ITEM_KEY_ROLE):
+            key = item.data(0, role)
+            if isinstance(key, tuple):
+                parts.extend(str(part) for part in key
+                             if isinstance(part, (str, int)))
+        return " ".join(parts).lower()
+
+    def _apply_filter(self, text=None):
+        """Hide non-matching items; parents of matches stay as containers.
+
+        The expansion state is snapshotted on the first filtered keystroke
+        and restored when the filter is cleared — expandAll() must not
+        leak into the user's saved tree state.
+        """
+        if text is None:
+            text = self._filter_edit.text()
+        needle = (text or "").strip().lower()
+        if self._building:
+            return
+        was = bool(self._filter_needle)
+        if needle and not was:
+            self._pre_filter_expanded = self._expanded_paths()
+        if not needle and was:
+            self.tree.collapseAll()
+            self._expand_paths(self._pre_filter_expanded)
+        self._filter_needle = needle
+        if needle:
+            # expand FIRST: expandAll skips hidden items, and the walk
+            # below hides non-matches
+            self.tree.expandAll()
+
+        def walk(item):
+            child_hit = False
             for i in range(item.childCount()):
-                match_and_expand(item.child(i), current)
+                if walk(item.child(i)):
+                    child_hit = True
+            visible = (not needle) or child_hit \
+                or needle in self._search_text(item)
+            item.setHidden(not visible)
+            return visible
+
         for i in range(self.tree.topLevelItemCount()):
-            match_and_expand(self.tree.topLevelItem(i))
+            walk(self.tree.topLevelItem(i))
 
     def save_state(self):
         self._save_expanded_state()
