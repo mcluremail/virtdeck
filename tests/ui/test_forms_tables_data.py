@@ -10,19 +10,18 @@ import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QCheckBox,
+    QComboBox,
     QFormLayout,
     QLabel,
     QLineEdit,
-    QComboBox,
 )
 
-from virtdeck.ui.theme import Color, fill_bytes_column
 from virtdeck.domain.enums import NodeStatus, VmStatus, VmType
 from virtdeck.domain.node import Node
 from virtdeck.domain.repositories import NodeRepository, VmRepository
 from virtdeck.domain.task import Task
 from virtdeck.domain.vm import Vm
+from virtdeck.ui.theme import Color, fill_bytes_column
 
 G = 1024 ** 3
 
@@ -73,7 +72,6 @@ class TestFormPatternBackupJob:
 
     def test_field_edges_aligned(self, dlg):
         from PySide6.QtCore import QPoint
-        from PySide6.QtWidgets import QComboBox, QLineEdit
 
         form = dlg.findChildren(QFormLayout)[0]
         dlg.resize(560, 760)
@@ -104,7 +102,7 @@ class TestFormPatternBackupJob:
             if item and item.widget():
                 labels.append(item.widget().text())
         assert tr("Pool:") in labels
-        assert "pool" not in [l for l in labels if l == "pool"]
+        assert "pool" not in labels
 
     def test_enabled_in_header_band(self, dlg):
         form = dlg.findChildren(QFormLayout)[0]
@@ -157,8 +155,7 @@ class TestFormPatternMigrate:
 
 class TestTasksTableReadability:
     def test_error_status_not_truncated(self, qtbot):
-        from virtdeck.ui.widgets.cluster_tasks_widget import \
-            ClusterTasksWidget
+        from virtdeck.ui.widgets.cluster_tasks_widget import ClusterTasksWidget
 
         w = ClusterTasksWidget()
         qtbot.addWidget(w)
@@ -168,8 +165,7 @@ class TestTasksTableReadability:
         assert w.table.item(0, 5).text() == err
 
     def test_running_is_neutral_not_amber(self, qtbot):
-        from virtdeck.ui.widgets.cluster_tasks_widget import \
-            ClusterTasksWidget
+        from virtdeck.ui.widgets.cluster_tasks_widget import ClusterTasksWidget
 
         w = ClusterTasksWidget()
         qtbot.addWidget(w)
@@ -342,8 +338,7 @@ class TestCreateVmNoSilentFallbacks:
 
 class TestTaskNavigation:
     def test_double_click_emits_the_task(self, qtbot):
-        from virtdeck.ui.widgets.cluster_tasks_widget import \
-            TASK_DATA_ROLE, ClusterTasksWidget
+        from virtdeck.ui.widgets.cluster_tasks_widget import TASK_DATA_ROLE, ClusterTasksWidget
 
         w = ClusterTasksWidget()
         qtbot.addWidget(w)

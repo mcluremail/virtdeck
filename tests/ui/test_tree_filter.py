@@ -8,14 +8,13 @@ and reveal_key() clears it so the jump target is actually visible.
 from __future__ import annotations
 
 import pytest
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence
 
 from virtdeck.domain.enums import NodeStatus, VmStatus, VmType
 from virtdeck.domain.node import Node
 from virtdeck.domain.repositories import NodeRepository, VmRepository
 from virtdeck.domain.vm import Vm
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence
-
 from virtdeck.ui.tree_panel import TreePanel
 
 G = 1024 ** 3

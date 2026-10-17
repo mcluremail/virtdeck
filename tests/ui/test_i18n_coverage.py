@@ -6,7 +6,6 @@ the prune report can never disagree: tr("literal"), tr("a" + joined
 prefix), add_section(form, "title"), plus an explicit allow-list for
 keys that reach tr() through runtime variables.
 """
-import ast
 import json
 import sys
 from pathlib import Path

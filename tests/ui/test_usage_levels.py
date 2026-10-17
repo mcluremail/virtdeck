@@ -5,7 +5,6 @@ from virtdeck.ui.pbs_panel import _usage_color
 from virtdeck.ui.theme import Color, usage_color
 from virtdeck.ui.widgets.metric_card import MetricCard
 
-
 # pytest-qt: a QApplication is required before any widget.
 
 

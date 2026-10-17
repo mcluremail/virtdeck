@@ -40,7 +40,6 @@ OUT.mkdir(parents=True, exist_ok=True)
 os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp(prefix="vd-frames-")
 
 # No XDG/theme persistence beyond this run.
-from PySide6.QtCore import QPoint  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 app = QApplication([])
@@ -104,7 +103,6 @@ app.processEvents()
 shoot(mw, "main_light")
 
 # ── graphite theme (persistence + retheme contract) ─────────────────
-from virtdeck.ui.theme import load_theme  # noqa: E402
 
 
 def _switch_theme(tid):
@@ -240,7 +238,6 @@ bj.close()
 
 # ── PBS healthy render (GAP-8 / R12) ────────────────────────────────
 from virtdeck.pbs.client import PbsClient  # noqa: E402
-from virtdeck.ui.pbs_panel import PbsPanel  # noqa: E402
 
 pbs = FakePbsApi()
 pbs.add_datastore("tank", total=1000 * 10**9, used=430 * 10**9)

@@ -10,8 +10,7 @@ import re
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QFont, QFontDatabase
-from PySide6.QtWidgets import (QApplication, QHeaderView, QProxyStyle,
-                               QStyle, QTableWidgetItem)
+from PySide6.QtWidgets import QApplication, QHeaderView, QProxyStyle, QStyle, QTableWidgetItem
 
 logger = logging.getLogger(__name__)
 

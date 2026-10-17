@@ -9,16 +9,13 @@ L3/L4/L10, U17 (red text of destructive items).
 import pytest
 from PySide6.QtGui import QColor
 
-from virtdeck.ui import theme
-from virtdeck.ui.theme import Color
-
 from virtdeck.domain.enums import NodeStatus, VmStatus, VmType
 from virtdeck.domain.node import Node
 from virtdeck.domain.repositories import NodeRepository, VmRepository
 from virtdeck.domain.vm import Vm
-
+from virtdeck.ui import theme
+from virtdeck.ui.theme import Color
 from virtdeck.ui.widgets.empty_state import EmptyState, SkeletonDetail
-
 
 G = 1024 ** 3
 
@@ -54,8 +51,6 @@ class TestEmptyStatePrimitive:
                        on_action=lambda: clicked.append(1))
         w.show()
         qapp.processEvents()
-        titles = [c for c in w.findChildren(type(qapp))
-                  if c.objectName() == "emptyStateTitle"]
         # labels styled through the global QSS — no inline hex (A7/Д4)
         from PySide6.QtWidgets import QLabel, QPushButton
         title = next(c for c in w.findChildren(QLabel)
@@ -99,11 +94,13 @@ class TestEmptyStatePrimitive:
 class TestSearchEmptyState:
     def test_no_results_shows_empty_state(self, qtbot, monkeypatch, tmp_path):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-        from virtdeck.ui.search_dialog import GlobalSearchDialog
-
-        from virtdeck.domain.repositories import NodeRepository, VmRepository
         from virtdeck.domain.repositories import (
-            PoolRepository, StorageRepository)
+            NodeRepository,
+            PoolRepository,
+            StorageRepository,
+            VmRepository,
+        )
+        from virtdeck.ui.search_dialog import GlobalSearchDialog
 
         repos = (NodeRepository(), VmRepository(),
                  StorageRepository(), PoolRepository())
@@ -117,11 +114,13 @@ class TestSearchEmptyState:
 
     def test_empty_query_hints_typing(self, qtbot, monkeypatch, tmp_path):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-        from virtdeck.ui.search_dialog import GlobalSearchDialog
-
-        from virtdeck.domain.repositories import NodeRepository, VmRepository
         from virtdeck.domain.repositories import (
-            PoolRepository, StorageRepository)
+            NodeRepository,
+            PoolRepository,
+            StorageRepository,
+            VmRepository,
+        )
+        from virtdeck.ui.search_dialog import GlobalSearchDialog
 
         repos = (NodeRepository(), VmRepository(),
                  StorageRepository(), PoolRepository())
@@ -139,8 +138,7 @@ class TestSearchEmptyState:
         nr, vr = NodeRepository(), VmRepository()
         nr.add(_node("pve-alpha"))
         vr.add(_vm(100, "web-01", "pve-alpha"))
-        from virtdeck.domain.repositories import (
-            PoolRepository, StorageRepository)
+        from virtdeck.domain.repositories import PoolRepository, StorageRepository
 
         repos = (nr, vr, StorageRepository(), PoolRepository())
         dlg = GlobalSearchDialog(lambda: repos)
@@ -156,8 +154,7 @@ class TestSearchEmptyState:
 
 class TestTasksDockEmptyState:
     def test_zero_tasks_show_the_empty_state(self, qapp):
-        from virtdeck.ui.widgets.cluster_tasks_widget import \
-            ClusterTasksWidget
+        from virtdeck.ui.widgets.cluster_tasks_widget import ClusterTasksWidget
 
         w = ClusterTasksWidget()
         w.show()
@@ -167,8 +164,7 @@ class TestTasksDockEmptyState:
         assert w._empty.isVisibleTo(w)
 
     def test_tasks_hide_the_empty_state(self, qapp):
-        from virtdeck.ui.widgets.cluster_tasks_widget import \
-            ClusterTasksWidget
+        from virtdeck.ui.widgets.cluster_tasks_widget import ClusterTasksWidget
 
         w = ClusterTasksWidget()
         w.show()
@@ -456,7 +452,7 @@ class TestDangerousMenuItems:
 
     def test_palette_colors_dangerous_red(self, main_window):
         from virtdeck.ui.action_specs import build_registry
-        from virtdeck.ui.command_palette import CommandPalette, _SPEC_ROLE
+        from virtdeck.ui.command_palette import _SPEC_ROLE, CommandPalette
 
         mw = main_window
         nr, vr = NodeRepository(), VmRepository()

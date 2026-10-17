@@ -32,8 +32,7 @@ from PySide6.QtWidgets import (
 from ..pbs.workers import TRACKER_TERMINAL, PbsApiWorker, PbsTaskTracker
 from .i18n import tr, tr_dict
 from .icons import get_icon
-from .theme import (Color, enable_column_reorder, fill_bytes_column,
-                    token_name, usage_color)
+from .theme import Color, enable_column_reorder, fill_bytes_column, token_name, usage_color
 from .widgets.empty_state import EmptyState
 
 # A7/Д4: colors resolve at RENDER time, not at import time — frozen

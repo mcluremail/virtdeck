@@ -44,16 +44,6 @@ def _sized(scale):
     return max(10, round(_BASE_SIZE * scale))
 
 
-def _fmt(tmpl):
-    """Format the template with tokens; a foreign SVG without placeholders — as-is."""
-    try:
-        return tmpl.format(c=Color.ICON_FG, c2=Color.ICON_FG_DIM,
-                           ok=Color.STATUS_OK, err=Color.STATUS_ERR,
-                           b=Color.BORDER)
-    except (KeyError, IndexError):
-        return tmpl
-
-
 def _status_color(status):
     if status in ("online", "running", "OK"):
         return Color.STATUS_OK

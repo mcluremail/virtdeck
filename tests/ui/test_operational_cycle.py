@@ -15,7 +15,6 @@ from __future__ import annotations
 import pytest
 
 from tests.harness import fake_pve_cfg, install_fake_pve
-from tests.harness.fake_pve import FakePveApi
 from tests.harness.scenarios import make_pve_cluster
 
 
@@ -51,7 +50,7 @@ def _vm_status(mw, vmid=105):
 def _note_texts(mw):
     out = []
     for ref in mw._notifications._active.values():
-        toast = ref() if hasattr(ref, "__call__") else ref
+        toast = ref() if callable(ref) else ref
         if toast is not None:
             out.append(toast._text)
     return out

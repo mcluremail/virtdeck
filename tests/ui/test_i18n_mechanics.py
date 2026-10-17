@@ -9,7 +9,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 from i18n_hygiene import _extract_tr_keys  # noqa: E402
-
 from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import QCheckBox, QDialog  # noqa: E402
 
@@ -17,13 +16,12 @@ import virtdeck.ui.i18n as i18n  # noqa: E402
 from virtdeck.domain.enums import VmStatus, VmType  # noqa: E402
 from virtdeck.domain.vm import Vm  # noqa: E402
 from virtdeck.ui.action_registry import (  # noqa: E402
-    SCOPE_GLOBAL,
     SCOPE_VM,
     ActionRegistry,
     ActionSpec,
     Selection,
 )
-from virtdeck.ui.command_palette import CommandPalette, _SPEC_ROLE  # noqa: E402
+from virtdeck.ui.command_palette import _SPEC_ROLE, CommandPalette  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -278,7 +276,6 @@ def mw(qtbot, monkeypatch, tmp_path):
 
 
 def test_delete_dialog_purge_not_prechecked(qtbot, monkeypatch, mw):
-    from virtdeck.domain.repositories import NodeRepository, VmRepository
 
     mw.nodes_cfg = [{"name": "n1", "host": "10.0.0.1", "user": "u@pam",
                      "token_name": "t", "token_value": "s"}]

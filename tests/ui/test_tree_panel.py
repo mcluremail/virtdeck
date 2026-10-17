@@ -1564,7 +1564,6 @@ class TestDangerousLastOrdering:
                      status=VmStatus.RUNNING)
         cfg = [{"name": "h1", "cluster": "", "skip": False}]
         tp = self._panel(qtbot, make_node, make_vm, cfg, vms=[vm])
-        item = _collect_items(tp)[("host", "pve01", "h1")]
 
         def walk_vm(it):
             if it.data(0, VM_KEY_ROLE) == ("h1", 100, "pve01"):

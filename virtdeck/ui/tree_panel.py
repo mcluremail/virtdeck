@@ -5,7 +5,7 @@ from dataclasses import replace
 from datetime import timedelta
 
 from PySide6.QtCore import QEvent, QMimeData, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QDrag, QKeySequence, QFont, QFontMetrics, QShortcut
+from PySide6.QtGui import QAction, QDrag, QFont, QFontMetrics, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -13,8 +13,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
-    QMenu,
     QLineEdit,
+    QMenu,
     QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,

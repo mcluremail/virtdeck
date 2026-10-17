@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
 
 from ..icons import base_size, get_icon
 from ..theme import RADIUS, font_px
-from ..i18n import tr
 
 
 class EmptyState(QWidget):

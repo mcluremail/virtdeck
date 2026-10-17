@@ -10,7 +10,6 @@ for real — only the wire is fake.
 from __future__ import annotations
 
 import pytest
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog
 
 from tests.harness.fake_pbs import FakePbsApi
@@ -94,7 +93,7 @@ def test_restore_reaches_confirmation_screen(qtbot, monkeypatch):
             diskwrite_bytes=0, conn_id="h1")
     panel._last_vm_data = vm
     panel.all_vms = [vm]
-    stor_rep = SimpleNamespace = type("S", (), {})()
+    stor_rep = type("S", (), {})()
     stor_rep.content_list = ["backup", "images"]
     stor_rep.node = "n1"
     stor_rep.host_name = "h1"
