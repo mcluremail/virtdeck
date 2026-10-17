@@ -255,11 +255,15 @@ class TestPbsEmptyState:
         assert p._empty.isVisibleTo(p)
         assert p._title_lbl.text() == "Backup server"
 
-    def test_show_server_hides_it(self, qapp):
+    def test_show_server_hides_it(self, qapp, monkeypatch):
         from virtdeck.ui.pbs_panel import PbsPanel
 
         cfg = [{"name": "pbs1", "host": "h", "type": "pbs", "skip": False}]
         p = PbsPanel()
+        # Never start a real worker: the fake host "h" would go through
+        # DNS/login in a pool thread and keep the pool busy for seconds
+        # past the test (leaked worker — CI segfault 2026-10-17).
+        monkeypatch.setattr(p, "_load_datastores", lambda: None)
         p.update_nodes_cfg(cfg)
         p.show_server("pbs1")
         qapp.processEvents()

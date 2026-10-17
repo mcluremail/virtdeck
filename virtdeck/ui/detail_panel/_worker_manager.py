@@ -77,6 +77,43 @@ class WorkerManager:
         self._workers.discard(worker)
         self._pump()
 
+    def shutdown(self):
+        """Disconnect every tracked worker's signals (panel teardown).
+
+        A worker keeps polling its task for up to 600 s. If the window
+        closes mid-flight, the connection lambdas keep the (deleted)
+        panel wrapper alive in a collectable cycle, and a later cyclic
+        GC run segfaults collecting it (PySide6 6.11.2, CI 2026-10-17).
+        After the shutdown every late emission is a no-op."""
+        import warnings
+
+        self._pending.clear()
+        singles = [w for w in (self.current_worker,
+                               self.current_config_worker,
+                               self.current_hist_worker,
+                               self.current_snap_worker) if w is not None]
+        for w in (list(self._workers)
+                  + list(self.current_host_workers) + singles):
+            sigs = getattr(w, "signals", None)
+            if sigs is None:
+                continue
+            for attr in dir(sigs):
+                sig = getattr(sigs, attr, None)
+                if not hasattr(sig, "disconnect"):
+                    continue
+                try:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        sig.disconnect()
+                except (RuntimeError, TypeError):
+                    pass
+        self._workers.clear()
+        self.current_host_workers.clear()
+        self.current_worker = None
+        self.current_config_worker = None
+        self.current_hist_worker = None
+        self.current_snap_worker = None
+
     def cancel_detail_worker(self):
         if self.current_worker:
             self.discard_worker(self.current_worker)

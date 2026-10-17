@@ -301,6 +301,7 @@ class MainWindow(QMainWindow):
         self._soft_refresh_active = False
 
         self._workers = set()
+        self._closed = False
         self._tasks_gen = 0
         self._tasks_started = False
 
@@ -541,6 +542,10 @@ class MainWindow(QMainWindow):
         """Start a worker in the pool. False — rejected (pool full): the
         worker never starts and never reports, so the caller must not
         count it in its expectations (track_hard/begin_soft)."""
+        if self._closed:
+            # Window teardown already happened (late QTimer callbacks
+            # can still arrive): never start workers into a dead UI.
+            return False
         if len(self._workers) >= MAX_WORKERS:
             try:
                 worker.signals.deleteLater()
@@ -585,6 +590,20 @@ class MainWindow(QMainWindow):
                     sig.disconnect()
             except (RuntimeError, TypeError):
                 pass
+
+    def _shutdown_workers(self):
+        """Disconnect every in-flight worker's signals (window teardown).
+
+        A worker keeps polling its task for up to 600 s (TASK_TIMEOUTS).
+        If the window closes mid-flight, the connection lambdas capture
+        ``self`` and keep the deleted window wrapper in a collectable
+        cycle; a later cyclic GC run segfaults collecting it (PySide6
+        6.11.2, CI 2026-10-17). After the shutdown every late emission
+        is a no-op."""
+        self._closed = True
+        for w in list(self._workers):
+            self._discard_worker(w)
+        self.detail_panel._workers_mgr.shutdown()
 
     def _on_about(self):
         from .about_dialog import AboutDialog
@@ -2925,5 +2944,6 @@ class MainWindow(QMainWindow):
                 2000,
             )
             return
+        self._shutdown_workers()
         self._save_state_and_quit()
         super().closeEvent(event)

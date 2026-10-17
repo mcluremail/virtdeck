@@ -16,6 +16,34 @@ def _isolate_xdg(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
 
 
+@pytest.fixture(autouse=True)
+def _no_leaked_pool_threads(request):
+    """Every test must leave the global QThreadPool idle.
+
+    A worker left polling (up to 600 s) keeps its connection lambdas
+    alive after the window is torn down; the cyclic GC then collects
+    deleted C++ wrappers and segfaults (CI 2026-10-17, PySide6 6.11.2).
+    Failing at the leaker beats a segfault three tests later."""
+    leak = False
+    try:
+        import sys
+
+        from PySide6.QtCore import QThreadPool
+        pool = QThreadPool.globalInstance()
+        leak = not pool.waitForDone(100)
+        if leak:
+            import faulthandler
+            sys.stderr.write(
+                f"\n!!! LEAKED POOL WORKER after: {request.node.nodeid}\n")
+            faulthandler.dump_traceback()
+            pool.clear()
+    except Exception:
+        pass
+    if leak:
+        pytest.fail(f"test left QThreadPool workers running: "
+                    f"{request.node.nodeid}")
+
+
 @pytest.fixture
 def make_node():
     """Factory fixture for building Node domain objects."""

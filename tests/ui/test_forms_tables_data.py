@@ -203,12 +203,16 @@ class TestByteColumns:
         fill_bytes_column(t, 0, [None])
         assert t.item(0, 0).text() == "—"
 
-    def test_pbs_datastores_use_one_unit(self, qtbot):
+    def test_pbs_datastores_use_one_unit(self, qtbot, monkeypatch):
         from types import SimpleNamespace
 
         from virtdeck.ui.pbs_panel import PbsPanel
 
         p = PbsPanel()
+        # Never start a real worker: the request would go through
+        # DNS/login in a pool thread past the test (leaked worker —
+        # CI segfault 2026-10-17).
+        monkeypatch.setattr(p, "_load_datastores", lambda: None)
         p.update_nodes_cfg([{"name": "pbs1", "type": "pbs", "skip": False}])
         p.show_server("pbs1")
         stores = [

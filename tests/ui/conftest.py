@@ -84,6 +84,12 @@ def main_window(qtbot, monkeypatch, tmp_path, offline):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     from virtdeck.ui.mainwindow import MainWindow
 
+    # The 3 s update-check singleShot is not owned by the window: it can
+    # fire during a LATER test's event processing — after the fake-pool
+    # monkeypatch is gone — and start a REAL HTTPS request on the real
+    # pool (leaked worker, CI segfault 2026-10-17). Never schedule it.
+    monkeypatch.setattr(MainWindow, "_check_version",
+                        lambda self: None, raising=True)
     mw = MainWindow()
     qtbot.addWidget(mw)
     yield mw

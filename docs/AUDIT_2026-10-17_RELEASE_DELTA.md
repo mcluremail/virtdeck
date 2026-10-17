@@ -122,3 +122,75 @@
 
 `audit/2026-10-17` на коммите аудита; следующий stop-коммит — релизный
 `v3.1.0` (порядок из RELEASE_PROCESS.md: аудит-коммит → релиз-коммит).
+
+## Дополнение (вечер 2026-10-17): красный CI на v3.1.0 — диагноз и фикс
+
+CI (pytest серийно, PySide6 6.11.2) падал на релизном теге и main:
+exit 139 (SIGSEGV) на ~81% сюиты; faulthandler показывал фоновый тред,
+поллящий задачу (`provider/_tasks.py poll` ← `_await_task` ← `vm.py:430
+run`, `VmActionWorker`), а главный тред — GC / `pytest_runtest_setup`.
+Локально серийно сюита проходила (9:27) — гонка таймингов,CI-раннеры
+медленнее.
+
+### Диагноз (три независимых артефакта)
+
+1. **Дамп CI (3.12):** главный тред — `Garbage-collecting` ВНУТРИ
+   `theme.py:392 eventFilter` (аллокация `QEvent.Type` при
+   `event.type()` триггерит циклический GC); GC собирает цикл из
+   удалённых C++-обёрток → SIGSEGV.
+2. **Прогон PR #54 (diag: pytest-timeout + детектор утечек пула):**
+   `INTERNALERROR` — ~24 вложенных вызова `eventFilter` →
+   `AttributeError: 'TreePanel' object has no attribute '_filter_edit'`:
+   GC вызван той же аллокацией, tp_clear очищает `__dict__` обёртки
+   TreePanel, чей eventFilter ещё зарегистрирован на живом
+   `_filter_edit` — событие уходит в мёртвый фильтр.
+3. **Локально:** автодетектор утечек (autouse-фикстура
+   `_no_leaked_pool_threads` в `tests/conftest.py`: `waitForDone(100)`
+   после каждого теста) поймал два теста, оставлявших воркер в полёте:
+   - `test_operational_cycle.py::test_double_click_blocked_while_in_flight`
+     (GAP-6): фейковая задача «running» навсегда → реальный
+     `VmActionWorker` поллит 600 c после конца теста;
+   - `test_state_primitives.py::TestPbsEmptyState::test_show_server_hides_it`:
+     реальный `PbsDatastoresWorker` против фейкового хоста «h» — DNS +
+     login в пуле, секунды сетевых таймаутов.
+
+### Механизм
+
+Воркер в полёте держит лямбды подключения сигналов, лямбды держат
+обёртку окна; окно разобрано qtbot'ом → в куче накапливаются
+собираемые циклы «живые Python-обёртки удалённых C++-виджетов».
+Циклический GC (запускается аллокациями в eventFilter) собирает их →
+tp_clear/tp_dealloc обёрток Qt-объектов с живыми регистрациями →
+SIGSEGV (3.12) или вложенная ошибка в мёртвом eventFilter (3.10,
+INTERNALERROR exit 3). Плюс поздние queued-доставки воркера в
+`_process_events` следующего теста.
+
+### Фикс
+
+- `tests/harness/fake_pve.py`: `finish_running_tasks()` — завершить
+  все «running»-задачи фейка.
+- `tests/ui/test_operational_cycle.py`: GAP-6 тест после ассертов
+  завершает полёт и ждёт `pending_action is None` — воркер finishing
+  внутри теста, `_discard_worker` отключает все сигналы.
+- `tests/ui/test_state_primitives.py`: PBS empty-state тест стабит
+  `_load_datastores` (по образцу фикстуры `panel` из test_pbs_panel).
+- `virtdeck/ui/mainwindow.py`: `closeEvent` → `_shutdown_workers()` —
+  отключение сигналов всех воркеров в полёте (поздние replies —
+  no-op; полл продолжается безвредно). Защита реального пользователя:
+  закрытие окна во время действия больше не оставляет живых
+  подключений в разобранную UI.
+- `virtdeck/ui/detail_panel/_worker_manager.py`: `shutdown()` — то же
+  для всех воркеров панели (current_*, host, general, pending).
+- `tests/conftest.py`: детектор утечек пула стал постоянным гейтом —
+  тест, оставивший воркер, падает с именем теста.
+- CHANGELOG v3.1.0: пункт о закрытии окна с летящим действием.
+
+### Статус
+
+- Детектор в полном серийном прогоне: **1774 passed, 0 утечек, exit 0**
+  (2026-10-17, 8:29; до фикса: зависание на #1336 и повторяемый
+  SIGSEGV на CI в районе 81%).
+- Целевой набор ранее утёкших файлов (operational_cycle,
+  state_primitives, forms_tables_data, column_reorder, theme_scale,
+  pbs_render_restore): 100 passed, 0 утечек.
+- `ruff check virtdeck tests` — чисто.

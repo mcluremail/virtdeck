@@ -27,6 +27,7 @@
 - Task descriptions are no longer truncated at 30 characters (A9/DELIGHT-2) — the diagnostic text is the payload; a "running…" end time is a state, not an amber warning
 - Icons rasterize at the screen device pixel ratio — sharp on HiDPI instead of stretched 1x bitmaps (U36)
 - Toast copy-feedback recolors by re-rendering the style from tokens (A2); status colors in the PBS panel and card lists resolve at render time (A7/Д4) — no more stale light-theme hexes after a theme switch
+- Closing the window while a VM action or a PBS request is still in flight no longer keeps live signal connections into the torn-down UI — a late worker reply could crash the process during garbage collection; in-flight workers are disconnected at teardown and their late replies become no-ops (the poll itself keeps running harmlessly)
 
 **Performance**
 - The tree loading skeleton is now the real structure built from configuration (U9) — no more jump from a flat stub list to the grouped tree the moment data arrives; the R11 profile (soft refresh, 200 VMs) stays within the ≤200 ms budget, so no incremental-tree machinery was needed (U1 not triggered)
@@ -36,6 +37,7 @@
 - i18n mechanics: plural-aware trn(), retranslatable tr_list/tr_dict, QLocale formatters; translation version 52
 - 7 new theme tokens documented in docs/THEMES.md; theme contract tests reworked (test_theme_engine.py, test_icon_language.py)
 - Audit series UX-0..UX-8 (2026-10-16, 9 documents) + consolidated plan + execution report + release-delta audit (audit/2026-10-17); test suite 1736 → 1774
+- CI hardening: an autouse fixture fails any test that leaves a QThreadPool worker running; the two leaks that made CI segfault during cyclic GC (an unattended GAP-6 flight polling 600 s and a real PBS request against a fake host) are fixed at the source; in-flight workers are disconnected at window teardown (see docs/AUDIT_2026-10-17_RELEASE_DELTA.md)
 
 ## v3.0.7 — honest task outcomes and visible degradation (external audit stage 6.3.4)
 

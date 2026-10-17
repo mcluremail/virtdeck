@@ -168,6 +168,18 @@ class FakePveApi:
         self._next_task_result = exitstatus
         return self
 
+    def finish_running_tasks(self, exitstatus: str = "OK") -> FakePveApi:
+        """Register an outcome for every task still "running" on the fake.
+
+        Tests that stub a never-finishing task (timeout scenarios) must
+        complete the flight before they end: a worker left polling keeps
+        its connection lambdas alive after the window is torn down and
+        poisons the cyclic GC with deleted C++ wrappers (CI segfault
+        2026-10-17, PySide6 6.11.2)."""
+        for task in self.tasks:
+            self.task_results.setdefault(task["upid"], exitstatus)
+        return self
+
     def _fork_task(self, node: str, wtype: str, ident: str) -> str:
         """Mint an UPID like a real fork_worker and register its outcome."""
         self._upid_seq += 1

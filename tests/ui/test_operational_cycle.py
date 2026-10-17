@@ -129,6 +129,15 @@ def test_double_click_blocked_while_in_flight(mw, qtbot, api):
     assert not posts
     assert any("105" in t for t in _note_texts(mw))
 
+    # The action is still in flight (the task never finishes on the
+    # fake). Complete it and wait for the worker: left unattended it
+    # polls for 600 s into later tests and poisons the cyclic GC with
+    # the torn-down window (CI segfault 2026-10-17).
+    api.finish_running_tasks()
+    qtbot.waitUntil(
+        lambda: mw._optimistic.pending_action("fake1", 105) is None,
+        timeout=15000)
+
 
 def test_failed_task_rolls_optimistic_back(mw, qtbot, api):
     """A confirmed failure returns the guest to its real status and says
