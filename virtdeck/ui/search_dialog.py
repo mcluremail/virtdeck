@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QLabel,
     QLineEdit,
+    QStackedLayout,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -24,6 +25,7 @@ from ..domain.search import SearchResult, global_search
 from .i18n import tr
 from .icons import get_icon
 from .theme import Color, enable_column_reorder, enable_table_autofit
+from .widgets.empty_state import EmptyState
 
 KEY_ROLE = Qt.UserRole + 1
 _DEBOUNCE_MS = 200
@@ -70,6 +72,17 @@ class GlobalSearchDialog(QDialog):
         self._tree.setAllColumnsShowFocus(True)
         self._tree.itemActivated.connect(self._select_item)
         self._tree.itemDoubleClicked.connect(self._select_item)
+        # U11/Д6: empty state over the bare header columns
+        self._tree_stack = QStackedLayout(self._tree)
+        self._tree_stack.setStackingMode(QStackedLayout.StackingMode.StackAll)
+        self._empty = EmptyState(
+            "search",
+            tr("Start typing to search"),
+            tr("VMs, nodes, storages and pools across all connected hosts"))
+        self._empty.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._tree_stack.addWidget(self._empty)
+        self._tree_stack.setCurrentWidget(self._empty)
         layout.addWidget(self._tree, 1)
 
         self._count_label = QLabel("")
@@ -105,12 +118,22 @@ class GlobalSearchDialog(QDialog):
             item.setData(0, KEY_ROLE, result.key)
             self._tree.addTopLevelItem(item)
         if self._results:
+            self._empty.setVisible(False)
             self._tree.setCurrentItem(self._tree.topLevelItem(0))
             self._count_label.setText(tr("{} results").format(len(self._results)))
         else:
-            self._count_label.setText(
-                tr("No results") if query.strip() else ""
-            )
+            if query.strip():
+                self._empty.set_state(
+                    tr("No results"),
+                    tr("Try a shorter or different query"))
+                self._count_label.setText(tr("No results"))
+            else:
+                self._empty.set_state(
+                    tr("Start typing to search"),
+                    tr("VMs, nodes, storages and pools across all "
+                       "connected hosts"))
+                self._count_label.setText("")
+            self._empty.setVisible(True)
 
     def _select_first(self):
         if self._results:

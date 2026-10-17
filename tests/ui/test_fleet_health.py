@@ -165,7 +165,9 @@ def test_no_issues_status(qtbot, api):
     wait_loaded(qtbot, dlg)
     dlg._bundles = []
     dlg._render()
-    assert dlg._status.text() == "No issues found"
+    # U6: zero targets must not read as "everything is clean"
+    assert dlg._status.text() == "No clusters configured"
+    assert dlg._empty.isVisibleTo(dlg)
 
 
 def test_data_from_plate_on_partial_failure(qtbot, api):
@@ -176,8 +178,9 @@ def test_data_from_plate_on_partial_failure(qtbot, api):
     wait_loaded(qtbot, dlg)
     top = dlg._tree.topLevelItem(0)
     assert "Data from" in top.text(0)
-    # data incompleteness — signal color of the cluster plate
-    assert top.foreground(0).color() == QColor(Color.WARNING)
+    # DELIGHT-3: data incompleteness is informational — neutral TEXT_SEC,
+    # not the warning amber
+    assert top.foreground(0).color() == QColor(Color.TEXT_SEC)
     # no drift row (pve02 version not collected), compliance alive
     assert find_issue(dlg._tree, "Behind by major version") is None
     assert find_issue(dlg._tree, "Never backed up") is not None

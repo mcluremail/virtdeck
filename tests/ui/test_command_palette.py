@@ -102,7 +102,9 @@ class TestCommandPalette:
         qtbot.addWidget(pal)
         pal.open_for()
         qtbot.keyClicks(pal._input, "zzz")
-        assert _labels(pal) == ["No matching actions"]
+        # U3: title + a hint with the way out (two disabled rows)
+        assert _labels(pal) == ["No matching actions",
+                                "Check the spelling, or press Esc to close"]
         # the stub does not run
         qtbot.keyClick(pal._input, Qt.Key_Return)
 

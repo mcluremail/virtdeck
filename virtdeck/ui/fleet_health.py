@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QStackedLayout,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -35,6 +36,7 @@ from .api.fleet import scan_fleet_snapshots
 from .i18n import tr
 from .icons import get_icon
 from .theme import Color, enable_column_reorder, enable_table_autofit
+from .widgets.empty_state import EmptyState
 
 KEY_ROLE = Qt.UserRole + 1
 
@@ -111,6 +113,16 @@ class FleetHealthDialog(QDialog):
         self._tree.setAllColumnsShowFocus(True)
         self._tree.itemDoubleClicked.connect(self._activate_item)
         self._tree.itemActivated.connect(self._activate_item)
+        # U6/Д6: no targets is a setup state, not a clean bill of health
+        self._tree_stack = QStackedLayout(self._tree)
+        self._tree_stack.setStackingMode(QStackedLayout.StackingMode.StackAll)
+        self._empty = EmptyState(
+            "cluster",
+            tr("No clusters configured"),
+            tr("Add cluster targets in Settings to run the check"))
+        self._empty.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._tree_stack.addWidget(self._empty)
         layout.addWidget(self._tree, 1)
 
         self._status = QLabel("")
@@ -184,9 +196,19 @@ class FleetHealthDialog(QDialog):
             total_issues += issues
         # honesty first: "no issues" on a broken collection would be a lie
         incomplete = sum(1 for b in self._bundles if not b.report.complete)
+        # U6: zero targets never read as "checked, clean"
+        self._empty.setVisible(not self._bundles)
+        if not self._bundles:
+            self._status.setText(tr("No clusters configured"))
+            return
         if total_issues:
             status = tr("{} issues on {} clusters").format(
                 total_issues, len(self._bundles))
+        elif incomplete:
+            # DELIGHT-3: with unverified clusters "No issues found" would
+            # claim a check that did not happen
+            status = tr("No issues in {} of {} clusters").format(
+                len(self._bundles) - incomplete, len(self._bundles))
         else:
             status = tr("No issues found")
         if incomplete:
@@ -219,9 +241,10 @@ class FleetHealthDialog(QDialog):
             else:
                 label += "  ·  " + tr("Data from {}").format(
                     _fmt_time(report.generated_at))
-            # incomplete data — signal color, not a quiet grey
+            # DELIGHT-3: missing data is informational, not a warning —
+            # five amber rows must not read as five problems
             cluster_item.setText(0, label)
-            cluster_item.setForeground(0, QColor(Color.WARNING))
+            cluster_item.setForeground(0, QColor(Color.TEXT_SEC))
         cluster_item.setIcon(0, get_icon("cluster", status=status))
 
         if report.tasks_truncated:

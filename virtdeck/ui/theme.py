@@ -786,6 +786,15 @@ def _build_qss() -> str:
         background: {Color.BORDER};
         margin: 4px 8px;
     }}
+    /* U17: destructive items — red text in every menu, palette already
+       had it (dangerous flag → dynamic property). */
+    QMenu::item[dangerous="true"] {{
+        color: {Color.DANGER};
+    }}
+    QMenu::item[dangerous="true"]:selected {{
+        color: {Color.PANEL};
+        background: {Color.DANGER_SOLID};
+    }}
 
     /* ── Tooltip ── */
     QToolTip {{
@@ -952,6 +961,17 @@ def _build_qss() -> str:
         font-weight: 700;
         color: {Color.TEXT};
         letter-spacing: 0.3px;
+    }}
+
+    /* ── Empty-state primitive (Д6) — live via the global QSS ── */
+    QLabel#emptyStateTitle {{
+        color: {Color.TEXT};
+        font-size: {fb}px;
+        font-weight: 600;
+    }}
+    QLabel#emptyStateHint {{
+        color: {Color.TEXT_SEC};
+        font-size: {fs}px;
     }}
 
     /* ── Form field labels ── */

@@ -123,6 +123,11 @@ def _node_tooltip(node):
     cpu = node.cpu_pct
     mem_pct = node.mem_pct
     uptime_str = str(timedelta(seconds=int(node.uptime_seconds))) if node.uptime_seconds else "?"
+    # U10: an unreachable node's tooltip must start with WHY it is
+    # unreachable — bare CPU/RAM zeros are meaningless there.
+    reason = (node.error or "").strip()
+    if reason and node.status is not NodeStatus.ONLINE:
+        return tr("Unavailable") + ": " + reason.splitlines()[0]
     return tr("CPU") + f": {cpu}%\n" + tr("RAM") + f": {mem_pct}%\n" + tr("Uptime") + f": {uptime_str}"
 
 
@@ -512,6 +517,10 @@ class TreePanel(QWidget):
         for aid in action_ids:
             spec = by_id[aid]
             act = QAction(spec.display_label(sel), self.tree)
+            if spec.dangerous:
+                # U17: destructive items are styled by the global QSS
+                # (QMenu::item[dangerous="true"]) — red in every menu.
+                act.setProperty("dangerous", True)
             if spec.icon:
                 act.setIcon(get_icon(spec.icon))
             if spec.enabled is not None and not spec.enabled(sel):
@@ -777,63 +786,16 @@ class TreePanel(QWidget):
         self._do_rebuild()
 
     def start_loading(self):
-        self.tree.clear()
-        self._empty_label.setVisible(False)
-        self.tree.setVisible(True)
-        self._toggle_btn.setVisible(True)
-        self._building = True
+        """U9: the loading skeleton IS the loaded structure.
+
+        Groups, clusters, standalone hosts and PBS servers are built
+        from the configuration alone (Node.loading_stub fills the
+        not-yet-answered hosts with spinner icons), so the tree no
+        longer jumps from a flat stub list to the grouped layout the
+        moment data arrives."""
         self._loading_hosts.clear()
-
-        hosts_by_cluster = {}
-        standalone = []
-        pbs_servers = []
-        for cfg in self.nodes_cfg:
-            if cfg.get("skip", False):
-                continue
-            if cfg.get("type") == "pbs":
-                # PBS servers only appear in the 'pbs' view (and in the
-                # loading stubs for that view); hosts/storages views are
-                # PVE-only.
-                if self._tree_mode == "pbs":
-                    name = cfg.get("name", "")
-                    if name:
-                        pbs_servers.append(name)
-                continue
-            name = cfg.get("name", "")
-            cluster = cfg.get("cluster")
-            if cluster and cluster not in (False, None, "Standalone"):
-                hosts_by_cluster.setdefault(cluster, []).append(name)
-            else:
-                standalone.append(name)
-
-        # B20: clusters + standalone hosts flat (no sections); PBS servers
-        # (B17 stage 2) join the same flat list with their own item kind.
-        if self._tree_mode == "pbs":
-            # 'Backup servers' mode: PBS servers only, no PVE hosts.
-            entries = [(n.lower(), "pbs", n) for n in pbs_servers]
-        else:
-            entries = [(cl.lower(), "cluster", cl) for cl in hosts_by_cluster]
-            entries += [(h.lower(), "host", h) for h in standalone]
-        entries.sort(key=lambda e: e[0])
-        for _, kind, name in entries:
-            item = QTreeWidgetItem(self.tree)
-            item.setText(0, name)
-            item.setIcon(0, make_loading_icon(0) if kind != "pbs"
-                         else get_icon("storage"))
-            if kind == "cluster":
-                item.setData(0, ITEM_KEY_ROLE, ("cluster", name))
-                item.setExpanded(True)
-                self._loading_hosts.add(f"cluster:{name}")
-            elif kind == "pbs":
-                item.setData(0, ITEM_KEY_ROLE, ("pbs", name))
-                item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
-            else:
-                item.setData(0, ITEM_KEY_ROLE, ("host", name))
-                self._loading_hosts.add(name)
-
-        self.tree.expandAll()
-        self._building = False
-        self._spin_timer.start()
+        self._do_rebuild()
+        self._sync_spinner()
 
     def _sync_toggle_button(self):
         if self.tree.topLevelItemCount() == 0:
@@ -1153,6 +1115,32 @@ class TreePanel(QWidget):
                     cluster_nodes[cluster_name] = []
                     if f"cluster:{cluster_name}" not in self._loading_hosts:
                         self._loading_hosts.add(f"cluster:{cluster_name}")
+
+        # U9: cluster members appear as spinner stubs as well, so the
+        # loading skeleton matches the loaded tree in depth, not only in
+        # the top level.
+        represented = {n.host_name for n in standalone_nodes}
+        represented |= {n.host_name for nodes in group_standalone.values()
+                        for n in nodes}
+        represented |= {n.host_name for nodes in cluster_nodes.values()
+                        for n in nodes}
+        represented |= {n.host_name for nodes in group_clusters.values()
+                        for nodes in nodes.values() for n in nodes}
+        for cfg in self.nodes_cfg:
+            if cfg.get("skip") or cfg.get("type") == "pbs":
+                continue
+            host_name = cfg.get("name", "")
+            cluster = cfg.get("cluster")
+            if not host_name or host_name in represented:
+                continue
+            if cluster and cluster not in (False, None, "Standalone"):
+                self._loading_hosts.add(host_name)
+                stub = Node.loading_stub(host_name)
+                g = cluster_group.get(cluster)
+                if g:
+                    group_clusters[g].setdefault(cluster, []).append(stub)
+                else:
+                    cluster_nodes[cluster].append(stub)
 
         standalone_names = {n.host_name for n in standalone_nodes}
         grouped_standalone_names = {n.host_name for nodes in group_standalone.values() for n in nodes}

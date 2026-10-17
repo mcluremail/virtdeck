@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QProgressBar,
     QPushButton,
+    QStackedLayout,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -32,6 +33,7 @@ from ..pbs.workers import TRACKER_TERMINAL, PbsApiWorker, PbsTaskTracker
 from .i18n import tr
 from .icons import get_icon
 from .theme import Color, enable_column_reorder, token_name, usage_color
+from .widgets.empty_state import EmptyState
 
 # A7/Д4: colors resolve at RENDER time, not at import time — frozen
 # dicts kept the light-theme values after a theme switch.
@@ -165,6 +167,19 @@ class PbsPanel(QWidget):
         ds_layout = QVBoxLayout(ds_page)
         ds_layout.setContentsMargins(0, 8, 0, 0)
         ds_layout.addWidget(self._ds_table)
+        # U7/Д6: before a server is picked the panel is a hint with the
+        # next step, not a bare frame with orphaned column headers
+        self._ds_stack = QStackedLayout(self._ds_table)
+        self._ds_stack.setStackingMode(QStackedLayout.StackingMode.StackAll)
+        self._empty = EmptyState(
+            "storage",
+            tr("Select a backup server"),
+            tr("Pick a PBS server in the navigation tree to browse "
+               "its datastores"))
+        self._empty.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._ds_stack.addWidget(self._empty)
+        self._title_lbl.setText(tr("Backup server"))
         self._stack.addWidget(ds_page)
 
         # page 1: datastore view (tabs)
@@ -279,6 +294,7 @@ class PbsPanel(QWidget):
         """
         self._path_lbl.setStyleSheet(f"color: {Color.TEXT_SEC};")
         self._jobs_hint.setStyleSheet(f"color: {Color.TEXT_SEC};")
+        self._empty.reapply()
         status_token = getattr(self, "_status_color_token", None)
         if status_token:
             self._status_lbl.setStyleSheet(
@@ -328,6 +344,7 @@ class PbsPanel(QWidget):
             return
         self._server = server_name
         self._store = ""
+        self._empty.setVisible(False)
         self._title_lbl.setText(f"{server_name} — Proxmox Backup Server")
         self._render_ops()
         if self._cfg(server_name).get("_ambiguous"):

@@ -135,10 +135,19 @@ class CommandPalette(QDialog):
         self._list.clear()
         specs = self._registry.search(query, self._selection)
         if not specs:
-            empty = QTreeWidgetItem([tr("No matching actions"), ""])
-            empty.setFlags(Qt.NoItemFlags)
-            empty.setForeground(0, QBrush(QColor(Color.DISABLED)))
-            self._list.addTopLevelItem(empty)
+            # Д6/U3: empty state with the next step, not a bare body
+            title = (tr("Start typing to search commands")
+                     if not query.strip()
+                     else tr("No matching actions"))
+            hint = (tr("Every action has a shortcut — type a word, e.g. "
+                       "\"start\"")
+                    if not query.strip()
+                    else tr("Check the spelling, or press Esc to close"))
+            for text in (title, hint):
+                empty = QTreeWidgetItem([text, ""])
+                empty.setFlags(Qt.NoItemFlags)
+                empty.setForeground(0, QBrush(QColor(Color.DISABLED)))
+                self._list.addTopLevelItem(empty)
         for spec in specs:
             item = QTreeWidgetItem([spec.display_label(self._selection),
                                     spec.shortcut])

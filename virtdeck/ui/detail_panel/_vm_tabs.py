@@ -61,6 +61,13 @@ class VMTabs:
         panel.info_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         panel.info_stack.addWidget(panel.info_label)
 
+        # Д7/DELIGHT-10: the skeleton page — structure of the future
+        # view instead of a text label (replaces the S4 double
+        # "Loading detailed info... + central spinner" indicator).
+        from ..widgets.empty_state import SkeletonDetail
+        panel.info_skeleton = SkeletonDetail()
+        panel.info_stack.addWidget(panel.info_skeleton)
+
         cards_widget = QWidget()
         cards_layout = QGridLayout(cards_widget)
         cards_layout.setContentsMargins(0, 0, 0, 0)
@@ -450,8 +457,11 @@ class VMTabs:
         if detail_key not in panel.details_cache:
             cfg = panel._cfg_by_name.get(host_name)
             if cfg:
-                panel.info_label.setText(tr("Loading detailed info..."))
-                panel.info_stack.setCurrentIndex(0)
+                # Д7/DELIGHT-10: one skeleton (info area) instead of the
+                # "Loading detailed info..." text + the central chart
+                # spinner — the S4 double indicator is gone.
+                panel.info_stack.setCurrentIndex(2)
+                panel.metrics_stack.setCurrentIndex(1)
                 node_name = vm_data.node or host_name
                 vm_type = vm_data.vm_type.value
                 from ...backend import VmDetailWorker

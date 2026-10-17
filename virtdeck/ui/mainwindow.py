@@ -2580,7 +2580,11 @@ class MainWindow(QMainWindow):
         total_maxmem = sum(n.maxmem_bytes for n in online_nodes)
         mem_pct = (total_mem / total_maxmem * 100) if total_maxmem else 0
         parts = [
-            tr("Hosts: {ok}/{total}").format(ok=hosts_ok, total=hosts_total),
+            # L3: the denominator is the CONFIGURED hosts, not the ones
+            # that happened to answer — "Hosts: 0/1 → 1/10" during a
+            # refresh was unreadable.
+            tr("Hosts: {ok}/{total}").format(
+                ok=hosts_ok, total=max(len(self.nodes_cfg), hosts_total)),
             tr("Clusters: {n}").format(n=len(clusters)) if clusters else "",
             tr("VMs: {running}/{total}").format(running=vms_running, total=vms_count),
             tr("CPU: {pct}%").format(pct=f"{cpu_pct:.0f}"),
@@ -2592,6 +2596,10 @@ class MainWindow(QMainWindow):
             parts.append(tr("Offline (cached)"))
         if self._auto_refresh_paused:
             parts.append(tr("Auto-refresh paused"))
+        # U5: an empty application's "Hosts: 0/0 VMs: 0/0 CPU: 0% RAM: 0%"
+        # is honest but pure noise — stay silent until the first fleet.
+        if not self.nodes_cfg:
+            parts = []
         self.status_label.setText("  ".join(p for p in parts if p))
 
     def _do_first_selection(self):

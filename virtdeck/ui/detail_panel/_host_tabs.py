@@ -423,6 +423,17 @@ class HostTabs:
         scroll.setWidget(container)
         return scroll
 
+    @staticmethod
+    def _hosts_subtitle(panel, answered, running, cfg_match):
+        """L4: "0 hosts · 0 online" on a fully configured but silent
+        cluster reads as "no hosts" — name what is CONFIGURED."""
+        configured = sum(1 for cfg in panel._cfg_by_name.values()
+                         if cfg_match(cfg))
+        if answered < configured:
+            return (f"{configured} {tr('configured')} · "
+                    f"{running} {tr('online')}")
+        return f"{answered} {tr('hosts')} · {running} {tr('online')}"
+
     def populate_host_summary(self, hosts):
         panel = self.panel
         panel.summary_stack.setCurrentIndex(0)
@@ -673,7 +684,9 @@ class HostTabs:
         panel.detail_label.setText(cluster_name)
         hosts_count = len(hosts)
         running = sum(1 for h in hosts if h.status_value == "online")
-        panel.detail_sublabel.setText(f"{hosts_count} {tr('hosts')} · {running} {tr('online')}")
+        panel.detail_sublabel.setText(self._hosts_subtitle(
+            panel, hosts_count, running,
+            lambda cfg: cfg.get("cluster") == cluster_name))
         panel.detail_sublabel.setVisible(True)
         panel._cluster_view_toggle.setVisible(False)
         panel.tabs.setTabVisible(TabIndex.MONITOR, False)
@@ -712,7 +725,9 @@ class HostTabs:
         panel.detail_label.setText(group_name)
         hosts_count = len(hosts)
         running = sum(1 for h in hosts if h.status_value == "online")
-        panel.detail_sublabel.setText(f"{hosts_count} {tr('hosts')} · {running} {tr('online')}")
+        panel.detail_sublabel.setText(self._hosts_subtitle(
+            panel, hosts_count, running,
+            lambda cfg: (cfg.get("group") or "").strip() == group_name))
         panel.detail_sublabel.setVisible(True)
         panel._cluster_view_toggle.setVisible(False)
         panel.tabs.setTabVisible(TabIndex.MONITOR, False)

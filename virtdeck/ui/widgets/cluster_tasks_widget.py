@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLineEdit,
     QProgressBar,
+    QStackedLayout,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -20,6 +21,7 @@ from ...domain.task import Task
 from ..hover import enable_row_hover
 from ..i18n import tr
 from ..theme import Color, enable_column_reorder, enable_table_autofit
+from .empty_state import EmptyState
 
 TASK_COL_WIDTHS_KEY = "task_col_widths"
 
@@ -195,11 +197,23 @@ class ClusterTasksWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        # U12/L10/Д6: the dock's empty state over the bare column headers
+        self._table_stack = QStackedLayout(self.table)
+        self._table_stack.setStackingMode(QStackedLayout.StackingMode.StackAll)
+        self._empty = EmptyState(
+            "history",
+            tr("No tasks in the last 24h"),
+            tr("Tasks from all connected hosts appear here"))
+        self._empty.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._table_stack.addWidget(self._empty)
         layout.addWidget(self.table, 1)
         layout.addWidget(filter_widget)
 
     def set_tasks(self, tasks: list[Task]):
         self._all_tasks = tasks
+        # U12/L10: the final "0 tasks" is an empty state, not bare headers
+        self._empty.setVisible(not tasks)
         # Re-apply the active filter instead of dumping everything into the
         # table; also re-inserts any in-flight progress rows.
         self._apply_filter()
@@ -331,6 +345,7 @@ class ClusterTasksWidget(QWidget):
         if text is None:
             text = tr("Loading tasks...")
         self._all_tasks = []
+        self._empty.setVisible(False)
         self.table.setUpdatesEnabled(False)
         self.table.model().blockSignals(True)
         self.table.setRowCount(0)
