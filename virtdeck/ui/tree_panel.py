@@ -264,6 +264,7 @@ class TreePanel(QWidget):
         self.all_nodes = []
         self._node_repo = None
         self.all_vms = []
+        self._dup_vm_names = set()  # DELIGHT-8: names shared by 2+ guests
         self._vm_repo = None
         self.all_storages = []
         # M2: action registry for tree objects — the single source for the
@@ -871,6 +872,10 @@ class TreePanel(QWidget):
     def _add_vm_item(self, parent, vm):
         vm_item = QTreeWidgetItem(parent)
         vm_name = vm.name or f"VM {vm.vmid}"
+        # DELIGHT-8: identical names must be distinguishable without
+        # opening the detail panel — duplicate fleet names get the VMID.
+        if vm.name and vm.name in self._dup_vm_names:
+            vm_name = f"{vm_name} ({vm.vmid})"
         vm_item.setText(0, vm_name)
         if vm.template:
             vm_item.setIcon(0, get_icon("template"))
@@ -1032,6 +1037,12 @@ class TreePanel(QWidget):
 
     def _build_tree(self):
         self._building = True
+        # DELIGHT-8: names shared by several guests in the fleet
+        from collections import Counter
+
+        name_counts = Counter(v.name for v in (self.all_vms or [])
+                              if v.name)
+        self._dup_vm_names = {n for n, c in name_counts.items() if c > 1}
         saved_key = self.get_current_item_key()
         scroll_val = self.tree.verticalScrollBar().value()
         self.tree.clear()

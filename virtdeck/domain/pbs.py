@@ -45,16 +45,29 @@ class PbsDatastore:
 
         ``status`` is None (or lacks the required usage fields) when the
         status call failed — the numbers are then NOT confirmed data.
+        Some PBS builds omit the precomputed ``usage`` ratio while still
+        returning confirmed ``used``/``total`` — the ratio is then
+        derived (D1: confirmed numbers must not degrade to dashes).
         """
         st = status if isinstance(status, dict) else {}
+        used = int(st.get("used", 0) or 0)
+        total = int(st.get("total", 0) or 0)
+        usage = st.get("usage")
+        derived = False
+        if usage is None and used > 0 and total > 0:
+            # some PBS builds omit the precomputed ratio while still
+            # returning confirmed used/total — derive it (D1)
+            usage = used / total
+            derived = True
         return cls(
             name=cfg.get("store", cfg.get("name", "")),
             path=cfg.get("path", ""),
             comment=cfg.get("comment", "") or "",
-            usage=float(st.get("usage", 0.0) or 0.0),
-            used_bytes=int(st.get("used", 0) or 0),
-            total_bytes=int(st.get("total", 0) or 0),
-            status_ok=all(k in st for k in ("usage", "used", "total")),
+            usage=float(usage or 0.0),
+            used_bytes=used,
+            total_bytes=total,
+            status_ok=all(k in st for k in ("usage", "used", "total"))
+            or derived,
         )
 
     def usage_pct(self) -> int:

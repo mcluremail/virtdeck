@@ -71,10 +71,13 @@ class TestEmptyStatePrimitive:
 
     def test_qss_styles_the_primitive_live(self):
         load_theme = theme.load_theme
-        load_theme("light", persist=False)
-        assert "QLabel#emptyStateTitle" in theme.QSS
-        load_theme("graphite", persist=False)
-        assert f"color: {Color.TEXT_SEC};" in theme.QSS
+        try:
+            load_theme("light", persist=False)
+            assert "QLabel#emptyStateTitle" in theme.QSS
+            load_theme("graphite", persist=False)
+            assert f"color: {Color.TEXT_SEC};" in theme.QSS
+        finally:
+            load_theme("light", persist=False)
 
     def test_set_state_swaps_content(self, qapp):
         from PySide6.QtWidgets import QLabel

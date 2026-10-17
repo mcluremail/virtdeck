@@ -177,6 +177,14 @@ class FakePveApi:
         if result is not None:
             self.task_results[upid] = result
             self._next_task_result = "OK"  # "next task only" semantics
+        # a real fork_worker registers the task in the node task list
+        status = "OK" if result == "OK" else \
+            (f"stopped: exit code 1" if result else None)
+        task = {"upid": upid, "node": node, "type": wtype,
+                "status": status, "starttime": 1727830000, "user": "root@pam"}
+        if ident and str(ident).isdigit():
+            task["vmid"] = int(ident)
+        self.tasks.append(task)
         return upid
 
     # ── Request handling ────────────────────────────────────────────

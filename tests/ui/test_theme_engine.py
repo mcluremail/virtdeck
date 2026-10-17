@@ -129,6 +129,7 @@ class TestValidateTokens:
 
 class TestLoadTheme:
     def test_switch_updates_facade_qss_icons_listeners(self, qtbot, dark_registry):
+        load_theme("light", persist=False)  # establish the baseline
         assert Color.ACCENT == LIGHT_TOKENS["ACCENT"]
         seen = []
         subscribe_theme_changed(seen.append)
@@ -148,19 +149,22 @@ class TestLoadTheme:
             assert QSize(24, 24) in icon.availableSizes()
         finally:
             unsubscribe_theme_changed(seen.append)
+            load_theme("light", persist=False)  # don't leak the fake theme
 
-    def test_switch_back_restores_light(self, dark_registry):
+    def test_switch_back_restores_light(self, qapp, dark_registry):
         load_theme("fake_dark", registry=dark_registry, persist=False)
         assert load_theme("light", registry=dark_registry, persist=False) == "light"
         for name, value in LIGHT_TOKENS.items():
             assert getattr(Color, name) == value, name
         assert "/* fake dark extra */" not in theme.QSS
 
-    def test_unknown_theme_raises(self, dark_registry):
+    def test_unknown_theme_raises(self, qapp, dark_registry):
         with pytest.raises(PluginError):
             load_theme("nope", registry=dark_registry, persist=False)
 
-    def test_invalid_theme_rejected_before_apply(self, dark_registry):
+    def test_invalid_theme_rejected_before_apply(self, qapp, dark_registry):
+        load_theme("light", persist=False)  # establish the baseline
+
         class Broken(FakeDark):
             id = "broken"
 

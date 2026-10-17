@@ -1,3 +1,4 @@
+import sys
 import weakref
 from enum import IntEnum
 from importlib.util import find_spec
@@ -16,7 +17,19 @@ _LIVE_PLOTS: weakref.WeakSet | None = None
 
 
 def pg_loaded():
-    """Return pyqtgraph if already imported, else None (never imports)."""
+    """Return pyqtgraph if already imported, else None (never imports).
+
+    Also recognises pyqtgraph imported by someone other than ensure_pg()
+    (tests, plugins): the retheme contract must not depend on WHO
+    imported the module first (xdist workers start fresh — GAP-8 gate).
+    """
+    global _pg_module
+    if _pg_module is None:
+        mod = sys.modules.get("pyqtgraph")
+        # a partially initialized module (circular import) must not leak
+        # into the retheme path — require a core attribute
+        if mod is not None and hasattr(mod, "PlotWidget"):
+            _pg_module = mod
     return _pg_module
 
 

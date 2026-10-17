@@ -294,8 +294,18 @@ class TestPbsReapply:
         finally:
             load_theme("light", persist=False)
 
-    def test_mainwindow_reaches_pbs_panel(self, main_window):
+    def test_mainwindow_reaches_pbs_panel(self, main_window, monkeypatch):
         """A7 end-to-end: the theme switch recolors the pbs panel."""
+        # The real combo path persists the choice (load_theme persist=True).
+        # Under the gate three xdist workers share one config DB — a
+        # MainWindow started in another worker inside the graphite→light
+        # window reads theme=graphite and poisons its Color facade for
+        # every later light-baseline assert. Keep the retheme, drop the
+        # persistence side effect.
+        import virtdeck.config as cfg_mod
+
+        monkeypatch.setattr(cfg_mod, "save_ui_state",
+                            lambda *a, **k: None)
         panel = main_window.pbs_panel
         panel._set_status("Updated", Color.TEXT_SEC)
         combo = main_window._theme_combo

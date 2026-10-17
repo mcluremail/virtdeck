@@ -46,6 +46,8 @@ class FakePbsApi:
             "verify-state": verify_state,
             "files": ["index.json.blob", "drive-scsi0.img.fidx"],
             "comment": comment,
+            "owner": self.user if "@" in self.user
+            else f"{self.user}@pam",
         }
         if vmid := _as_vmid(backup_id):
             entry["vmid"] = vmid
@@ -71,6 +73,23 @@ class FakePbsApi:
             return 200, {"ticket": f"PBS:{self.user}!harness",
                          "CSRFPreventionToken": "csrf-fake"}
 
+        if method == "GET" and parts == ["config", "datastore"]:
+            # the production client lists datastores via /config/datastore
+            return 200, [{"store": s, "type": "pbs",
+                          "comment": f"fake ds {s}"}
+                         for s in self.datastores]
+
+        if method == "GET" and len(parts) == 2 and parts[0] == "admin" \
+                and parts[1] in ("sync", "verify", "prune"):
+            # no jobs configured on the fake (the panel renders the
+            # "no jobs" empty state)
+            return 200, []
+
+        if method == "GET" and len(parts) == 4 \
+                and parts[:2] == ["admin", "datastore"] \
+                and parts[3] == "namespace":
+            return 200, []  # no namespaces below the root
+
         if method == "GET" and parts[:2] == ["admin", "datastore"]:
             if len(parts) == 2:
                 return 200, [{"store": s, "type": "pbs",
@@ -84,7 +103,9 @@ class FakePbsApi:
             if rest == ["status"]:
                 avail = max(0, ds["total"] - ds["used"])
                 return 200, {"store": store, "total": ds["total"],
-                             "used": ds["used"], "avail": avail}
+                             "used": ds["used"], "avail": avail,
+                             "usage": ds["used"] / ds["total"]
+                             if ds["total"] else 0.0}
             if rest == ["groups"]:
                 seen: dict[tuple[str, str], dict] = {}
                 for row in ds["snapshots"]:
