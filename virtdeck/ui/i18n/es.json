@@ -1286,7 +1286,6 @@
   "{name} (unavailable)": "{name} (no disponible)",
   "{sid} added to HA group {group}": "{sid} añadido al grupo HA {group}",
   "{sid} removed from HA": "{sid} quitado de HA",
-  "{used} of {total} ({pct}%)": "{used} de {total} ({pct}%)",
   "{} issues on {} clusters": "{} problemas en {} clústeres",
   "{} results": "{} resultados",
   "{} snapshots, oldest {} days": "{} instantáneas, la más antigua {} días",

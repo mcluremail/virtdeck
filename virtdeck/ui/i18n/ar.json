@@ -1286,7 +1286,6 @@
   "{name} (unavailable)": "{name} (غير متاح)",
   "{sid} added to HA group {group}": "تمت إضافة {sid} إلى مجموعة HA {group}",
   "{sid} removed from HA": "تمت إزالة {sid} من HA",
-  "{used} of {total} ({pct}%)": "{used} من {total} ({pct}%)",
   "{} issues on {} clusters": "{} مشكلات على {} مجموعات",
   "{} results": "{} من النتائج",
   "{} snapshots, oldest {} days": "{} لقطات، الأقدم {} يومًا",

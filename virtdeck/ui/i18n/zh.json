@@ -1286,7 +1286,6 @@
   "{name} (unavailable)": "{name}（不可用）",
   "{sid} added to HA group {group}": "{sid}已添加到HA组{group}",
   "{sid} removed from HA": "{sid}已从HA移除",
-  "{used} of {total} ({pct}%)": "{used} / {total}（{pct}%）",
   "{} issues on {} clusters": "{} 个集群存在 {} 个问题",
   "{} results": "{} 条结果",
   "{} snapshots, oldest {} days": "{} 个快照，最旧 {} 天",

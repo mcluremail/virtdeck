@@ -140,11 +140,10 @@ class TestStoragesViewHostContainers:
             in per_node
 
 
-def _info_texts(panel):
-    lay = panel.storage_detail_info_layout
-    return [lay.itemAt(i).widget().text()
-            for i in range(lay.count())
-            if lay.itemAt(i).widget() is not None]
+def _card_texts(card):
+    """(value, subtitle) of a MetricCard — the subtitle is the pale
+    line decoding what the raw API value means."""
+    return card._value_label.text(), card._subtitle_label.text()
 
 
 class TestStorageDetailPage:
@@ -163,10 +162,10 @@ class TestStorageDetailPage:
         tabs = self._show(mw, _fleet_storages(), {"cluster": "rep1"})
         # Two rows of the same backend: the page shows ONE backend's
         # numbers (the old code summed them ×N).
-        expected = tr("{used} of {total} ({pct}%)").format(
-            used=format_volsize(10 * G), total=format_volsize(100 * G),
-            pct="10%")
-        assert tabs.storage_detail_capacity_value.text() == expected
+        cap = tabs.storage_detail_capacity_card
+        assert cap._value_label.text() == (
+            f"{format_volsize(10 * G)} / {format_volsize(100 * G)}")
+        assert cap._progress == 10
         # N identical rows carry no additional information — the
         # per-node table stays hidden.
         assert tabs.storage_detail_nodes_table.isHidden()
@@ -186,10 +185,10 @@ class TestStorageDetailPage:
         assert tabs.storage_detail_nodes_table.rowCount() == 2
         # The aggregate is the mounted node's view, not the sum with
         # the zeroed row (10.0 GiB, not 10.0+0).
-        expected = tr("{used} of {total} ({pct}%)").format(
-            used=format_volsize(10 * G), total=format_volsize(100 * G),
-            pct="10%")
-        assert tabs.storage_detail_capacity_value.text() == expected
+        cap = tabs.storage_detail_capacity_card
+        assert cap._value_label.text() == (
+            f"{format_volsize(10 * G)} / {format_volsize(100 * G)}")
+        assert cap._progress == 10
 
     def test_per_node_click_filters_row_and_titles(self, main_window):
         mw = main_window
@@ -201,26 +200,24 @@ class TestStorageDetailPage:
         assert tabs.detail_label.text() == "nfs-bkp @ rep1 · pve-alpha"
         # A single node's view — no per-node table to show.
         assert tabs.storage_detail_nodes_table.isHidden()
-        expected = tr("{used} of {total} ({pct}%)").format(
-            used=format_volsize(10 * G), total=format_volsize(100 * G),
-            pct="10%")
-        assert tabs.storage_detail_capacity_value.text() == expected
+        cap = tabs.storage_detail_capacity_card
+        assert cap._value_label.text() == (
+            f"{format_volsize(10 * G)} / {format_volsize(100 * G)}")
 
     def test_api_values_are_decoded(self, main_window):
         mw = main_window
         mw.nodes_cfg = [CFG_CLUSTER, CFG_MEMBER]
         mw.detail_panel.update_nodes_cfg(mw.nodes_cfg)
         tabs = self._show(mw, _fleet_storages(), {"cluster": "rep1"})
-        texts = _info_texts(tabs)
-        # The raw API values are present as reported…
-        assert "nfs" in texts
-        assert "images, iso" in texts
-        # …and each carries its human meaning (the content decode is
-        # one joined line).
-        assert tr("NFS network share, shared between nodes") in texts
-        assert any(tr("VM disks") in t for t in texts)
-        assert any(tr("ISO images") in t for t in texts)
-        assert tr("One backend available from every listed node") in texts
+        # Raw API value on the card, human meaning in the subtitle.
+        assert _card_texts(tabs.storage_detail_type_card) == (
+            "nfs", tr("NFS network share, shared between nodes"))
+        assert _card_texts(tabs.storage_detail_content_card) == (
+            "images, iso", f"{tr('VM disks')}, {tr('ISO images')}")
+        assert _card_texts(tabs.storage_detail_shared_card) == (
+            tr("Yes"), tr("One backend available from every listed node"))
+        assert _card_texts(tabs.storage_detail_nodes_card) == (
+            "2", "pve-alpha, pve-beta")
 
     def test_unknown_type_passes_through_without_decode(self, main_window):
         mw = main_window
@@ -229,17 +226,22 @@ class TestStorageDetailPage:
         storages = [_stor("weird", "pve-alpha", "pve-alpha",
                           stype="mystery")]
         tabs = self._show(mw, storages, {"cluster": "rep1"}, name="weird")
-        texts = _info_texts(tabs)
-        assert "mystery" in texts
-        assert tr("NFS network share, shared between nodes") not in texts
+        assert _card_texts(tabs.storage_detail_type_card) == ("mystery", "")
         # Unknown content codes pass through raw as well.
-        assert any(tr("VM disks") in t for t in texts)
+        _, cont_s = _card_texts(tabs.storage_detail_content_card)
+        assert cont_s == f"{tr('VM disks')}, {tr('ISO images')}"
 
-    def test_empty_selection_clears_blocks(self, main_window):
+    def test_empty_selection_clears_cards(self, main_window):
         mw = main_window
         mw.nodes_cfg = [CFG_CLUSTER]
         mw.detail_panel.update_nodes_cfg(mw.nodes_cfg)
         tabs = self._show(mw, [], {"cluster": "rep1"})
-        assert _info_texts(tabs) == []
-        assert tabs.storage_detail_capacity_value is None
+        for card in (tabs.storage_detail_capacity_card,
+                     tabs.storage_detail_type_card,
+                     tabs.storage_detail_content_card,
+                     tabs.storage_detail_shared_card,
+                     tabs.storage_detail_nodes_card):
+            assert card._value_label.text() == "—"
+            assert card._subtitle_label.text() == ""
+        assert tabs.storage_detail_capacity_card._progress == 0
         assert tabs.storage_detail_nodes_table.isHidden()

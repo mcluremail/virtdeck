@@ -1286,7 +1286,6 @@
   "{name} (unavailable)": "{name} (недоступно)",
   "{sid} added to HA group {group}": "{sid} добавлен в HA группу {group}",
   "{sid} removed from HA": "{sid} удалён из HA",
-  "{used} of {total} ({pct}%)": "{used} из {total} ({pct}%)",
   "{} issues on {} clusters": "Проблемы: {} · Кластеры: {}",
   "{} results": "Результатов: {}",
   "{} snapshots, oldest {} days": "Снимков: {} (самый старый — {} дн.)",

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -31,6 +32,7 @@ from ..object_id import StorageId
 from ..storage_actions import StorageMoveDialog, confirm_file_delete
 from ..theme import Color
 from ..utils import parse_pve_error
+from ..widgets.metric_card import MetricCard
 from ..widgets.time_range import (
     RangeDialog,
     covering_preset,
@@ -253,20 +255,28 @@ class StorageTabs:
         panel.storage_detail_name.setStyleSheet("font-size: 16px; font-weight: bold;")
         layout.addWidget(panel.storage_detail_name)
 
-        # The old params table (label/value rows) is unfolded into a
-        # column of blocks: bold label, the raw API value, and a pale
-        # line decoding what the value means (user feedback, 2026-10-19).
-        panel.storage_detail_info = QWidget()
-        panel.storage_detail_info_layout = QVBoxLayout(panel.storage_detail_info)
-        panel.storage_detail_info_layout.setContentsMargins(0, 0, 0, 0)
-        panel.storage_detail_info_layout.setSpacing(4)
-        layout.addWidget(panel.storage_detail_info)
+        # DELIGHT-10: the storage summary is a MetricCards grid, same
+        # primitive as the host/VM pages — built once, updated per show,
+        # repainted by the theme engine on theme change. The subtitle
+        # line decodes what the raw API value means.
+        cards_widget = QWidget()
+        cards_layout = QGridLayout(cards_widget)
+        cards_layout.setContentsMargins(0, 0, 0, 0)
+        cards_layout.setSpacing(8)
 
-        panel.storage_detail_bar = QProgressBar()
-        panel.storage_detail_bar.setRange(0, 100)
-        panel.storage_detail_bar.setTextVisible(True)
-        panel.storage_detail_bar.setMinimumHeight(24)
-        layout.addWidget(panel.storage_detail_bar)
+        panel.storage_detail_capacity_card = MetricCard(
+            tr("Capacity"), "—", show_progress=True)
+        panel.storage_detail_type_card = MetricCard(tr("Type"), "—")
+        panel.storage_detail_content_card = MetricCard(tr("Content"), "—")
+        panel.storage_detail_shared_card = MetricCard(tr("Shared"), "—")
+        panel.storage_detail_nodes_card = MetricCard(tr("Nodes"), "—")
+
+        cards_layout.addWidget(panel.storage_detail_capacity_card, 0, 0)
+        cards_layout.addWidget(panel.storage_detail_type_card, 0, 1)
+        cards_layout.addWidget(panel.storage_detail_content_card, 0, 2)
+        cards_layout.addWidget(panel.storage_detail_shared_card, 1, 0)
+        cards_layout.addWidget(panel.storage_detail_nodes_card, 1, 1)
+        layout.addWidget(cards_widget)
 
         panel.storage_detail_nodes_label = QLabel()
         panel.storage_detail_nodes_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
@@ -529,34 +539,6 @@ class StorageTabs:
                     self.panel.navigate_requested.emit(key)
                     return
 
-    def _clear_storage_info_blocks(self):
-        """Drop every block of the unfolded info column."""
-        lay = self.panel.storage_detail_info_layout
-        while lay.count():
-            it = lay.takeAt(0)
-            w = it.widget()
-            if w is not None:
-                w.deleteLater()
-
-    def _add_storage_info_block(self, label, value, decode=""):
-        """One unfolded parameter: bold label, the raw API value and a
-        pale line decoding what the value means. Returns the value label
-        so live updaters (storage monitoring) can refresh it in place."""
-        lay = self.panel.storage_detail_info_layout
-        lab = QLabel(label)
-        lab.setStyleSheet("font-weight: bold; margin-top: 8px;")
-        val = QLabel(str(value))
-        val.setWordWrap(True)
-        val.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        lay.addWidget(lab)
-        lay.addWidget(val)
-        if decode:
-            d = QLabel(decode)
-            d.setWordWrap(True)
-            d.setStyleSheet(f"color: {Color.TEXT_SEC};")
-            lay.addWidget(d)
-        return val
-
     def show_storage_folder(self):
         panel = self.panel
         panel.detail_label.setText(tr("Storage"))
@@ -616,12 +598,14 @@ class StorageTabs:
         rows, rep, rows_differ = _select_storage_rows(
             panel.all_storages, storage_name, data)
         if not rows or rep is None:
-            self._clear_storage_info_blocks()
-            # Drop the stale reference: the live updater would otherwise
-            # setText() on a deleteLater()'d label (RuntimeError).
-            panel.storage_detail_capacity_value = None
-            panel.storage_detail_bar.setValue(0)
-            panel.storage_detail_bar.setFormat(tr("No data"))
+            for card in (panel.storage_detail_capacity_card,
+                         panel.storage_detail_type_card,
+                         panel.storage_detail_content_card,
+                         panel.storage_detail_shared_card,
+                         panel.storage_detail_nodes_card):
+                card.set_value("—")
+                card.set_subtitle("")
+            panel.storage_detail_capacity_card.set_progress(0)
             panel.storage_detail_nodes_label.setVisible(False)
             panel.storage_detail_nodes_table.setVisible(False)
             panel.storage_detail_nodes_table.setRowCount(0)
@@ -635,40 +619,41 @@ class StorageTabs:
         total_used = rep.used_bytes
         total_total = rep.total_bytes
         total_pct = safe_pct(total_used, total_total)
-        used_gb = round(total_used / (1024**3), 1) if total_used else 0
-        total_gb = round(total_total / (1024**3), 1) if total_total else 0
 
-        self._clear_storage_info_blocks()
+        # Capacity card mirrors the VM RAM card: sizes as the value,
+        # the usage bar under it (the old standalone 24px bar is gone).
+        panel.storage_detail_capacity_card.set_value(
+            f"{format_volsize(total_used)} / {format_volsize(total_total)}")
+        panel.storage_detail_capacity_card.set_subtitle(
+            tr("Live usage as reported by the nodes; refreshes on every "
+               "fleet update"))
+        panel.storage_detail_capacity_card.set_progress(total_pct)
+
+        # Raw API value on the card, its human meaning in the pale
+        # subtitle; unknown codes pass through raw.
         type_decode = _STORAGE_PLUGIN_DECODE.get(st_type, "")
-        self._add_storage_info_block(
-            tr("Type"), st_type,
+        panel.storage_detail_type_card.set_value(st_type)
+        panel.storage_detail_type_card.set_subtitle(
             tr(type_decode) if type_decode else "")
         if content:
             decoded = ", ".join(
                 tr(_STORAGE_CONTENT_DECODE[c]) if c in _STORAGE_CONTENT_DECODE
                 else c
                 for c in (x.strip() for x in content.split(",")) if c)
-            self._add_storage_info_block(tr("Content"), content, decoded)
-        shared_decode = (tr("One backend available from every listed node")
-                         if rep.shared else
-                         tr("Local storage: exists on one node only"))
-        self._add_storage_info_block(
-            tr("Shared"), tr("Yes") if rep.shared else tr("No"),
-            shared_decode)
-        self._add_storage_info_block(
-            tr("Nodes"), ", ".join(sorted({s.node for s in filtered})))
-        cap_value = self._add_storage_info_block(
-            tr("Capacity"),
-            tr("{used} of {total} ({pct}%)").format(
-                used=format_volsize(total_used),
-                total=format_volsize(total_total),
-                pct=f"{total_pct}%"),
-            tr("Live usage as reported by the nodes; refreshes on every "
-               "fleet update"))
-        panel.storage_detail_capacity_value = cap_value
-        panel.storage_detail_bar.setStyleSheet(_progress_style(total_pct))
-        panel.storage_detail_bar.setValue(total_pct)
-        panel.storage_detail_bar.setFormat(f"{total_pct}%  ({used_gb}/{total_gb} GiB)")
+            panel.storage_detail_content_card.set_value(content)
+            panel.storage_detail_content_card.set_subtitle(decoded)
+        else:
+            panel.storage_detail_content_card.set_value("—")
+            panel.storage_detail_content_card.set_subtitle("")
+        panel.storage_detail_shared_card.set_value(
+            tr("Yes") if rep.shared else tr("No"))
+        panel.storage_detail_shared_card.set_subtitle(
+            tr("One backend available from every listed node")
+            if rep.shared else
+            tr("Local storage: exists on one node only"))
+        node_names = sorted({s.node for s in filtered})
+        panel.storage_detail_nodes_card.set_value(str(len(node_names)))
+        panel.storage_detail_nodes_card.set_subtitle(", ".join(node_names))
 
         # The per-node table only earns its place when the per-node views
         # actually diverge (a node lost the mount, different numbers) —
@@ -1336,18 +1321,10 @@ class StorageTabs:
         total_used = rep.used_bytes
         total_total = rep.total_bytes
         total_pct = safe_pct(total_used, total_total)
-        used_gb = round(total_used / (1024**3), 1) if total_used else 0
-        total_gb = round(total_total / (1024**3), 1) if total_total else 0
 
-        cap = getattr(panel, "storage_detail_capacity_value", None)
-        if cap is not None:
-            cap.setText(tr("{used} of {total} ({pct}%)").format(
-                used=format_volsize(total_used),
-                total=format_volsize(total_total),
-                pct=f"{total_pct}%"))
-        panel.storage_detail_bar.setStyleSheet(_progress_style(total_pct))
-        panel.storage_detail_bar.setValue(total_pct)
-        panel.storage_detail_bar.setFormat(f"{total_pct}%  ({used_gb}/{total_gb} GiB)")
+        panel.storage_detail_capacity_card.set_value(
+            f"{format_volsize(total_used)} / {format_volsize(total_total)}")
+        panel.storage_detail_capacity_card.set_progress(total_pct)
 
         node_table = panel.storage_detail_nodes_table
         node_by_storage = {}
