@@ -328,10 +328,9 @@ class MainWindow(QMainWindow):
 
         self._toolbar = QToolBar()
         self._toolbar.setMovable(False)
-        from .icons import base_size
+        from .icons import CONTROL_ICON_SIZE
 
-        _tb = base_size()
-        self._toolbar.setIconSize(QSize(_tb, _tb))
+        self._toolbar.setIconSize(QSize(CONTROL_ICON_SIZE, CONTROL_ICON_SIZE))
         self._toolbar.setToolButtonStyle(Qt.ToolButtonIconOnly)
 
         add_action = QAction(get_icon("add"), tr("Add server"), self)
@@ -2799,15 +2798,14 @@ class MainWindow(QMainWindow):
 
     def _on_theme_applied(self):
         """UI reaction to an applied theme: inline styles + tree + toolbar."""
-        from .icons import base_size, init_icons
+        from .icons import CONTROL_ICON_SIZE, init_icons
 
         for combo in (self._lang_combo, self._theme_combo):
             combo.setStyleSheet(self._status_combo_style())
         init_icons()
         for act, icon_name in self._toolbar_icon_actions:
             act.setIcon(get_icon(icon_name))
-        size = base_size()
-        self._toolbar.setIconSize(QSize(size, size))
+        self._toolbar.setIconSize(QSize(CONTROL_ICON_SIZE, CONTROL_ICON_SIZE))
         self._brand.restyle()
         self._update_tray_state()
         self.tree_panel.reapply_theme()

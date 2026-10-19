@@ -9,6 +9,11 @@ from .theme import Color, active_theme_id
 ICON_SIZE = 24
 _BASE_SIZE = ICON_SIZE  # base size; the theme engine changes it via set_base_size()
 
+# Fixed icon size for compact controls (QPushButton / QToolButton / the main
+# toolbar): does NOT follow the theme's icon base (VIRTDECK_ICON_SIZE scales
+# views — tree, tabs, palette — while controls stay at 24).
+CONTROL_ICON_SIZE = 24
+
 
 def set_base_size(size):
     """Base icon size (the theme engine applies theme.icon_size)."""

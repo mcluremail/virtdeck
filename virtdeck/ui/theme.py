@@ -503,6 +503,8 @@ QSS = ""
 
 
 def _build_qss() -> str:
+    from .icons import CONTROL_ICON_SIZE
+
     ui = Color.UI_FONT
     mono = Color.MONO_FONT
     # Type scale (Д2): px sizes resolved against the application font.
@@ -686,6 +688,11 @@ def _build_qss() -> str:
     }}
 
     /* ── Buttons ── */
+    /* Control icons stay at the fixed 24px: the icon base (and
+       VIRTDECK_ICON_SIZE) scales views — tree, tabs, palette — not buttons. */
+    QPushButton, QToolButton {{
+        qproperty-iconSize: {CONTROL_ICON_SIZE}px {CONTROL_ICON_SIZE}px;
+    }}
     QPushButton {{
         padding: 6px 12px;
         font-size: {fs}px;

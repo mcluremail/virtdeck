@@ -406,3 +406,54 @@ class TestIconBaseSize:
         monkeypatch.delenv("VIRTDECK_ICON_SIZE", raising=False)
         theme.load_theme("light", persist=False)
         assert icons.base_size() == 24
+
+
+class TestFixedControlIcons:
+    """Buttons and the toolbar keep the fixed 24px control icon size,
+    whatever the icon base (VIRTDECK_ICON_SIZE scales views, not controls)."""
+
+    def test_qss_pins_button_icons(self):
+        qss = _qss()
+        assert "qproperty-iconSize: 24px 24px" in qss
+
+    def test_buttons_draw_24_at_base_32(self, qapp, monkeypatch):
+        from PySide6.QtCore import QSize, Qt
+        from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+        from PySide6.QtWidgets import QPushButton, QToolButton
+
+        from virtdeck.ui import icons
+
+        monkeypatch.setenv("VIRTDECK_ICON_SIZE", "32")
+        theme.load_theme("light", persist=False)
+        assert icons.base_size() == 32
+
+        pm = QPixmap(64, 64)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.fillRect(0, 0, 64, 64, QColor("#ff0000"))
+        p.end()
+
+        def drawn(widget):
+            widget.ensurePolished()
+            widget.resize(widget.sizeHint().expandedTo(QSize(96, 44)))
+            img = widget.grab().toImage()
+            minx, maxx, miny, maxy = 10**6, -1, 10**6, -1
+            for y in range(img.height()):
+                for x in range(img.width()):
+                    c = img.pixelColor(x, y)
+                    if c.red() > 200 and c.green() < 80 and c.alpha() > 100:
+                        minx, maxx = min(minx, x), max(maxx, x)
+                        miny, maxy = min(miny, y), max(maxy, y)
+            return 0 if maxx < 0 else max(maxx - minx + 1, maxy - miny + 1)
+
+        btn = QPushButton()
+        btn.setIcon(QIcon(pm))
+        tbtn = QToolButton()
+        tbtn.setIcon(QIcon(pm))
+        assert drawn(btn) == 24
+        assert drawn(tbtn) == 24
+
+        # restore the canonical base for the rest of the session
+        monkeypatch.delenv("VIRTDECK_ICON_SIZE", raising=False)
+        theme.load_theme("light", persist=False)
+        assert icons.base_size() == 24

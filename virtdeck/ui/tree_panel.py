@@ -38,7 +38,7 @@ from .action_registry import (
 )
 from .action_specs import VM_ACTION_IDS, VM_BULK_ACTION_IDS, register_tree_actions
 from .i18n import tr
-from .icons import base_size, get_icon, init_icons, make_loading_icon
+from .icons import CONTROL_ICON_SIZE, base_size, get_icon, init_icons, make_loading_icon
 from .theme import Color
 from .utils import build_cfg_index, status_text
 
@@ -357,7 +357,7 @@ class TreePanel(QWidget):
         self._toggle_btn = QToolButton()
         self._toggle_btn.setIcon(get_icon("expand"))
         self._toggle_btn.setFixedSize(30, 30)
-        self._toggle_btn.setIconSize(QSize(base_size(), base_size()))
+        self._toggle_btn.setIconSize(QSize(CONTROL_ICON_SIZE, CONTROL_ICON_SIZE))
         self._toggle_btn.setToolTip(tr("Expand all"))
         self._toggle_btn.setAutoRaise(True)
         self._toggled = False
@@ -827,7 +827,7 @@ class TreePanel(QWidget):
         if getattr(self, "all_nodes", None) is None:
             return
         self.tree.setIconSize(QSize(base_size(), base_size()))
-        self._toggle_btn.setIconSize(QSize(base_size(), base_size()))
+        self._toggle_btn.setIconSize(QSize(CONTROL_ICON_SIZE, CONTROL_ICON_SIZE))
         self._do_rebuild()
 
     def start_loading(self):
