@@ -30,7 +30,7 @@ from ..widgets.vm_metrics_widget import VmMetricsWidget
 from ..widgets.vm_options_widget import VmOptionsWidget
 from ..widgets.vm_pool_widget import VmPoolWidget
 from ..widgets.vm_task_history_widget import VmTaskHistoryWidget
-from ._constants import TabIndex
+from ._constants import INFO_PAGE_CARDS, INFO_PAGE_LABEL, INFO_PAGE_SKELETON, TabIndex
 from ._table_utils import loading_label, make_loading_stack, safe_pct
 
 logger = logging.getLogger(__name__)
@@ -88,7 +88,7 @@ class VMTabs:
         cards_layout.addWidget(panel.card_uptime, 1, 2)
 
         panel.info_stack.addWidget(cards_widget)
-        panel.info_stack.setCurrentIndex(0)
+        panel.info_stack.setCurrentIndex(INFO_PAGE_LABEL)
 
         monitor_layout.addWidget(panel.info_stack)
 
@@ -445,7 +445,7 @@ class VMTabs:
 
         if not vm_data:
             panel.info_label.setText(tr("No data"))
-            panel.info_stack.setCurrentIndex(0)
+            panel.info_stack.setCurrentIndex(INFO_PAGE_LABEL)
             return
 
         vmid = vm_data.vmid
@@ -460,7 +460,7 @@ class VMTabs:
                 # Д7/DELIGHT-10: one skeleton (info area) instead of the
                 # "Loading detailed info..." text + the central chart
                 # spinner — the S4 double indicator is gone.
-                panel.info_stack.setCurrentIndex(2)
+                panel.info_stack.setCurrentIndex(INFO_PAGE_SKELETON)
                 panel.metrics_stack.setCurrentIndex(1)
                 node_name = vm_data.node or host_name
                 vm_type = vm_data.vm_type.value
@@ -471,7 +471,7 @@ class VMTabs:
                 panel._workers_mgr.run_worker(worker)
             else:
                 panel.info_label.setText(tr("Server configuration not found for {host}").format(host=host_name))
-                panel.info_stack.setCurrentIndex(0)
+                panel.info_stack.setCurrentIndex(INFO_PAGE_LABEL)
         else:
             self.display_full_vm_info(vm_data, panel.details_cache[detail_key])
 
@@ -632,7 +632,7 @@ class VMTabs:
                 self.update_action_buttons(vm_data)
         else:
             panel.info_label.setText(parse_pve_error(detail.get("error", "")))
-            panel.info_stack.setCurrentIndex(0)
+            panel.info_stack.setCurrentIndex(INFO_PAGE_LABEL)
 
     def on_vm_config_change_requested(self, host_name, vmid_str, params):
         panel = self.panel
@@ -1204,14 +1204,14 @@ class VMTabs:
             panel.card_uptime.set_value(_format_uptime(uptime) if uptime else "—")
             panel.card_uptime.set_subtitle(f"{tr('Tags')}: {tags}" if tags else "")
 
-            panel.info_stack.setCurrentIndex(1)
+            panel.info_stack.setCurrentIndex(INFO_PAGE_CARDS)
         except Exception as exc:
             logger.debug("display_full_vm_info error", exc_info=True)
             self.panel.config_update_result.emit(
                 tr("Error: {err}").format(err=str(exc)[:100])
             )
             panel.info_label.setText(tr("Error building info"))
-            panel.info_stack.setCurrentIndex(0)
+            panel.info_stack.setCurrentIndex(INFO_PAGE_LABEL)
 
     def update_vm_cells(self, vm_data):
         panel = self.panel

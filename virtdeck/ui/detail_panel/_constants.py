@@ -127,6 +127,17 @@ def _fmt_pveversion(val):
     return val.split("/")[1] if "/" in val else val
 
 
+# ── info_stack page order (built in _vm_tabs, shared with hosts) ────
+# The skeleton page (Д7/DELIGHT-10) sits BETWEEN the text label and the
+# cards grid. v3.1.0 call sites assumed the skeleton was appended last
+# (0 label / 1 cards / 2 skeleton), so hosts and VMs flipped to the
+# skeleton instead of the filled cards — "empty info area" on live PVE
+# (repro 2026-10-19). Always use these names, never bare indices.
+INFO_PAGE_LABEL = 0      # info_label: errors, "No data"
+INFO_PAGE_SKELETON = 1   # SkeletonDetail: loading placeholder
+INFO_PAGE_CARDS = 2      # MetricCards grid (host/VM summary)
+
+
 def _progress_style(value, max_val=100):
     pct = int((value / max_val) * 100) if max_val else 0
     if pct < 0:

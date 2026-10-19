@@ -32,7 +32,7 @@ from ..object_id import HostId
 from ..theme import Color, fill_bytes_column
 from ..utils import format_uptime as _format_uptime
 from ..utils import status_text
-from ._constants import TabIndex, _progress_style
+from ._constants import INFO_PAGE_CARDS, INFO_PAGE_LABEL, TabIndex, _progress_style
 from ._table_utils import (
     fit_table_height,
     loading_label,
@@ -775,7 +775,7 @@ class HostTabs:
                 f"<span style='font-size: 14px; color: {Color.DANGER};'>{reason}</span>"
                 f"</div>"
             )
-            panel.info_stack.setCurrentIndex(0)
+            panel.info_stack.setCurrentIndex(INFO_PAGE_LABEL)
             panel.metrics_widget.setVisible(False)
             panel.metrics_widget.clear_curves()
             panel.tabs.setCurrentIndex(TabIndex.MONITOR)
@@ -864,10 +864,10 @@ class HostTabs:
             ssl_state = tr("trusted") if (host_cfg and host_cfg.get("trust_ssl", False)) else tr("untrusted")
             panel.card_uptime.set_subtitle(f"SSL {ssl_state}")
 
-            panel.info_stack.setCurrentIndex(1)
+            panel.info_stack.setCurrentIndex(INFO_PAGE_CARDS)
         else:
             panel.info_label.setText(tr("No data"))
-            panel.info_stack.setCurrentIndex(0)
+            panel.info_stack.setCurrentIndex(INFO_PAGE_LABEL)
             return
 
         host_cfg_name = (host_data.host_name if host_data else "") or host_name
@@ -1031,7 +1031,7 @@ class HostTabs:
             ssl_state = tr("trusted") if (host_cfg and host_cfg.get("trust_ssl", False)) else tr("untrusted")
             panel.card_uptime.set_subtitle(f"SSL {ssl_state}")
 
-            panel.info_stack.setCurrentIndex(1)
+            panel.info_stack.setCurrentIndex(INFO_PAGE_CARDS)
 
         vms_of_host = [vm for vm in panel.all_vms
                        if vm.node == host_name

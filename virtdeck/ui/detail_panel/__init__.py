@@ -29,7 +29,7 @@ from ..vm_actions import (
     VM_EXTRA_ACTION_LABELS,
     VM_EXTRA_ACTION_TOOLTIPS,
 )
-from ._constants import _HAS_PG, TabIndex, ensure_pg
+from ._constants import INFO_PAGE_LABEL, _HAS_PG, TabIndex, ensure_pg
 from ._host_tabs import HostTabs
 from ._storage_tabs import StorageTabs
 from ._table_utils import set_cell_text
@@ -453,7 +453,7 @@ class DetailPanel(QWidget):
             self.detail_sublabel.setText("")
             self.detail_sublabel.setVisible(False)
             self.info_label.setText(tr("An error occurred while loading information"))
-            self.info_stack.setCurrentIndex(0)
+            self.info_stack.setCurrentIndex(INFO_PAGE_LABEL)
 
     def _build_obj_id(self, obj_type, obj_name, data):
         """Build a typed ID for the current object based on type."""

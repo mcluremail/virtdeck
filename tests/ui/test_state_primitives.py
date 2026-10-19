@@ -14,6 +14,7 @@ from virtdeck.domain.node import Node
 from virtdeck.domain.repositories import NodeRepository, VmRepository
 from virtdeck.domain.vm import Vm
 from virtdeck.ui import theme
+from virtdeck.ui.detail_panel._constants import INFO_PAGE_CARDS, INFO_PAGE_SKELETON
 from virtdeck.ui.theme import Color
 from virtdeck.ui.widgets.empty_state import EmptyState, SkeletonDetail
 
@@ -417,10 +418,60 @@ class TestDetailSkeleton:
         # keep the detail worker from completing: the skeleton must stay
         tabs._workers_mgr.run_worker = lambda w: None
         tabs.show_details("vm", "web-01", vm)
-        # Д7/DELIGHT-10: the info area is the skeleton page (index 2),
-        # the "Loading detailed info..." text label is gone
-        assert tabs.info_stack.currentIndex() == 2
+        # Д7/DELIGHT-10: the info area is the skeleton page, the
+        # "Loading detailed info..." text label is gone. (Originally
+        # asserted the raw int 2 — which is the CARDS page; the
+        # skeleton lives at INFO_PAGE_SKELETON.)
+        assert tabs.info_stack.currentIndex() == INFO_PAGE_SKELETON
         assert not tabs.info_label.isVisible()
+
+    def test_host_fill_shows_cards_not_skeleton(self, main_window):
+        """Regression 2026-10-19: after filling the host cards the
+        panel flipped to the skeleton page (stale pre-DELIGHT-10
+        index), so live PVE hosts showed the skeleton instead of the
+        values — the cards page must be shown."""
+        mw = main_window
+        nr, vr = NodeRepository(), VmRepository()
+        node = _node("pve-alpha")
+        vm = _vm(100, "web-01", "pve-alpha")
+        nr.add(node)
+        vr.add(vm)
+        mw._node_repo, mw._vm_repo = nr, vr
+        mw.nodes_cfg = [{"name": "pve-alpha", "host": "10.0.0.5",
+                         "skip": False}]
+        mw.detail_panel.update_nodes_cfg(mw.nodes_cfg)
+        mw.tree_panel.update_data([node], [vm], [], final=True,
+                                  node_repo=nr, vm_repo=vr)
+        tabs = mw.detail_panel
+        tabs._workers_mgr.run_worker = lambda w: None
+        tabs.show_details("host", "pve-alpha", node)
+        assert tabs.info_stack.currentIndex() == INFO_PAGE_CARDS
+
+    def test_vm_detail_loaded_shows_cards_not_skeleton(self, main_window):
+        """Regression 2026-10-19: display_full_vm_info flipped to the
+        skeleton page after the detail worker returned, so VM pages
+        showed the skeleton forever; the cards page must be shown."""
+        mw = main_window
+        nr, vr = NodeRepository(), VmRepository()
+        node = _node("pve-alpha")
+        vm = _vm(100, "web-01", "pve-alpha")
+        nr.add(node)
+        vr.add(vm)
+        mw._node_repo, mw._vm_repo = nr, vr
+        mw.nodes_cfg = [{"name": "pve-alpha", "host": "10.0.0.5",
+                         "skip": False}]
+        mw.detail_panel.update_nodes_cfg(mw.nodes_cfg)
+        mw.tree_panel.update_data([node], [vm], [], final=True,
+                                  node_repo=nr, vm_repo=vr)
+        tabs = mw.detail_panel
+        tabs._workers_mgr.run_worker = lambda w: None
+        detail = {"vmid": 100, "name": "web-01", "status": "running",
+                  "maxmem": 2 * G, "mem": G, "cpus": 2, "cpu": 0.1,
+                  "maxdisk": 10 * G, "disk": G, "type": "qemu",
+                  "netin": 0, "netout": 0, "uptime": 3600, "tags": "",
+                  "hastate": ""}
+        tabs._vm_tabs.display_full_vm_info(vm, detail)
+        assert tabs.info_stack.currentIndex() == INFO_PAGE_CARDS
 
 
 # ── U17: destructive menu items ─────────────────────────────────────
