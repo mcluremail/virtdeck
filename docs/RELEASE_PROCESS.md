@@ -60,8 +60,9 @@
      (ограничение зафиксировано, а не забыто);
    - проверки: `node check-site.js` (i18n-паритет, баланс тегов, устаревшие
      версии) и `node check-contrast.js`;
-   - деплой: `rsync -a public/ repo.mclure.ru:/srv/virtdeck/public/`
-     (nginx отдаёт каталог как есть, рестартовать ничего не нужно);
+   - деплой: `tar czf - -C public . | ssh repo.mclure.ru 'tar xzf - -C /srv/virtdeck/public/'`
+     (локального rsync нет — урок v3.1.0; nginx отдаёт каталог как есть,
+     рестартовать ничего не нужно);
    - live-проверка: `curl -s https://virtdeck.mclure.ru/ | grep -c "vX.Y.Z"`.
 6. **Бамп версий** (три места, см. выше) + `uv lock`.
 7. **Гейты**: `.venv/bin/ruff check virtdeck tests &&
@@ -94,12 +95,15 @@
    Приватный ключ подписи НЕ покидает сервер repo.mclure.ru, поэтому подпись
    делается там:
    ```
-   gh release download vX.Y.Z -D /tmp/rel -R mcluremail/virtdeck   # локально
-   rsync -a /tmp/rel/ repo.mclure.ru:/tmp/rel-vX.Y.Z/
-   ssh repo.mclure.ru 'sudo -n sh -c "cd /tmp/rel-vX.Y.Z && for f in *; do gpg --batch --yes --armor --detach-sign --local-user 117DEABD3EA48810B219BA6B401F700FB97DE8B8 \$f; done"'
-   rsync -a repo.mclure.ru:/tmp/rel-vX.Y.Z/*.asc /tmp/rel/
-   gh release upload vX.Y.Z /tmp/rel/*.asc --clobber -R mcluremail/virtdeck
-   ssh repo.mclure.ru 'sudo -n rm -rf /tmp/rel-vX.Y.Z'             # убрать за собой
+   # Уроки v3.1.0/v3.1.1: локального rsync нет (scp); серверный /tmp —
+   # tmpfs 450M, стейджинг подписей там не вмещается — работаем в /home/taurus.
+   gh release download vX.Y.Z -D /tmp/opencode/rel -R mcluremail/virtdeck   # локально
+   ssh repo.mclure.ru 'mkdir -p /home/taurus/rel-vX.Y.Z'
+   scp -q /tmp/opencode/rel/* repo.mclure.ru:/home/taurus/rel-vX.Y.Z/
+   ssh repo.mclure.ru 'sudo -n sh -c "cd /home/taurus/rel-vX.Y.Z && for f in *; do gpg --batch --yes --armor --detach-sign --local-user 117DEABD3EA48810B219BA6B401F700FB97DE8B8 \$f; done"'
+   scp -q 'repo.mclure.ru:/home/taurus/rel-vX.Y.Z/*.asc' /tmp/opencode/rel/
+   gh release upload vX.Y.Z /tmp/opencode/rel/*.asc --clobber -R mcluremail/virtdeck
+   ssh repo.mclure.ru 'rm -rf /home/taurus/rel-vX.Y.Z'             # убрать за собой
    ```
    Пользователь проверяет: `gpg --verify <файл>.asc <файл>` против ключа,
    отпечаток которого сверен с README/сайтом/repo-корнем.

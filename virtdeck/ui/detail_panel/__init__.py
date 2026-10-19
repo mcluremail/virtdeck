@@ -29,7 +29,7 @@ from ..vm_actions import (
     VM_EXTRA_ACTION_LABELS,
     VM_EXTRA_ACTION_TOOLTIPS,
 )
-from ._constants import INFO_PAGE_LABEL, _HAS_PG, TabIndex, ensure_pg
+from ._constants import _HAS_PG, INFO_PAGE_LABEL, TabIndex, ensure_pg
 from ._host_tabs import HostTabs
 from ._storage_tabs import StorageTabs
 from ._table_utils import set_cell_text

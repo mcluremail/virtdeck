@@ -40,7 +40,12 @@ class VmDetailWorker(QRunnable):
             except RuntimeError:
                 pass
         except Exception as e:
-            logger.debug("backend error: %s", e)
+            # WARNING, not debug: on this path the card flow degrades to
+            # the skeleton / "no data" state with no UI indication — the
+            # stderr line at the default level is the only trace
+            # (v3.1.2; the silent-debug diagnosis cost a live bug hunt).
+            logger.warning("VM %s detail fetch failed on %s: %s",
+                           self.vmid, self.node_name, e)
             try:
                 self.signals.detail_ready.emit({
                     "vmid": self.vmid,

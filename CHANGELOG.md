@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.1.2 — the filled cards are visible again
+
+**Bug fixes**
+- Host and VM pages no longer show the loading skeleton instead of the summary cards. The DELIGHT-10 skeleton page was inserted between the text label and the cards in the detail info stack, but the show/refresh call sites kept the pre-insert page order: hosts flipped to the skeleton right after the cards were filled, and a VM showed the skeleton forever after its detail data arrived — header, tabs and graphs were fine while the info area looked empty (live repro on PVE 7.4, cluster and standalone). Page indices are now named constants used at every call site, and the card-fill flows have regression coverage (they had none).
+- Double-clicking a PBS datastore row opens the datastore view: the handler declared the tree-widget signature while QTableWidget passes a single argument, so every double-click raised a TypeError (broken since the project rename).
+- A failed VM detail request (unreachable host, bad token) is logged as a warning with the VMID and node instead of a debug line — the card flow has no other failure indication, so the trace must be visible at the default stderr level.
+
 ## v3.1.1 — nothing left running behind a closed window (crash fixes)
 
 **Bug fixes**

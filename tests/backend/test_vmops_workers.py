@@ -467,3 +467,38 @@ class TestBulkProviderReuse:
         assert len(done_vms) == 2
         assert all(ok for _vmid, ok in done_vms)
         assert len(logins) == 1  # one login for both VMs
+
+
+# ── VmDetailWorker failure visibility (v3.1.2) ───────────────────────
+
+
+class TestVmDetailWorkerFailure:
+    def test_failure_logs_warning_and_emits_error(self, qapp, monkeypatch,
+                                                  caplog):
+        import logging
+
+        import virtdeck.backend.vm as vm_mod
+        from virtdeck.backend.vm import VmDetailWorker
+
+        def boom(cfg, timeout=10):
+            raise RuntimeError("connection refused")
+
+        # The provider-creation failure is the real-world shape of an
+        # unreachable host / bad token: the card flow degrades to the
+        # skeleton with no UI indication, so the log line is the only
+        # trace — it must be visible at the default stderr level
+        # (it used to be logger.debug).
+        monkeypatch.setattr(vm_mod, "create_provider", boom)
+
+        worker = VmDetailWorker({"name": "pve-x", "host": "10.0.0.5"},
+                                "pve-x", 100, "qemu")
+        got = []
+        worker.signals.detail_ready.connect(got.append)
+        with caplog.at_level(logging.WARNING,
+                             logger="virtdeck.backend.vm"):
+            worker.run()  # synchronous on the test thread — no pool
+        assert any(r.levelno == logging.WARNING and "100" in r.getMessage()
+                   for r in caplog.records)
+        assert len(got) == 1
+        assert got[0]["status"] == "error"
+        assert "connection refused" in got[0]["error"]
