@@ -640,11 +640,11 @@ class TestTreeModes:
         assert "@cl1" in shared.text(0)
         assert shared.parent() is items[("cluster", "cl1")]
         # Local cluster-node storage hangs off the host inside the cluster
-        local = items[("storage", "local", "host", "h1")]
+        local = items[("storage", "local", "host", "h1", "n1")]
         assert local.parent() is items[("host", "n1", "h1")]
         assert items[("host", "n1", "h1")].parent() is items[("cluster", "cl1")]
         # Standalone host keeps its own storages
-        s2 = items[("storage", "local2", "host", "h2")]
+        s2 = items[("storage", "local2", "host", "h2", "n2")]
         assert s2.parent() is items[("host", "n2", "h2")]
         assert not any(k[0] in ("section", "storage_section") for k in items)
 
@@ -675,7 +675,7 @@ class TestTreeModes:
         tp.set_mode("storages")
 
         items = _collect_items(tp)
-        assert ("storage", "local", "host", "h1") in items
+        assert ("storage", "local", "host", "h1", "n1") in items
 
     def test_shared_storage_dedup(self, qtbot, make_node, make_storage):
         """The same shared storage reported by several nodes appears once."""
@@ -992,7 +992,7 @@ class TestStorageContextMenu:
                        node_repo=node_repo, vm_repo=None)
         tp.set_mode("storages")
 
-        item = _collect_items(tp)[("storage", "local", "host", "h1")]
+        item = _collect_items(tp)[("storage", "local", "host", "h1", "n1")]
         menu = _open_menu(qtbot, tp, item, monkeypatch)
         texts = _menu_actions(menu)
         assert "Edit storage…" in texts
@@ -1359,7 +1359,7 @@ class TestCurrentSelection:
         tp.update_data(node_repo.all(), [], storages, final=True,
                        node_repo=node_repo, vm_repo=None)
         tp.set_mode("storages")
-        self._select(tp, ("storage", "local", "host", "h1"))
+        self._select(tp, ("storage", "local", "host", "h1", "pve01"))
         sel = tp.current_selection()
         assert sel.kind == "storage"
         assert sel.host_name == "h1"

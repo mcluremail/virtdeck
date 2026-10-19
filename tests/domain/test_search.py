@@ -157,7 +157,8 @@ class TestGlobalSearch:
         assert len(results) == 1
         assert results[0].kind == "storage"
         assert results[0].detail == "h2"
-        assert results[0].key == ("storage", "ceph", "host", "h2")
+        assert results[0].key == ("storage", "ceph", "host", "h2",
+                                  "standalone")
 
     def test_storage_shared_in_cluster(self):
         results = search("ros-pool")
@@ -167,11 +168,14 @@ class TestGlobalSearch:
 
     def test_storage_local_on_cluster_node(self):
         # B20 audit: a local storage on a cluster node must keep a host-scope
-        # key — the tree has no cluster-scope item for it
+        # key — the tree has no cluster-scope item for it. The PVE node
+        # rides in the key: the same storage name can exist on every
+        # member of the cluster (2026-10-19).
         results = search("local-lvm")
         assert len(results) == 1
         assert results[0].detail == "h1"
-        assert results[0].key == ("storage", "local-lvm", "host", "h1")
+        assert results[0].key == ("storage", "local-lvm", "host", "h1",
+                                  "pve01")
 
     def test_order_vms_hosts_pools_storages(self):
         results = search("prod")

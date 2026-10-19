@@ -608,9 +608,3 @@ class DetailPanel(QWidget):
     # ------------------------------------------------------------------
     # Small helpers that tab controllers call back
     # ------------------------------------------------------------------
-    def _set_storage_param(self, label, value):
-        table = self.storage_detail_params
-        for r in range(table.rowCount()):
-            if table.item(r, 0) and table.item(r, 0).text() == label:
-                set_cell_text(table, r, 1, str(value))
-                break

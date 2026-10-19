@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from ..config import load_tree_notes, load_ui_state, save_tree_note, save_ui_state
 from ..domain import Node, NodeStatus, VmStatus, VmType
+from ..domain._format import format_volsize
 from .action_registry import (
     SCOPE_CT,
     SCOPE_TEMPLATE,
@@ -1355,7 +1356,13 @@ class TreePanel(QWidget):
         return cl_item
 
     def _make_host_storage_item(self, parent, node):
-        """B20 storages mode: host with its local storages."""
+        """B20 storages mode: a host as a CONTAINER of its local storages.
+
+        Not a Hosts-view replica (user feedback, 2026-10-19): a click
+        expands the container instead of opening the host page (the
+        interception lives in _on_item_clicked), and the default note
+        summarizes the attached storages instead of node status.
+        """
         host_name = node.host_name
         cluster_scope = node.cluster or ""
         host_item = QTreeWidgetItem(parent)
@@ -1363,17 +1370,26 @@ class TreePanel(QWidget):
         host_item.setIcon(0, get_icon("host", node.status_value))
         host_item.setData(0, ITEM_KEY_ROLE, ("host", node.node, host_name))
         host_item.setToolTip(0, _node_tooltip(node))
-        self._refresh_note(host_item, f"host:{host_name}",
-                           self._host_default_note(host_name))
 
-        for st in sorted((s for s in self.all_storages
-                          if s.host_name == host_name and s.cluster == cluster_scope
-                          and (not cluster_scope or not s.shared)),
-                         key=lambda s: s.storage.lower()):
+        locals_ = [s for s in self.all_storages
+                   if s.host_name == host_name and s.cluster == cluster_scope
+                   and (not cluster_scope or not s.shared)]
+        note = ""
+        if locals_:
+            note = tr("Storages: {n} · {used}/{total}").format(
+                n=len(locals_),
+                used=format_volsize(sum(s.used_bytes for s in locals_)),
+                total=format_volsize(sum(s.total_bytes for s in locals_)))
+        self._refresh_note(host_item, f"storages-host:{host_name}", note)
+
+        for st in sorted(locals_, key=lambda s: s.storage.lower()):
             si = QTreeWidgetItem(host_item)
             si.setText(0, st.storage)
             si.setIcon(0, get_icon("storage"))
-            si.setData(0, ITEM_KEY_ROLE, ("storage", st.storage, "host", host_name))
+            # The node must ride in the key: a cluster config shares one
+            # host_name across its nodes, so "local" alone is ambiguous.
+            si.setData(0, ITEM_KEY_ROLE,
+                       ("storage", st.storage, "host", host_name, st.node))
             self._refresh_note(si, f"storage:{st.storage}:{host_name}")
         return host_item
 
@@ -1706,6 +1722,12 @@ class TreePanel(QWidget):
             return
 
         if item_type == "host":
+            if self._tree_mode == "storages":
+                # B20 container (2026-10-19): in the storages view a host
+                # is a folder of its storages, not a Hosts-view replica —
+                # a click expands it, no host page.
+                item.setExpanded(not item.isExpanded())
+                return
             host_name_key = key[2] if len(key) > 2 else None
             if host_name_key:
                 host_data = self._node_repo.get(host_name_key, item_name) if self._node_repo else None

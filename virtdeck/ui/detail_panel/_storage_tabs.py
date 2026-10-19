@@ -56,6 +56,63 @@ from ._table_utils import (
     update_progress_bar,
 )
 
+# Decoders for the raw API values on the storage detail page: the value
+# itself is shown as reported by PVE, the pale line beneath carries the
+# human meaning. Keys are looked up through tr() at render time (the
+# language can change after import). Unknown codes pass through raw.
+_STORAGE_PLUGIN_DECODE = {
+    "dir": "Directory on a local file system",
+    "nfs": "NFS network share, shared between nodes",
+    "cifs": "SMB/CIFS network share, shared between nodes",
+    "cephfs": "CephFS shared file system",
+    "rbd": "Ceph RBD block storage, shared between nodes",
+    "zfspool": "Local ZFS pool",
+    "lvm": "Local LVM volume group",
+    "lvmthin": "Local LVM-thin pool (thin provisioning)",
+    "pbs": "Proxmox Backup Server storage",
+    "btrfs": "Local BTRFS file system",
+    "iscsi": "iSCSI target, shared block storage",
+}
+_STORAGE_CONTENT_DECODE = {
+    "images": "VM disks",
+    "rootdir": "Container root file systems",
+    "iso": "ISO images",
+    "vztmpl": "Container templates",
+    "backup": "Backups",
+    "snippets": "Snippets (cloud-init, scripts)",
+}
+
+
+def _select_storage_rows(all_storages, storage_name, data):
+    """Rows, representative row and divergence flag for one storage view.
+
+    Shared cluster storages arrive as one row per member node — the same
+    backend seen N times, every mounted node reporting identical numbers.
+    The representative row (the widest total: an unmounted node reports
+    0) carries the backend's real used/total — summing the rows would
+    inflate both ×N. ``rows_differ`` marks divergence between the
+    per-node views (a node lost the mount, different numbers) — the only
+    case where the per-node table adds information beyond the summary.
+    """
+    cluster = data.get("cluster")
+    host_name_filter = data.get("host_name")
+    node_filter = data.get("node")
+    if cluster:
+        rows = [s for s in all_storages
+                if s.storage == storage_name and s.cluster == cluster]
+    elif host_name_filter:
+        rows = [s for s in all_storages
+                if s.storage == storage_name and s.host_name == host_name_filter]
+    else:
+        rows = [s for s in all_storages if s.storage == storage_name]
+    if node_filter:
+        rows = [s for s in rows if s.node == node_filter]
+    rep = max(rows, key=lambda s: s.total_bytes) if rows else None
+    rows_differ = len({
+        (s.content_text, s.used_bytes, s.total_bytes) for s in rows
+    }) > 1
+    return rows, rep, rows_differ
+
 
 class StorageToolbar(QWidget):
     """Toolbar with Upload/Download URL/Move/Copy/Remove buttons for storage content tables."""
@@ -196,11 +253,14 @@ class StorageTabs:
         panel.storage_detail_name.setStyleSheet("font-size: 16px; font-weight: bold;")
         layout.addWidget(panel.storage_detail_name)
 
-        panel.storage_detail_params = make_table(
-            [tr("Parameter"), tr("Value")],
-            [(QHeaderView.Stretch, None), (QHeaderView.Stretch, None)],
-        )
-        layout.addWidget(panel.storage_detail_params)
+        # The old params table (label/value rows) is unfolded into a
+        # column of blocks: bold label, the raw API value, and a pale
+        # line decoding what the value means (user feedback, 2026-10-19).
+        panel.storage_detail_info = QWidget()
+        panel.storage_detail_info_layout = QVBoxLayout(panel.storage_detail_info)
+        panel.storage_detail_info_layout.setContentsMargins(0, 0, 0, 0)
+        panel.storage_detail_info_layout.setSpacing(4)
+        layout.addWidget(panel.storage_detail_info)
 
         panel.storage_detail_bar = QProgressBar()
         panel.storage_detail_bar.setRange(0, 100)
@@ -469,6 +529,34 @@ class StorageTabs:
                     self.panel.navigate_requested.emit(key)
                     return
 
+    def _clear_storage_info_blocks(self):
+        """Drop every block of the unfolded info column."""
+        lay = self.panel.storage_detail_info_layout
+        while lay.count():
+            it = lay.takeAt(0)
+            w = it.widget()
+            if w is not None:
+                w.deleteLater()
+
+    def _add_storage_info_block(self, label, value, decode=""):
+        """One unfolded parameter: bold label, the raw API value and a
+        pale line decoding what the value means. Returns the value label
+        so live updaters (storage monitoring) can refresh it in place."""
+        lay = self.panel.storage_detail_info_layout
+        lab = QLabel(label)
+        lab.setStyleSheet("font-weight: bold; margin-top: 8px;")
+        val = QLabel(str(value))
+        val.setWordWrap(True)
+        val.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        lay.addWidget(lab)
+        lay.addWidget(val)
+        if decode:
+            d = QLabel(decode)
+            d.setWordWrap(True)
+            d.setStyleSheet(f"color: {Color.TEXT_SEC};")
+            lay.addWidget(d)
+        return val
+
     def show_storage_folder(self):
         panel = self.panel
         panel.detail_label.setText(tr("Storage"))
@@ -495,8 +583,12 @@ class StorageTabs:
         panel = self.panel
         cluster = data.get("cluster")
         host_name_filter = data.get("host_name")
+        node_filter = data.get("node")
         if cluster:
-            title = f"{storage_name} @ {cluster}"
+            if node_filter:
+                title = f"{storage_name} @ {cluster} · {node_filter}"
+            else:
+                title = f"{storage_name} @ {cluster}"
         elif host_name_filter:
             title = f"{storage_name} ({host_name_filter})"
         else:
@@ -521,48 +613,74 @@ class StorageTabs:
         panel.tabs.setTabVisible(TabIndex.TEMPLATES, False)
         panel.tabs.setCurrentIndex(TabIndex.STORAGE_DETAIL)
         panel.storage_detail_name.setText(title)
-        if cluster:
-            filtered = [s for s in panel.all_storages
-                        if s.storage == storage_name and s.cluster == cluster]
-        elif host_name_filter:
-            filtered = [s for s in panel.all_storages
-                        if s.storage == storage_name and s.host_name == host_name_filter]
-        else:
-            filtered = [s for s in panel.all_storages if s.storage == storage_name]
-        if not filtered:
-            panel.storage_detail_params.setRowCount(0)
+        rows, rep, rows_differ = _select_storage_rows(
+            panel.all_storages, storage_name, data)
+        if not rows or rep is None:
+            self._clear_storage_info_blocks()
+            # Drop the stale reference: the live updater would otherwise
+            # setText() on a deleteLater()'d label (RuntimeError).
+            panel.storage_detail_capacity_value = None
             panel.storage_detail_bar.setValue(0)
             panel.storage_detail_bar.setFormat(tr("No data"))
+            panel.storage_detail_nodes_label.setVisible(False)
+            panel.storage_detail_nodes_table.setVisible(False)
             panel.storage_detail_nodes_table.setRowCount(0)
             return
-        rep = filtered[0]
+        filtered = rows
         st_type = rep.storage_type
         content = rep.content_text
-        total_used = sum(s.used_bytes for s in filtered)
-        total_total = sum(s.total_bytes for s in filtered)
+        # Shared backends report identical numbers from every mounted
+        # node — the representative row IS the storage (see
+        # _select_storage_rows); the old ×N sum is gone.
+        total_used = rep.used_bytes
+        total_total = rep.total_bytes
         total_pct = safe_pct(total_used, total_total)
         used_gb = round(total_used / (1024**3), 1) if total_used else 0
         total_gb = round(total_total / (1024**3), 1) if total_total else 0
-        params = [
-            (tr("Type"), st_type),
-            (tr("Content"), content),
-            (tr("Used"), f"{used_gb} GiB"),
-            (tr("Total"), f"{total_gb} GiB"),
-            (tr("Usage"), f"{total_pct}%"),
-            (tr("Nodes"), str(len(filtered))),
-        ]
-        panel.storage_detail_params.setRowCount(len(params))
-        for i, (k, v) in enumerate(params):
-            panel.storage_detail_params.setItem(i, 0, QTableWidgetItem(k))
-            panel.storage_detail_params.setItem(i, 1, QTableWidgetItem(str(v)))
-        panel.storage_detail_params.resizeRowsToContents()
-        for r in range(panel.storage_detail_params.rowCount()):
-            if panel.storage_detail_params.rowHeight(r) > 22:
-                panel.storage_detail_params.setRowHeight(r, 22)
+
+        self._clear_storage_info_blocks()
+        type_decode = _STORAGE_PLUGIN_DECODE.get(st_type, "")
+        self._add_storage_info_block(
+            tr("Type"), st_type,
+            tr(type_decode) if type_decode else "")
+        if content:
+            decoded = ", ".join(
+                tr(_STORAGE_CONTENT_DECODE[c]) if c in _STORAGE_CONTENT_DECODE
+                else c
+                for c in (x.strip() for x in content.split(",")) if c)
+            self._add_storage_info_block(tr("Content"), content, decoded)
+        shared_decode = (tr("One backend available from every listed node")
+                         if rep.shared else
+                         tr("Local storage: exists on one node only"))
+        self._add_storage_info_block(
+            tr("Shared"), tr("Yes") if rep.shared else tr("No"),
+            shared_decode)
+        self._add_storage_info_block(
+            tr("Nodes"), ", ".join(sorted({s.node for s in filtered})))
+        cap_value = self._add_storage_info_block(
+            tr("Capacity"),
+            tr("{used} of {total} ({pct}%)").format(
+                used=format_volsize(total_used),
+                total=format_volsize(total_total),
+                pct=f"{total_pct}%"),
+            tr("Live usage as reported by the nodes; refreshes on every "
+               "fleet update"))
+        panel.storage_detail_capacity_value = cap_value
         panel.storage_detail_bar.setStyleSheet(_progress_style(total_pct))
         panel.storage_detail_bar.setValue(total_pct)
         panel.storage_detail_bar.setFormat(f"{total_pct}%  ({used_gb}/{total_gb} GiB)")
+
+        # The per-node table only earns its place when the per-node views
+        # actually diverge (a node lost the mount, different numbers) —
+        # N identical rows of one shared backend carry no additional
+        # information (user feedback, 2026-10-19).
+        show_nodes = rows_differ and not node_filter
+        panel.storage_detail_nodes_label.setVisible(show_nodes)
+        panel.storage_detail_nodes_table.setVisible(show_nodes)
         panel.storage_detail_nodes_label.setText(tr("Per node:") if cluster else tr("Node:"))
+        if not show_nodes:
+            panel.storage_detail_nodes_table.setRowCount(0)
+            return
         panel.storage_detail_nodes_table.setRowCount(len(filtered))
         for i, st in enumerate(filtered):
             node = st.node
@@ -1207,28 +1325,26 @@ class StorageTabs:
             return
         sid = panel.current_obj_id
         storage_name = sid.storage
-        host_name_filter = sid.host_name
         data = panel.current_obj_data or {}
-        cluster = data.get("cluster")
-        if cluster:
-            filtered = [s for s in panel.all_storages
-                        if s.storage == storage_name and s.cluster == cluster]
-        elif host_name_filter:
-            filtered = [s for s in panel.all_storages
-                        if s.storage == storage_name and s.host_name == host_name_filter]
-        else:
-            filtered = [s for s in panel.all_storages if s.storage == storage_name]
-        if not filtered:
+        rows, rep, _rows_differ = _select_storage_rows(
+            panel.all_storages, storage_name, data)
+        filtered = rows
+        if not filtered or rep is None:
             return
-        total_used = sum(s.used_bytes for s in filtered)
-        total_total = sum(s.total_bytes for s in filtered)
+        # Same honest aggregate as show_storage_detail: shared backends
+        # report identical numbers from every node — no ×N sum.
+        total_used = rep.used_bytes
+        total_total = rep.total_bytes
         total_pct = safe_pct(total_used, total_total)
         used_gb = round(total_used / (1024**3), 1) if total_used else 0
         total_gb = round(total_total / (1024**3), 1) if total_total else 0
 
-        panel._set_storage_param(tr("Used"), f"{used_gb} GiB")
-        panel._set_storage_param(tr("Total"), f"{total_gb} GiB")
-        panel._set_storage_param(tr("Usage"), f"{total_pct}%")
+        cap = getattr(panel, "storage_detail_capacity_value", None)
+        if cap is not None:
+            cap.setText(tr("{used} of {total} ({pct}%)").format(
+                used=format_volsize(total_used),
+                total=format_volsize(total_total),
+                pct=f"{total_pct}%"))
         panel.storage_detail_bar.setStyleSheet(_progress_style(total_pct))
         panel.storage_detail_bar.setValue(total_pct)
         panel.storage_detail_bar.setFormat(f"{total_pct}%  ({used_gb}/{total_gb} GiB)")

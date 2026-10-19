@@ -115,7 +115,11 @@ def global_search(
                 key = ("storage", storage.storage, "cluster", storage.cluster)
             else:
                 detail = storage.host_name
-                key = ("storage", storage.storage, "host", storage.host_name)
+                # Mirror the tree (2026-10-19): a local storage row hangs
+                # off its node — the same storage name can exist on every
+                # member of a cluster, the node selects the real row.
+                key = ("storage", storage.storage, "host", storage.host_name,
+                       storage.node)
             results.append(SearchResult(
                 kind="storage",
                 label=storage.storage,
