@@ -48,6 +48,18 @@ class BaseIconStyle(QProxyStyle):
 _BASE_ICON_STYLE: BaseIconStyle | None = None
 
 
+def _icon_base_size(default: int) -> int:
+    """Base icon size: the theme's value or the VIRTDECK_ICON_SIZE
+    experiment override (clamped to 16..48; invalid values are ignored)."""
+    raw = os.environ.get("VIRTDECK_ICON_SIZE", "")
+    if not raw:
+        return default
+    try:
+        return max(16, min(48, int(raw)))
+    except ValueError:
+        return default
+
+
 def install_base_icon_style() -> None:
     """Install BaseIconStyle once for the whole app (idempotent).
 
@@ -1336,7 +1348,7 @@ def load_theme(theme_id: str, registry=None, persist: bool = True) -> str:
     _apply_qss()
     _install_font_watcher()
     install_base_icon_style()
-    set_base_size(getattr(plugin, "icon_size", 24))
+    set_base_size(_icon_base_size(getattr(plugin, "icon_size", 24)))
     reset_icons()
     retheme_plots()
     from .widgets.metric_card import retheme_metric_cards

@@ -386,3 +386,23 @@ class TestRepolishHygiene:
         theme.load()
         assert len(called) == 1
         assert app.font().family() == Color.UI_FONT
+
+
+class TestIconBaseSize:
+    """VIRTDECK_ICON_SIZE — experiment override of the theme icon base."""
+
+    def test_env_override_and_clamp(self, qapp, monkeypatch):
+        from virtdeck.ui import icons
+
+        for raw, expected in (("32", 32), ("999", 48), ("8", 16),
+                              ("abc", 24), ("", 24)):
+            if raw:
+                monkeypatch.setenv("VIRTDECK_ICON_SIZE", raw)
+            else:
+                monkeypatch.delenv("VIRTDECK_ICON_SIZE", raising=False)
+            theme.load_theme("light", persist=False)
+            assert icons.base_size() == expected
+        # restore the canonical base for the rest of the session
+        monkeypatch.delenv("VIRTDECK_ICON_SIZE", raising=False)
+        theme.load_theme("light", persist=False)
+        assert icons.base_size() == 24
