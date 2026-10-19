@@ -664,7 +664,11 @@ class PbsPanel(QWidget):
             [ds.total_bytes if ds.status_ok else None for ds in ordered])
         self._ds_table.resizeColumnsToContents()
 
-    def _on_ds_dblclicked(self, item, _col):
+    def _on_ds_dblclicked(self, item):
+        # QTableWidget.itemDoubleClicked emits ONE argument (the item) —
+        # unlike QTreeWidget's (item, column). The extra parameter turned
+        # every datastore double-click into a TypeError (live test,
+        # 2026-10-19).
         row = item.row()
         name_item = self._ds_table.item(row, 0)
         if name_item:
