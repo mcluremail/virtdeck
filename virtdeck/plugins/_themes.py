@@ -261,7 +261,7 @@ class OxygenTheme:
 
 
 class GraphiteTheme:
-    """Graphite — our own neutral dark theme (16px icons)."""
+    """Graphite — our own neutral dark theme."""
 
     _TOKENS: dict[str, str] = {
         "BG": "#2b2d2f",

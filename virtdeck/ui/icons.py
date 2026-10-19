@@ -1,8 +1,10 @@
+import os
+
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
-from .theme import Color
+from .theme import Color, active_theme_id
 
 ICON_SIZE = 24
 _BASE_SIZE = ICON_SIZE  # base size; the theme engine changes it via set_base_size()
@@ -21,8 +23,9 @@ def base_size():
 
 def reset_icons():
     """Reset the icon cache — after a theme change (redraw with new colors)."""
-    global _icons
+    global _icons, _PACK
     _icons = None
+    _PACK = _load_pack()
 
 
 _THEME_ICONS: dict = {}
@@ -32,6 +35,46 @@ def set_theme_icons(overrides):
     """SVG overrides of the active theme (partial; fallback to built-ins)."""
     global _THEME_ICONS
     _THEME_ICONS = overrides or {}
+
+
+# ── External icon-pack preview (opt-in, off by default) ──
+# VIRTDECK_ICON_PACK=<dir of the unpacked pack> overrides the mapped names
+# with the pack's own SVG for the active theme variant (light/dark). The
+# pack art is self-contained (128 viewBox, baked gradients) — used as is,
+# without token substitution. Names outside _PACK_MAP keep the builtin
+# glyph, so unmapped actions (start/stop/add/...) stay consistent.
+
+_PACK_MAP = {
+    "host": "host", "vm": "virtual-machine", "cluster": "cluster",
+    "pool": "pool", "storage": "storage", "backup": "backup",
+    "iso": "iso", "template": "template", "network": "network",
+    "snapshot": "snapshot", "monitor": "monitoring",
+    "console": "console", "ha": "ha", "user": "users",
+    "token": "key", "refresh": "refresh", "about": "about",
+    "folder": "files", "options": "settings", "history": "logs",
+    "lock": "security", "unlock": "security",
+}
+
+_DARK_VARIANT_THEMES = ("breeze_dark", "graphite")
+
+_PACK: dict = {}
+
+
+def _load_pack():
+    """Read the pack files for the active theme variant ({} if unset)."""
+    root = os.environ.get("VIRTDECK_ICON_PACK", "")
+    if not root:
+        return {}
+    variant = "dark" if active_theme_id() in _DARK_VARIANT_THEMES else "light"
+    out = {}
+    for ours, pack_id in _PACK_MAP.items():
+        try:
+            with open(os.path.join(root, variant, pack_id + ".svg"),
+                      encoding="utf-8") as fh:
+                out[ours] = fh.read()
+        except OSError:
+            continue
+    return out
 
 
 # Relative sizes of small/large icons vs the base size.
@@ -253,11 +296,11 @@ def _fmt(tmpl):
         return tmpl
 
 def get_icon(name, status=None):
-    tmpl = _THEME_ICONS.get(name) or _BUILTINS.get(name)
-    if status and tmpl is not None:
-        return _make_icon_with_dot(tmpl, status)
     if _icons is None:
         init_icons()
+    tmpl = _PACK.get(name) or _THEME_ICONS.get(name) or _BUILTINS.get(name)
+    if status and tmpl is not None:
+        return _make_icon_with_dot(tmpl, status)
     return _icons.get(name)
 
 _BUILTINS = {
@@ -315,10 +358,15 @@ _BUILTINS = {
 }
 
 def init_icons():
-    global _icons
+    global _icons, _PACK
     if _icons is not None:
         return
+    if not _PACK:
+        _PACK = _load_pack()
     _icons = {}
     for name, tmpl in _BUILTINS.items():
-        svg = _THEME_ICONS.get(name) or tmpl
-        _icons[name] = _make_icon(_fmt(svg), _sized(_SCALES.get(name, 1.0)))
+        if name in _PACK:
+            svg = _PACK[name]  # self-contained art, tokens not applied
+        else:
+            svg = _fmt(_THEME_ICONS.get(name) or tmpl)
+        _icons[name] = _make_icon(svg, _sized(_SCALES.get(name, 1.0)))
