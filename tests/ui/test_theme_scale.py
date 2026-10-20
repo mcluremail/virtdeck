@@ -457,3 +457,58 @@ class TestFixedControlIcons:
         monkeypatch.delenv("VIRTDECK_ICON_SIZE", raising=False)
         theme.load_theme("light", persist=False)
         assert icons.base_size() == 24
+
+
+class TestWidgetChromePinned:
+    """At a 32px base the scaling chrome bloats the widgets and overflows
+    a FullHD screen. Only content views scale (tree, command palette);
+    every widget metric is pinned to the 24px control size."""
+
+    METRICS = ("PM_SmallIconSize", "PM_ListViewIconSize",
+               "PM_IconViewIconSize", "PM_TabBarIconSize")
+
+    def _at_base_32(self, monkeypatch):
+        from virtdeck.ui import icons
+
+        monkeypatch.setenv("VIRTDECK_ICON_SIZE", "32")
+        theme.load_theme("light", persist=False)
+        assert icons.base_size() == 32
+
+    def test_style_icon_metrics_stay_at_24(self, qapp, monkeypatch):
+        from PySide6.QtWidgets import QStyle
+
+        from virtdeck.ui import icons
+
+        self._at_base_32(monkeypatch)
+        style = qapp.style()
+        for name in self.METRICS:
+            assert style.pixelMetric(getattr(QStyle, name)) == \
+                icons.CONTROL_ICON_SIZE, name
+
+    def test_empty_state_and_skeleton_do_not_scale(self, qapp, monkeypatch):
+        from PySide6.QtWidgets import QLabel
+
+        from virtdeck.ui.widgets.empty_state import EmptyState, SkeletonDetail
+
+        self._at_base_32(monkeypatch)
+        es = EmptyState("vm", "Title", "Hint")
+        icon_lbl = next(c for c in es.findChildren(QLabel)
+                        if c.objectName() == "emptyStateIcon")
+        assert icon_lbl.pixmap().width() == 72  # 3 x 24, the same at any base
+        assert SkeletonDetail().minimumHeight() == 24 * 12
+
+    def test_brand_lockup_does_not_scale(self, qapp, monkeypatch):
+        from virtdeck.ui.brand import make_brand_widget
+
+        self._at_base_32(monkeypatch)
+        brand = make_brand_widget()
+        brand.ensurePolished()
+        assert brand._label.pixmap().height() == 42  # 1.75 x 24, fixed
+
+    def test_tree_and_palette_still_scale(self, qapp, monkeypatch):
+        from virtdeck.ui import icons
+
+        self._at_base_32(monkeypatch)
+        assert icons.base_size() == 32  # content views follow the base
+        monkeypatch.delenv("VIRTDECK_ICON_SIZE", raising=False)
+        theme.load_theme("light", persist=False)

@@ -8,7 +8,8 @@ together with the TreePanel registry.
 
 Labels are existing tr() keys: a language change = restart, so they
 are baked in when the registry is created. Icons are Breeze-set names;
-rendered at base_size() slots. Dynamic presence (tree mode, templates,
+rendered at 24px control-size slots (menus do not follow the icon base).
+Dynamic presence (tree mode, templates,
 api-host storage) and actions with dynamic labels (Trust SSL,
 Edit note...) stay in the menu — that is their context.
 """

@@ -15,7 +15,7 @@ from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
-from .icons import base_size
+from .icons import CONTROL_ICON_SIZE
 
 ASSETS = Path(__file__).parent / "brand_assets"
 TRAY_STATES = ("ok", "error", "offline", "update")
@@ -122,9 +122,10 @@ class BrandWidget(QWidget):
         if v == self._variant and not self._label.pixmap().isNull():
             return
         self._variant = v
-        # The lockup scales from the theme's base icon size (24px -> 42px,
-        # 1.75 factor per user request): mark and wordmark read well large.
-        height = max(22, round(base_size() * 1.75))
+        # The lockup keeps the fixed 42px height (1.75 x the 24px control
+        # size, per user request): it is toolbar chrome and does not
+        # follow the icon base (FullHD fit).
+        height = max(22, round(CONTROL_ICON_SIZE * 1.75))
         self._label.setPixmap(lockup_pixmap(height, v))
         self._label.setFixedSize(self._label.pixmap().size())
 

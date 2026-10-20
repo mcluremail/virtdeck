@@ -19,16 +19,18 @@ _ICON_METRICS = (
     QStyle.PM_SmallIconSize, QStyle.PM_ListViewIconSize,
     QStyle.PM_IconViewIconSize, QStyle.PM_TabBarIconSize,
 )
-_BASE_SIZE_FN = None  # cache of icons.base_size: a local import per call is costly
+_CONTROL_ICON_PX = None  # cache of icons.CONTROL_ICON_SIZE: a per-call import is costly
 
 
 class BaseIconStyle(QProxyStyle):
-    """Style whose icon metrics follow the theme's base icon size.
+    """Style pinning icon metrics to the fixed control size (24).
 
-    Without it, widgets that don't call setIconSize explicitly (tabs,
-    buttons, detail panel tables, etc.) draw icons at the Qt default
-    (PM_SmallIconSize = 16) instead of base_size(). The size is read live
-    from icons.base_size(), so theme switches are picked up automatically.
+    Widgets that don't call setIconSize explicitly (detail-panel tables,
+    menus, tab bars, lists) draw 24px icons instead of the Qt default
+    (PM_SmallIconSize = 16) — and do NOT follow the icon base: only views
+    where the icon is the content (tree, command palette) scale with
+    VIRTDECK_ICON_SIZE. Widget chrome must stay compact — at a 32px base
+    a scaling chrome overflows a FullHD screen and bloats the widgets.
     """
 
     def pixelMetric(self, metric, option=None, widget=None):
@@ -36,12 +38,12 @@ class BaseIconStyle(QProxyStyle):
         # asking for metrics via this Python override — the body must stay
         # minimal (no imports, no class attribute lookups).
         if metric in _ICON_METRICS:
-            global _BASE_SIZE_FN
-            fn = _BASE_SIZE_FN
-            if fn is None:
-                from .icons import base_size
-                _BASE_SIZE_FN = fn = base_size
-            return fn()
+            global _CONTROL_ICON_PX
+            px = _CONTROL_ICON_PX
+            if px is None:
+                from .icons import CONTROL_ICON_SIZE
+                _CONTROL_ICON_PX = px = CONTROL_ICON_SIZE
+            return px
         return super().pixelMetric(metric, option, widget)
 
 

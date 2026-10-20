@@ -24,8 +24,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..icons import base_size, get_icon
+from ..icons import CONTROL_ICON_SIZE, get_pixmap
 from ..theme import RADIUS, font_px
+
+# Widget chrome does not follow the icon base (FullHD fit): the empty
+# state keeps its 24px-base look whatever VIRTDECK_ICON_SIZE is.
+_B = CONTROL_ICON_SIZE
 
 
 class EmptyState(QWidget):
@@ -38,15 +42,15 @@ class EmptyState(QWidget):
         self._title = title
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(base_size() * 3, base_size() * 3,
-                               base_size() * 3, base_size() * 3)
-        lay.setSpacing(base_size())
+        lay.setContentsMargins(_B * 3, _B * 3,
+                               _B * 3, _B * 3)
+        lay.setSpacing(_B)
 
         icon_lbl = QLabel()
         icon_lbl.setObjectName("emptyStateIcon")
-        icon = get_icon(icon_name)
-        if icon is not None and not icon.isNull():
-            icon_lbl.setPixmap(icon.pixmap(base_size() * 3, base_size() * 3))
+        pm = get_pixmap(icon_name, _B * 3)
+        if not pm.isNull():
+            icon_lbl.setPixmap(pm)
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         lay.addWidget(icon_lbl)
 
@@ -87,12 +91,11 @@ class EmptyState(QWidget):
         Call from the owning surface's reapply_theme; showEvent also
         re-fetches, covering most lifecycles.
         """
-        icon = get_icon(self._icon_name)
-        if icon is not None and not icon.isNull() and self._icon_name:
+        pm = get_pixmap(self._icon_name, _B * 3)
+        if not pm.isNull():
             for child in self.findChildren(QLabel):
                 if child.objectName() == "emptyStateIcon":
-                    child.setPixmap(icon.pixmap(base_size() * 3,
-                                                base_size() * 3))
+                    child.setPixmap(pm)
 
     def showEvent(self, ev):
         super().showEvent(ev)
@@ -121,7 +124,7 @@ class SkeletonDetail(QWidget):
         super().__init__(parent)
         self.setSizePolicy(QSizePolicy.Policy.Expanding,
                            QSizePolicy.Policy.Expanding)
-        self.setMinimumHeight(base_size() * 12)
+        self.setMinimumHeight(_B * 12)
 
     def paintEvent(self, ev):
         from PySide6.QtGui import QColor, QPainter, QPainterPath
@@ -129,7 +132,7 @@ class SkeletonDetail(QWidget):
         from ..theme import Color
 
         w = self.width()
-        m = base_size() * 2
+        m = _B * 2
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         card = QColor(Color.PANEL)
@@ -147,28 +150,28 @@ class SkeletonDetail(QWidget):
         bar(m, y, w * 0.28, font_px("DISPLAY"), card)
         painter.setPen(edge)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        y += font_px("DISPLAY") + base_size()
+        y += font_px("DISPLAY") + _B
         bar(m, y, w * 0.16, font_px("SM"), stripe)
-        y += font_px("SM") + base_size() * 2
+        y += font_px("SM") + _B * 2
 
         # metric cards row
-        card_w = (w - 2 * m - 3 * base_size()) / 4.0
+        card_w = (w - 2 * m - 3 * _B) / 4.0
         for i in range(4):
-            x = m + i * (card_w + base_size())
+            x = m + i * (card_w + _B)
             path = QPainterPath()
-            path.addRoundedRect(QRectF(x, y, card_w, base_size() * 5),
+            path.addRoundedRect(QRectF(x, y, card_w, _B * 5),
                                 float(RADIUS["LG"]), float(RADIUS["LG"]))
             painter.fillPath(path, QColor(Color.PANEL))
             painter.setPen(edge)
             painter.drawPath(path)
-            bar(x + base_size() * 0.75, y + base_size() * 0.75,
+            bar(x + _B * 0.75, y + _B * 0.75,
                 card_w * 0.55, font_px("SM"), stripe)
-            bar(x + base_size() * 0.75, y + base_size() * 2.25,
+            bar(x + _B * 0.75, y + _B * 2.25,
                 card_w * 0.4, font_px("LG"), card)
-        y += base_size() * 5 + base_size() * 2
+        y += _B * 5 + _B * 2
 
         # content rows
-        while y + base_size() * 2 < self.height() - m:
-            bar(m, y, w - 2 * m, base_size() * 2, stripe)
-            y += base_size() * 2 + base_size() * 0.75
+        while y + _B * 2 < self.height() - m:
+            bar(m, y, w - 2 * m, _B * 2, stripe)
+            y += _B * 2 + _B * 0.75
         painter.end()

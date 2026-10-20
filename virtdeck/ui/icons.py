@@ -11,7 +11,7 @@ _BASE_SIZE = ICON_SIZE  # base size; the theme engine changes it via set_base_si
 
 # Fixed icon size for compact controls (QPushButton / QToolButton / the main
 # toolbar): does NOT follow the theme's icon base (VIRTDECK_ICON_SIZE scales
-# views — tree, tabs, palette — while controls stay at 24).
+# content views — tree, command palette — while all the chrome stays at 24).
 CONTROL_ICON_SIZE = 24
 
 
@@ -327,6 +327,18 @@ def get_icon(name, status=None):
     if status and tmpl is not None:
         return _make_icon_with_dot(tmpl, status)
     return _icons.get(name)
+
+
+def get_pixmap(name, size):
+    """Rasterize a named icon at an explicit pixel size, bypassing the
+    base-size icon cache (oversized chrome: EmptyState's 3x illustration
+    keeps its fixed size whatever the icon base is)."""
+    if _icons is None:
+        init_icons()
+    tmpl = _PACK.get(name) or _THEME_ICONS.get(name) or _BUILTINS.get(name)
+    if tmpl is None:
+        return QPixmap()
+    return _render_svg_pixmap(tmpl, size)
 
 _BUILTINS = {
     "host": _HOST,
