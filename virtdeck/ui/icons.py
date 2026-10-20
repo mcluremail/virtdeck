@@ -42,22 +42,38 @@ def set_theme_icons(overrides):
     _THEME_ICONS = overrides or {}
 
 
-# ── External icon-pack preview (opt-in, off by default) ──
-# VIRTDECK_ICON_PACK=<dir of the unpacked pack> overrides the mapped names
-# with the pack's own SVG for the active theme variant (light/dark). The
-# pack art is self-contained (128 viewBox, baked gradients) — used as is,
-# without token substitution. Names outside _PACK_MAP keep the builtin
-# glyph, so unmapped actions (start/stop/add/...) stay consistent.
+# ── Bundled icon pack (v2, on by default) ──
+# The pack art is self-contained (128 viewBox, baked gradients) — used as
+# is, without token substitution; only the light/dark file variant follows
+# the active theme. VIRTDECK_ICON_PACK=<dir> swaps in an external pack for
+# trials. Names outside _PACK_MAP keep the builtin glyph (app/loading/
+# restore).
+
+# Where the external pack is loaded from when the env var is unset.
+_BUNDLED_PACK_ROOT = os.path.join(os.path.dirname(__file__), "icons_pack")
 
 _PACK_MAP = {
+    # Objects / states (наши имена → id пака v2)
     "host": "host", "vm": "virtual-machine", "cluster": "cluster",
-    "pool": "pool", "storage": "storage", "backup": "backup",
-    "iso": "iso", "template": "template", "network": "network",
-    "snapshot": "snapshot", "monitor": "monitoring",
-    "console": "console", "ha": "ha", "user": "users",
-    "token": "key", "refresh": "refresh", "about": "about",
-    "folder": "files", "options": "settings", "history": "logs",
-    "lock": "security", "unlock": "security",
+    "pool": "pool", "folder": "files", "storage": "storage",
+    "backup": "backup", "iso": "iso", "template": "template",
+    "network": "network", "snapshot": "snapshot", "monitor": "monitoring",
+    "console": "console", "ha": "ha", "about": "about",
+    "options": "settings", "history": "logs", "token": "key",
+    "refresh": "refresh",
+    # Actions
+    "start": "start", "stop": "stop", "shutdown": "shutdown",
+    "reboot": "reboot", "reset": "reset", "resume": "resume",
+    "add": "add", "remove": "remove", "upload": "upload",
+    "download": "download", "export": "export", "import": "import",
+    "expand": "expand", "collapse": "collapse", "clone": "clone",
+    "migrate": "migrate", "search": "search",
+    # Devices / hardware
+    "disk": "disk", "usb": "usb", "pci": "pci", "serial": "serial",
+    "tpm": "tpm", "services": "services", "hardware": "hardware",
+    # Access
+    "user": "user", "group": "group", "role": "role", "acl": "acl",
+    "lock": "lock", "unlock": "unlock",
 }
 
 _DARK_VARIANT_THEMES = ("breeze_dark", "graphite")
@@ -66,10 +82,8 @@ _PACK: dict = {}
 
 
 def _load_pack():
-    """Read the pack files for the active theme variant ({} if unset)."""
-    root = os.environ.get("VIRTDECK_ICON_PACK", "")
-    if not root:
-        return {}
+    """Read pack files for the active theme variant (bundled by default)."""
+    root = os.environ.get("VIRTDECK_ICON_PACK") or _BUNDLED_PACK_ROOT
     variant = "dark" if active_theme_id() in _DARK_VARIANT_THEMES else "light"
     out = {}
     for ours, pack_id in _PACK_MAP.items():
@@ -253,11 +267,17 @@ _LOADING = """<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" shape-
 </svg>"""
 
 def _dot_geometry(tmpl):
-    """Status-dot geometry from the template viewBox (16 -> r3.5 @ 12.5)."""
+    """Status-dot geometry from the template viewBox (16 -> r3.5 @ 12.5).
+
+    The 128px pack grid reserves a bottom-right clearance for a 22%-diameter
+    dot (center 110,110; r14 + stroke ≈ 17) — see the pack validation.json.
+    """
     import re as _re
 
     m = _re.search(r'viewBox="0 0 (\d+)[\d. ]*"', tmpl)
     vb = float(m.group(1)) if m else 16.0
+    if vb == 128.0:  # pack grid: dot fits the reserved bottom-right zone
+        return 110.0, 14.0
     k = vb / 16.0
     return vb - 3.5 * k, 3.5 * k
 

@@ -3,11 +3,11 @@
 Usage:
     .venv/bin/python scripts/icon_pack_preview.py [pack_dir] [out.png]
 
-Defaults: пак ~/virtdeck-svg-icon-pack, вывод ~/virtdeck-icon-preview.png.
+Defaults: пак из бандла (virtdeck/ui/icons_pack), вывод ~/virtdeck-icon-preview.png.
+
 Обе полосы — база 24 px (размер иконок во всех темах): light и graphite
-(тёмный вариант пака), плюс обе семьи на 48 px — комфортный размер
-пака. Секции: замена 1:1 (_PACK_MAP), только в паке, только у нас и строки
-со статус-точкой (наша механика поверх обоих семейств).
+(тёмный вариант пака), плюс обе семьи на 48 px. Полный пак v2: все 49
+имён _PACK_MAP плюс встроенные restore/app/loading и статус-точки.
 """
 import json
 import os
@@ -22,8 +22,7 @@ from PySide6.QtSvg import QSvgRenderer
 from virtdeck.plugins._themes import GraphiteTheme
 from virtdeck.ui import icons, theme
 
-PACK_DIR = sys.argv[1] if len(sys.argv) > 1 else \
-    os.path.expanduser("~/virtdeck-svg-icon-pack")
+PACK_DIR = sys.argv[1] if len(sys.argv) > 1 else icons._BUNDLED_PACK_ROOT
 OUT = sys.argv[2] if len(sys.argv) > 2 else \
     os.path.expanduser("~/virtdeck-icon-preview.png")
 
@@ -36,19 +35,11 @@ COLHEAD_H = 20
 SECTION_H = 44
 GAP = 18
 
-# показательные pack-only id — кандидаты на внедрение
-PACK_ONLY = ["pbs", "reports", "provider", "tasks", "notification",
-             "dashboard", "users", "security", "logs", "help", "event",
-             "firewall", "vpn", "cloud", "proxmox-ve", "hypervisor"]
-
-# наши имена без пары в паке
-OURS_ONLY = ["start", "shutdown", "reboot", "reset", "stop", "resume",
-             "add", "remove", "upload", "download", "export", "import",
-             "search", "expand", "collapse", "clone", "migrate",
-             "disk", "usb", "pci", "serial", "services", "tpm",
-             "hardware", "group", "role", "acl", "app", "loading"]
+# вне пака остаются только бренд, спиннер и restore (в паке нет пары)
+OURS_ONLY = ["restore", "app", "loading"]
 
 OURS_RU = {
+    "restore": "Восстановление",
     "start": "Запустить", "shutdown": "Выключить", "reboot": "Перезагрузить",
     "reset": "Сбросить", "stop": "Остановить", "resume": "Продолжить",
     "add": "Добавить", "remove": "Удалить", "upload": "Загрузить",
@@ -134,9 +125,6 @@ def _strip_lines():
     for ours_name, pack_id in icons._PACK_MAP.items():
         lines.append(("row", f"{ours_name} · {_PACK_RU.get(pack_id, pack_id)}",
                       ours_name, pack_id))
-    lines.append(("section", "Только в паке (кандидаты на внедрение)"))
-    for pid in PACK_ONLY:
-        lines.append(("row", f"{pid} · {_PACK_RU.get(pid, pid)}", None, pid))
     lines.append(("section", "Только у нас (в паке нет)"))
     for name in OURS_ONLY:
         lines.append(("row", f"{name} · {OURS_RU[name]}", name, None))

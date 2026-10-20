@@ -66,6 +66,7 @@ include = ["virtdeck*"]
 [tool.setuptools.package-data]
 "virtdeck.ui.i18n" = ["*.json"]
 "virtdeck.ui.console" = ["novnc/**/*.js", "novnc/LICENSE.txt"]
+"virtdeck.ui.icons_pack" = ["*.json", "light/*.svg", "dark/*.svg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

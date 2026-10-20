@@ -1,0 +1,470 @@
+[
+  {
+    "id": "cluster",
+    "label_ru": "Кластеры",
+    "light": "light/cluster.svg",
+    "dark": "dark/cluster.svg"
+  },
+  {
+    "id": "host",
+    "label_ru": "Узлы",
+    "light": "light/host.svg",
+    "dark": "dark/host.svg"
+  },
+  {
+    "id": "virtual-machine",
+    "label_ru": "Виртуальные машины",
+    "light": "light/virtual-machine.svg",
+    "dark": "dark/virtual-machine.svg"
+  },
+  {
+    "id": "container",
+    "label_ru": "Контейнеры",
+    "light": "light/container.svg",
+    "dark": "dark/container.svg"
+  },
+  {
+    "id": "storage",
+    "label_ru": "Хранилища",
+    "light": "light/storage.svg",
+    "dark": "dark/storage.svg"
+  },
+  {
+    "id": "network",
+    "label_ru": "Сети",
+    "light": "light/network.svg",
+    "dark": "dark/network.svg"
+  },
+  {
+    "id": "routing",
+    "label_ru": "Маршрутизация",
+    "light": "light/routing.svg",
+    "dark": "dark/routing.svg"
+  },
+  {
+    "id": "security",
+    "label_ru": "Безопасность",
+    "light": "light/security.svg",
+    "dark": "dark/security.svg"
+  },
+  {
+    "id": "backup",
+    "label_ru": "Резервное копирование",
+    "light": "light/backup.svg",
+    "dark": "dark/backup.svg"
+  },
+  {
+    "id": "tasks",
+    "label_ru": "Задачи",
+    "light": "light/tasks.svg",
+    "dark": "dark/tasks.svg"
+  },
+  {
+    "id": "monitoring",
+    "label_ru": "Мониторинг",
+    "light": "light/monitoring.svg",
+    "dark": "dark/monitoring.svg"
+  },
+  {
+    "id": "logs",
+    "label_ru": "Журналы",
+    "light": "light/logs.svg",
+    "dark": "dark/logs.svg"
+  },
+  {
+    "id": "users",
+    "label_ru": "Пользователи",
+    "light": "light/users.svg",
+    "dark": "dark/users.svg"
+  },
+  {
+    "id": "settings",
+    "label_ru": "Настройки",
+    "light": "light/settings.svg",
+    "dark": "dark/settings.svg"
+  },
+  {
+    "id": "reports",
+    "label_ru": "Отчёты",
+    "light": "light/reports.svg",
+    "dark": "dark/reports.svg"
+  },
+  {
+    "id": "about",
+    "label_ru": "О программе",
+    "light": "light/about.svg",
+    "dark": "dark/about.svg"
+  },
+  {
+    "id": "internet",
+    "label_ru": "Интернет",
+    "light": "light/internet.svg",
+    "dark": "dark/internet.svg"
+  },
+  {
+    "id": "vpn",
+    "label_ru": "VPN",
+    "light": "light/vpn.svg",
+    "dark": "dark/vpn.svg"
+  },
+  {
+    "id": "cloud",
+    "label_ru": "Облако",
+    "light": "light/cloud.svg",
+    "dark": "dark/cloud.svg"
+  },
+  {
+    "id": "firewall",
+    "label_ru": "Брандмауэр",
+    "light": "light/firewall.svg",
+    "dark": "dark/firewall.svg"
+  },
+  {
+    "id": "hypervisor",
+    "label_ru": "Гипервизоры",
+    "light": "light/hypervisor.svg",
+    "dark": "dark/hypervisor.svg"
+  },
+  {
+    "id": "ha",
+    "label_ru": "Высокая доступность",
+    "light": "light/ha.svg",
+    "dark": "dark/ha.svg"
+  },
+  {
+    "id": "tunnel",
+    "label_ru": "Туннели",
+    "light": "light/tunnel.svg",
+    "dark": "dark/tunnel.svg"
+  },
+  {
+    "id": "dashboard",
+    "label_ru": "Панель",
+    "light": "light/dashboard.svg",
+    "dark": "dark/dashboard.svg"
+  },
+  {
+    "id": "snapshot",
+    "label_ru": "Снимки",
+    "light": "light/snapshot.svg",
+    "dark": "dark/snapshot.svg"
+  },
+  {
+    "id": "template",
+    "label_ru": "Шаблоны",
+    "light": "light/template.svg",
+    "dark": "dark/template.svg"
+  },
+  {
+    "id": "iso",
+    "label_ru": "ISO-образы",
+    "light": "light/iso.svg",
+    "dark": "dark/iso.svg"
+  },
+  {
+    "id": "pool",
+    "label_ru": "Пулы ресурсов",
+    "light": "light/pool.svg",
+    "dark": "dark/pool.svg"
+  },
+  {
+    "id": "balancing",
+    "label_ru": "Балансировка",
+    "light": "light/balancing.svg",
+    "dark": "dark/balancing.svg"
+  },
+  {
+    "id": "provider",
+    "label_ru": "Провайдеры",
+    "light": "light/provider.svg",
+    "dark": "dark/provider.svg"
+  },
+  {
+    "id": "event",
+    "label_ru": "События",
+    "light": "light/event.svg",
+    "dark": "dark/event.svg"
+  },
+  {
+    "id": "warning",
+    "label_ru": "Предупреждение",
+    "light": "light/warning.svg",
+    "dark": "dark/warning.svg"
+  },
+  {
+    "id": "error",
+    "label_ru": "Ошибка",
+    "light": "light/error.svg",
+    "dark": "dark/error.svg"
+  },
+  {
+    "id": "success",
+    "label_ru": "Успешно",
+    "light": "light/success.svg",
+    "dark": "dark/success.svg"
+  },
+  {
+    "id": "running",
+    "label_ru": "Запущено",
+    "light": "light/running.svg",
+    "dark": "dark/running.svg"
+  },
+  {
+    "id": "stopped",
+    "label_ru": "Остановлено",
+    "light": "light/stopped.svg",
+    "dark": "dark/stopped.svg"
+  },
+  {
+    "id": "unavailable",
+    "label_ru": "Недоступно",
+    "light": "light/unavailable.svg",
+    "dark": "dark/unavailable.svg"
+  },
+  {
+    "id": "deleted",
+    "label_ru": "Удалено",
+    "light": "light/deleted.svg",
+    "dark": "dark/deleted.svg"
+  },
+  {
+    "id": "files",
+    "label_ru": "Файлы",
+    "light": "light/files.svg",
+    "dark": "dark/files.svg"
+  },
+  {
+    "id": "help",
+    "label_ru": "Справка",
+    "light": "light/help.svg",
+    "dark": "dark/help.svg"
+  },
+  {
+    "id": "console",
+    "label_ru": "Консоль",
+    "light": "light/console.svg",
+    "dark": "dark/console.svg"
+  },
+  {
+    "id": "key",
+    "label_ru": "Ключи",
+    "light": "light/key.svg",
+    "dark": "dark/key.svg"
+  },
+  {
+    "id": "configuration",
+    "label_ru": "Конфигурация",
+    "light": "light/configuration.svg",
+    "dark": "dark/configuration.svg"
+  },
+  {
+    "id": "refresh",
+    "label_ru": "Обновление",
+    "light": "light/refresh.svg",
+    "dark": "dark/refresh.svg"
+  },
+  {
+    "id": "notification",
+    "label_ru": "Уведомления",
+    "light": "light/notification.svg",
+    "dark": "dark/notification.svg"
+  },
+  {
+    "id": "pbs",
+    "label_ru": "Proxmox Backup Server",
+    "light": "light/pbs.svg",
+    "dark": "dark/pbs.svg"
+  },
+  {
+    "id": "proxmox-ve",
+    "label_ru": "Proxmox VE",
+    "light": "light/proxmox-ve.svg",
+    "dark": "dark/proxmox-ve.svg"
+  },
+  {
+    "id": "proxy",
+    "label_ru": "Прокси",
+    "light": "light/proxy.svg",
+    "dark": "dark/proxy.svg"
+  },
+  {
+    "id": "start",
+    "label_ru": "Запустить",
+    "light": "light/start.svg",
+    "dark": "dark/start.svg"
+  },
+  {
+    "id": "stop",
+    "label_ru": "Остановить",
+    "light": "light/stop.svg",
+    "dark": "dark/stop.svg"
+  },
+  {
+    "id": "shutdown",
+    "label_ru": "Выключить",
+    "light": "light/shutdown.svg",
+    "dark": "dark/shutdown.svg"
+  },
+  {
+    "id": "reboot",
+    "label_ru": "Перезагрузить",
+    "light": "light/reboot.svg",
+    "dark": "dark/reboot.svg"
+  },
+  {
+    "id": "reset",
+    "label_ru": "Жёсткий сброс",
+    "light": "light/reset.svg",
+    "dark": "dark/reset.svg"
+  },
+  {
+    "id": "resume",
+    "label_ru": "Продолжить",
+    "light": "light/resume.svg",
+    "dark": "dark/resume.svg"
+  },
+  {
+    "id": "add",
+    "label_ru": "Добавить",
+    "light": "light/add.svg",
+    "dark": "dark/add.svg"
+  },
+  {
+    "id": "remove",
+    "label_ru": "Удалить",
+    "light": "light/remove.svg",
+    "dark": "dark/remove.svg"
+  },
+  {
+    "id": "upload",
+    "label_ru": "Загрузить",
+    "light": "light/upload.svg",
+    "dark": "dark/upload.svg"
+  },
+  {
+    "id": "download",
+    "label_ru": "Скачать",
+    "light": "light/download.svg",
+    "dark": "dark/download.svg"
+  },
+  {
+    "id": "export",
+    "label_ru": "Экспорт",
+    "light": "light/export.svg",
+    "dark": "dark/export.svg"
+  },
+  {
+    "id": "import",
+    "label_ru": "Импорт",
+    "light": "light/import.svg",
+    "dark": "dark/import.svg"
+  },
+  {
+    "id": "expand",
+    "label_ru": "Развернуть",
+    "light": "light/expand.svg",
+    "dark": "dark/expand.svg"
+  },
+  {
+    "id": "collapse",
+    "label_ru": "Свернуть",
+    "light": "light/collapse.svg",
+    "dark": "dark/collapse.svg"
+  },
+  {
+    "id": "clone",
+    "label_ru": "Клонировать",
+    "light": "light/clone.svg",
+    "dark": "dark/clone.svg"
+  },
+  {
+    "id": "migrate",
+    "label_ru": "Мигрировать",
+    "light": "light/migrate.svg",
+    "dark": "dark/migrate.svg"
+  },
+  {
+    "id": "search",
+    "label_ru": "Поиск",
+    "light": "light/search.svg",
+    "dark": "dark/search.svg"
+  },
+  {
+    "id": "disk",
+    "label_ru": "Диск",
+    "light": "light/disk.svg",
+    "dark": "dark/disk.svg"
+  },
+  {
+    "id": "usb",
+    "label_ru": "USB",
+    "light": "light/usb.svg",
+    "dark": "dark/usb.svg"
+  },
+  {
+    "id": "pci",
+    "label_ru": "PCI-устройство",
+    "light": "light/pci.svg",
+    "dark": "dark/pci.svg"
+  },
+  {
+    "id": "serial",
+    "label_ru": "COM-порт",
+    "light": "light/serial.svg",
+    "dark": "dark/serial.svg"
+  },
+  {
+    "id": "tpm",
+    "label_ru": "TPM",
+    "light": "light/tpm.svg",
+    "dark": "dark/tpm.svg"
+  },
+  {
+    "id": "services",
+    "label_ru": "Службы",
+    "light": "light/services.svg",
+    "dark": "dark/services.svg"
+  },
+  {
+    "id": "hardware",
+    "label_ru": "Оборудование",
+    "light": "light/hardware.svg",
+    "dark": "dark/hardware.svg"
+  },
+  {
+    "id": "user",
+    "label_ru": "Пользователь",
+    "light": "light/user.svg",
+    "dark": "dark/user.svg"
+  },
+  {
+    "id": "group",
+    "label_ru": "Группа пользователей",
+    "light": "light/group.svg",
+    "dark": "dark/group.svg"
+  },
+  {
+    "id": "role",
+    "label_ru": "Роль",
+    "light": "light/role.svg",
+    "dark": "dark/role.svg"
+  },
+  {
+    "id": "acl",
+    "label_ru": "Список доступа",
+    "light": "light/acl.svg",
+    "dark": "dark/acl.svg"
+  },
+  {
+    "id": "lock",
+    "label_ru": "Замок",
+    "light": "light/lock.svg",
+    "dark": "dark/lock.svg"
+  },
+  {
+    "id": "unlock",
+    "label_ru": "Открытый замок",
+    "light": "light/unlock.svg",
+    "dark": "dark/unlock.svg"
+  }
+]
